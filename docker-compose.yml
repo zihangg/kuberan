@@ -12,6 +12,15 @@ services:
       - "8080:8080"
     environment:
       - ENV=development
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=kuberan
+      - DB_PASSWORD=kuberan
+      - DB_NAME=kuberan
+      - DB_SSLMODE=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
     restart: unless-stopped
 
   web:
@@ -29,6 +38,27 @@ services:
       - api
     restart: unless-stopped
 
+  postgres:
+    image: postgres:16-alpine
+    container_name: kuberan-postgres
+    environment:
+      POSTGRES_USER: kuberan
+      POSTGRES_PASSWORD: kuberan
+      POSTGRES_DB: kuberan
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./apps/api/dev/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kuberan"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
 volumes:
   go-modules:
   node_modules:
+  postgres_data:
+    driver: local
