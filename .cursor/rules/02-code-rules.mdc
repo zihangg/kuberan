@@ -1,0 +1,30 @@
+---
+description: Explains the way the codebase is designed & how code should be written
+globs: *
+alwaysApply: true
+---
+
+This file highlights how the codebase should be written and provide a common standard for code generated to be adhered to.
+
+# apps/api
+The /apps/api folder contains the Golang backend for the application.
+
+- Group related functionalities into packages. Each package should have a clear responsibility. Keep packages small and focused.
+- Use interfaces to define contracts between components. This allows you to swap implementation without changing the code that depends on the interface.
+- For functions with many optional parameters, use the functional options pattern to improve readability and maintainability.
+- Use joho/godotenv` to load configuration from files, environment variables, and command-line flags.
+- Use the `net/http` package for building HTTP servers and clients. Consider using a framework like `gin-gonic/gin` or `go-chi/chi` for more advanced routing and middleware features. Always set appropriate timeouts.
+- Use libraries like `go-playground/validator` for validating input data. Always sanitize user input to prevent injection attacks.
+- Use goroutines and channels to perform asynchronous tasks. Use wait groups to synchronize goroutines.
+
+# apps/web
+The /apps/web folder contains the Nextjs frontend for the application.
+
+- Written in strict typescript, and should never use `any` for types.
+- API calls are made using @tanstack/react-query, and should be done in the `src/hooks` folder.
+- The underlying API calls should be defined in a `service` file, such as `auth.service.ts` to keep a centralised area of services called.
+- When creating components, minimal is always better. When availabe, always use ShadCN components.
+- Separate components that handle data fetching and state management (container components) from those that only render UI (presentational components).
+- Organize components into atoms, molecules, organisms, templates, and pages for better reusability and maintainability.
+- Use server components by default for improved performance.  Only use client components when interactivity (event handlers, useState, useEffect) is required.
+- Only fetch the data that is needed by the component.

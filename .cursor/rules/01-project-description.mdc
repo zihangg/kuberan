@@ -1,0 +1,15 @@
+---
+description: Brief information of the project, and the general requirements
+globs: *
+alwaysApply: true
+---
+# Project Description
+Kuberan is a personal finance application aimed to allow users to efficiently manage their finances, make budgets, track their investments, and ultimately allow the user to make better financial decisions.
+
+## General Requirements
+- Users are able to sign in to their account.
+- Users are able to create accounts, such as cash, investments, debts, etc.
+- For cash accounts, users are able to key in daily transactions done.
+- For investments, users are able to track their investment performance and their P/L (which requires entering their cost basis).
+- Users should be able to access a dashboard (as their home page) to have an overview of their finances with informational graphs.
+- Users should be able to plan budgets based on categories.
