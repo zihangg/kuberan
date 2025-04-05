@@ -33,7 +33,31 @@ type LoginRequest struct {
 	Password string `json:"password" binding:"required"`
 }
 
+// UserResponse represents the user data in the response
+type UserResponse struct {
+	ID        uint   `json:"id"`
+	Email     string `json:"email"`
+	FirstName string `json:"first_name"`
+	LastName  string `json:"last_name"`
+}
+
+// AuthResponse represents the authentication response with token
+type AuthResponse struct {
+	Token string       `json:"token"`
+	User  UserResponse `json:"user"`
+}
+
 // Register handles user registration
+// @Summary     Register a new user
+// @Description Register a new user with email and password
+// @Tags        auth
+// @Accept      json
+// @Produce     json
+// @Param       request body RegisterRequest true "User registration data"
+// @Success     201 {object} AuthResponse "User registered and token generated"
+// @Failure     400 {object} ErrorResponse "Invalid input"
+// @Failure     500 {object} ErrorResponse "Server error"
+// @Router      /auth/register [post]
 func (h *AuthHandler) Register(c *gin.Context) {
 	var req RegisterRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -66,6 +90,17 @@ func (h *AuthHandler) Register(c *gin.Context) {
 }
 
 // Login handles user login
+// @Summary     Login user
+// @Description Authenticate a user and get a token
+// @Tags        auth
+// @Accept      json
+// @Produce     json
+// @Param       request body LoginRequest true "User login credentials"
+// @Success     200 {object} AuthResponse "User authenticated and token generated"
+// @Failure     400 {object} ErrorResponse "Invalid input"
+// @Failure     401 {object} ErrorResponse "Invalid credentials"
+// @Failure     500 {object} ErrorResponse "Server error"
+// @Router      /auth/login [post]
 func (h *AuthHandler) Login(c *gin.Context) {
 	var req LoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -103,6 +138,16 @@ func (h *AuthHandler) Login(c *gin.Context) {
 }
 
 // GetProfile returns the user's profile
+// @Summary     Get user profile
+// @Description Get the authenticated user's profile information
+// @Tags        user
+// @Accept      json
+// @Produce     json
+// @Security    BearerAuth
+// @Success     200 {object} UserResponse "User profile"
+// @Failure     401 {object} ErrorResponse "Unauthorized"
+// @Failure     500 {object} ErrorResponse "Server error"
+// @Router      /profile [get]
 func (h *AuthHandler) GetProfile(c *gin.Context) {
 	userID, exists := c.Get("userID")
 	if !exists {
@@ -124,4 +169,9 @@ func (h *AuthHandler) GetProfile(c *gin.Context) {
 			"last_name":  user.LastName,
 		},
 	})
+}
+
+// ErrorResponse represents an error response
+type ErrorResponse struct {
+	Error string `json:"error"`
 } 

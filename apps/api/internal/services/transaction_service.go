@@ -1,0 +1,172 @@
+package services
+
+import (
+	"errors"
+	"time"
+
+	"gorm.io/gorm"
+
+	"kuberan/internal/models"
+)
+
+// TransactionService handles transaction-related business logic
+type TransactionService struct {
+	db             *gorm.DB
+	accountService *AccountService
+}
+
+// NewTransactionService creates a new TransactionService
+func NewTransactionService(db *gorm.DB, accountService *AccountService) *TransactionService {
+	return &TransactionService{
+		db:             db,
+		accountService: accountService,
+	}
+}
+
+// CreateTransaction creates a new transaction for a user's account
+func (s *TransactionService) CreateTransaction(
+	userID uint,
+	accountID uint,
+	categoryID *uint,
+	transactionType models.TransactionType,
+	amount float64,
+	description string,
+	date time.Time,
+) (*models.Transaction, error) {
+	// Validate input
+	if amount <= 0 {
+		return nil, errors.New("amount must be greater than zero")
+	}
+
+	if accountID == 0 {
+		return nil, errors.New("account ID is required")
+	}
+
+	// Default date to now if not provided
+	if date.IsZero() {
+		date = time.Now()
+	}
+
+	// Get the account to ensure it exists and belongs to the user
+	account, err := s.accountService.GetAccountByID(userID, accountID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Start a transaction
+	return s.createTransactionWithDB(s.db, userID, account, categoryID, transactionType, amount, description, date)
+}
+
+// createTransactionWithDB creates a transaction with a given database connection (useful for transactions)
+func (s *TransactionService) createTransactionWithDB(
+	tx *gorm.DB,
+	userID uint,
+	account *models.Account,
+	categoryID *uint,
+	transactionType models.TransactionType,
+	amount float64,
+	description string,
+	date time.Time,
+) (*models.Transaction, error) {
+	// Create transaction record
+	transaction := &models.Transaction{
+		UserID:      userID,
+		AccountID:   account.ID,
+		CategoryID:  categoryID,
+		Type:        transactionType,
+		Amount:      amount,
+		Description: description,
+		Date:        date,
+	}
+
+	// Within a database transaction to ensure consistency
+	err := tx.Transaction(func(tx *gorm.DB) error {
+		// Create the transaction
+		if err := tx.Create(transaction).Error; err != nil {
+			return err
+		}
+
+		// Update account balance
+		if err := s.accountService.UpdateAccountBalance(tx, account, transactionType, amount); err != nil {
+			return err
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return transaction, nil
+}
+
+// GetAccountTransactions retrieves transactions for a specific account
+func (s *TransactionService) GetAccountTransactions(userID, accountID uint) ([]models.Transaction, error) {
+	// First verify the account belongs to the user
+	_, err := s.accountService.GetAccountByID(userID, accountID)
+	if err != nil {
+		return nil, err
+	}
+
+	var transactions []models.Transaction
+	if err := s.db.Where("user_id = ? AND account_id = ?", userID, accountID).
+		Order("date DESC").
+		Find(&transactions).Error; err != nil {
+		return nil, err
+	}
+
+	return transactions, nil
+}
+
+// GetTransactionByID retrieves a transaction by ID for a specific user
+func (s *TransactionService) GetTransactionByID(userID, transactionID uint) (*models.Transaction, error) {
+	var transaction models.Transaction
+	if err := s.db.Where("id = ? AND user_id = ?", transactionID, userID).First(&transaction).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errors.New("transaction not found")
+		}
+		return nil, err
+	}
+	return &transaction, nil
+}
+
+// DeleteTransaction deletes a transaction and updates the account balance
+func (s *TransactionService) DeleteTransaction(userID, transactionID uint) error {
+	// Get the transaction
+	transaction, err := s.GetTransactionByID(userID, transactionID)
+	if err != nil {
+		return err
+	}
+
+	// Get the account
+	account, err := s.accountService.GetAccountByID(userID, transaction.AccountID)
+	if err != nil {
+		return err
+	}
+
+	// Within a database transaction to ensure consistency
+	return s.db.Transaction(func(tx *gorm.DB) error {
+		// Delete the transaction
+		if err := tx.Delete(transaction).Error; err != nil {
+			return err
+		}
+
+		// Reverse the effect on the account balance
+		var reverseType models.TransactionType
+		if transaction.Type == models.TransactionTypeIncome {
+			reverseType = models.TransactionTypeExpense
+		} else if transaction.Type == models.TransactionTypeExpense {
+			reverseType = models.TransactionTypeIncome
+		} else {
+			return errors.New("unsupported transaction type for deletion")
+		}
+
+		// Update account balance
+		if err := s.accountService.UpdateAccountBalance(tx, account, reverseType, transaction.Amount); err != nil {
+			return err
+		}
+
+		return nil
+	})
+} 

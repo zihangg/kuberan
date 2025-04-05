@@ -6,13 +6,36 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
 
 	"kuberan/internal/config"
 	"kuberan/internal/database"
+	_ "kuberan/internal/docs" // Import swagger docs
 	"kuberan/internal/handlers"
 	"kuberan/internal/middleware"
 	"kuberan/internal/services"
 )
+
+// @title           Kuberan API
+// @version         1.0
+// @description     Kuberan is a personal finance application that allows users to efficiently manage their finances, make budgets, and track investments.
+// @termsOfService  http://swagger.io/terms/
+
+// @contact.name   API Support
+// @contact.url    http://www.kuberan.io/support
+// @contact.email  support@kuberan.io
+
+// @license.name  MIT
+// @license.url   https://opensource.org/licenses/MIT
+
+// @host      localhost:8080
+// @BasePath  /api/v1
+
+// @securityDefinitions.apikey BearerAuth
+// @in header
+// @name Authorization
+// @description Type "Bearer" followed by a space and JWT token.
 
 func main() {
 	// Load configuration
@@ -39,10 +62,17 @@ func main() {
 	}
 
 	// Initialize services
-	userService := services.NewUserService(dbManager.DB())
+	db := dbManager.DB()
+	userService := services.NewUserService(db)
+	accountService := services.NewAccountService(db)
+	categoryService := services.NewCategoryService(db)
+	transactionService := services.NewTransactionService(db, accountService)
 
 	// Initialize handlers
 	authHandler := handlers.NewAuthHandler(userService)
+	accountHandler := handlers.NewAccountHandler(accountService)
+	categoryHandler := handlers.NewCategoryHandler(categoryService)
+	transactionHandler := handlers.NewTransactionHandler(transactionService)
 
 	// Initialize Gin router
 	router := gin.Default()
@@ -60,6 +90,9 @@ func main() {
 		
 		c.Next()
 	})
+
+	// Swagger documentation
+	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
 	// Health check endpoint
 	router.GET("/api/health", func(c *gin.Context) {
@@ -80,13 +113,43 @@ func main() {
 		protected := v1.Group("/")
 		protected.Use(middleware.AuthMiddleware())
 		{
+			// User profile
 			protected.GET("/profile", authHandler.GetProfile)
 			
-			// TODO: Add more protected routes here
+			// Account routes
+			accounts := protected.Group("/accounts")
+			{
+				accounts.POST("/cash", accountHandler.CreateCashAccount)
+				accounts.GET("", accountHandler.GetUserAccounts)
+				accounts.GET("/:id", accountHandler.GetAccountByID)
+				accounts.PUT("/:id", accountHandler.UpdateCashAccount)
+				
+				// Transaction routes - change /:accountId to /transactions/:id to avoid conflict
+				accounts.GET("/:id/transactions", transactionHandler.GetAccountTransactions)
+			}
+			
+			// Transaction routes
+			transactions := protected.Group("/transactions")
+			{
+				transactions.POST("", transactionHandler.CreateTransaction)
+				transactions.GET("/:id", transactionHandler.GetTransactionByID)
+				transactions.DELETE("/:id", transactionHandler.DeleteTransaction)
+			}
+			
+			// Category routes
+			categories := protected.Group("/categories")
+			{
+				categories.POST("", categoryHandler.CreateCategory)
+				categories.GET("", categoryHandler.GetUserCategories)
+				categories.GET("/:id", categoryHandler.GetCategoryByID)
+				categories.PUT("/:id", categoryHandler.UpdateCategory)
+				categories.DELETE("/:id", categoryHandler.DeleteCategory)
+			}
 		}
 	}
 
 	fmt.Printf("Starting Kuberan backend server on port %s...\n", appConfig.Port)
+	fmt.Printf("Swagger documentation available at http://localhost:%s/swagger/index.html\n", appConfig.Port)
 	if err := router.Run(":" + appConfig.Port); err != nil {
 		log.Fatalf("Failed to start server: %v", err)
 	}
