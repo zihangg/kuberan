@@ -26,10 +26,6 @@ type Transaction struct {
 	// For transfers
 	ToAccountID     *uint           `json:"to_account_id,omitempty"`
 	
-	// For investments
-	Quantity        float64         `json:"quantity,omitempty"`
-	PricePerUnit    float64         `json:"price_per_unit,omitempty"`
-	
 	// Relationships
 	Account         Account         `gorm:"foreignKey:AccountID" json:"account"`
 	ToAccount       *Account        `gorm:"foreignKey:ToAccountID" json:"to_account,omitempty"`
