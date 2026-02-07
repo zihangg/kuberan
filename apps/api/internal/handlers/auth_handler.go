@@ -22,10 +22,10 @@ func NewAuthHandler(userService *services.UserService) *AuthHandler {
 
 // RegisterRequest represents the registration request payload
 type RegisterRequest struct {
-	Email     string `json:"email" binding:"required,email"`
-	Password  string `json:"password" binding:"required,min=6"`
-	FirstName string `json:"first_name"`
-	LastName  string `json:"last_name"`
+	Email     string `json:"email" binding:"required,email,max=255"`
+	Password  string `json:"password" binding:"required,min=8,max=128"`
+	FirstName string `json:"first_name" binding:"max=100"`
+	LastName  string `json:"last_name" binding:"max=100"`
 }
 
 // LoginRequest represents the login request payload

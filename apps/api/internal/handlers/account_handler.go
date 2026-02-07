@@ -23,16 +23,16 @@ func NewAccountHandler(accountService *services.AccountService) *AccountHandler 
 
 // CreateCashAccountRequest represents the request payload for creating a cash account
 type CreateCashAccountRequest struct {
-	Name           string  `json:"name" binding:"required"`
-	Description    string  `json:"description"`
-	Currency       string  `json:"currency"`
-	InitialBalance float64 `json:"initial_balance"`
+	Name           string  `json:"name" binding:"required,min=1,max=100"`
+	Description    string  `json:"description" binding:"max=500"`
+	Currency       string  `json:"currency" binding:"omitempty,iso4217"`
+	InitialBalance float64 `json:"initial_balance" binding:"gte=0"`
 }
 
 // UpdateCashAccountRequest represents the request payload for updating a cash account
 type UpdateCashAccountRequest struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
+	Name        string `json:"name" binding:"omitempty,min=1,max=100"`
+	Description string `json:"description" binding:"max=500"`
 }
 
 // AccountResponse represents an account in the response

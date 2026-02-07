@@ -8,6 +8,7 @@ import (
 	"kuberan/internal/logger"
 	"kuberan/internal/middleware"
 	"kuberan/internal/services"
+	"kuberan/internal/validator"
 	"net/http"
 	"os"
 
@@ -79,6 +80,9 @@ func run() error {
 	accountHandler := handlers.NewAccountHandler(accountService)
 	categoryHandler := handlers.NewCategoryHandler(categoryService)
 	transactionHandler := handlers.NewTransactionHandler(transactionService)
+
+	// Register custom validators before routes
+	validator.Register()
 
 	// Initialize Gin router
 	router := gin.New()

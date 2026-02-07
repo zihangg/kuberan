@@ -23,20 +23,20 @@ func NewCategoryHandler(categoryService *services.CategoryService) *CategoryHand
 
 // CreateCategoryRequest represents the request payload for creating a category
 type CreateCategoryRequest struct {
-	Name        string              `json:"name" binding:"required"`
-	Type        models.CategoryType `json:"type" binding:"required"`
-	Description string              `json:"description"`
-	Icon        string              `json:"icon"`
-	Color       string              `json:"color"`
+	Name        string              `json:"name" binding:"required,min=1,max=100"`
+	Type        models.CategoryType `json:"type" binding:"required,category_type"`
+	Description string              `json:"description" binding:"max=500"`
+	Icon        string              `json:"icon" binding:"max=50"`
+	Color       string              `json:"color" binding:"omitempty,hex_color"`
 	ParentID    *uint               `json:"parent_id"`
 }
 
 // UpdateCategoryRequest represents the request payload for updating a category
 type UpdateCategoryRequest struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Icon        string `json:"icon"`
-	Color       string `json:"color"`
+	Name        string `json:"name" binding:"omitempty,min=1,max=100"`
+	Description string `json:"description" binding:"max=500"`
+	Icon        string `json:"icon" binding:"max=50"`
+	Color       string `json:"color" binding:"omitempty,hex_color"`
 	ParentID    *uint  `json:"parent_id"`
 }
 
@@ -115,6 +115,11 @@ func (h *CategoryHandler) GetUserCategories(c *gin.Context) {
 	}
 
 	categoryType := c.Query("type")
+	if categoryType != "" && categoryType != "income" && categoryType != "expense" {
+		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, "Invalid category type: must be 'income' or 'expense'"))
+		return
+	}
+
 	var categories []models.Category
 	var err error
 

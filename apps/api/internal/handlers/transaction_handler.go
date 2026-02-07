@@ -26,9 +26,9 @@ func NewTransactionHandler(transactionService *services.TransactionService) *Tra
 type CreateTransactionRequest struct {
 	AccountID   uint                   `json:"account_id" binding:"required"`
 	CategoryID  *uint                  `json:"category_id"`
-	Type        models.TransactionType `json:"type" binding:"required"`
+	Type        models.TransactionType `json:"type" binding:"required,transaction_type"`
 	Amount      float64                `json:"amount" binding:"required,gt=0"`
-	Description string                 `json:"description"`
+	Description string                 `json:"description" binding:"max=500"`
 	Date        *time.Time             `json:"date"`
 }
 
