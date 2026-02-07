@@ -39,10 +39,20 @@ type CategoryServicer interface {
 	DeleteCategory(userID, categoryID uint) error
 }
 
+// TransactionFilter holds optional filter parameters for listing transactions.
+type TransactionFilter struct {
+	FromDate   *time.Time
+	ToDate     *time.Time
+	Type       *models.TransactionType
+	CategoryID *uint
+	MinAmount  *int64
+	MaxAmount  *int64
+}
+
 // TransactionServicer defines the contract for transaction-related business logic.
 type TransactionServicer interface {
 	CreateTransaction(userID, accountID uint, categoryID *uint, transactionType models.TransactionType, amount int64, description string, date time.Time) (*models.Transaction, error)
-	GetAccountTransactions(userID, accountID uint, page pagination.PageRequest) (*pagination.PageResponse[models.Transaction], error)
+	GetAccountTransactions(userID, accountID uint, page pagination.PageRequest, filter TransactionFilter) (*pagination.PageResponse[models.Transaction], error)
 	GetTransactionByID(userID, transactionID uint) (*models.Transaction, error)
 	DeleteTransaction(userID, transactionID uint) error
 }

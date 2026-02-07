@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -98,16 +99,22 @@ func (h *TransactionHandler) CreateTransaction(c *gin.Context) {
 
 // GetAccountTransactions handles the retrieval of transactions for a specific account
 // @Summary     Get account transactions
-// @Description Get a paginated list of transactions for a specific account
+// @Description Get a paginated list of transactions for a specific account with optional filters
 // @Tags        accounts,transactions
 // @Accept      json
 // @Produce     json
 // @Security    BearerAuth
-// @Param       id        path int true  "Account ID"
-// @Param       page      query int false "Page number (default 1)"
-// @Param       page_size query int false "Items per page (default 20, max 100)"
+// @Param       id          path  int    true  "Account ID"
+// @Param       page        query int    false "Page number (default 1)"
+// @Param       page_size   query int    false "Items per page (default 20, max 100)"
+// @Param       from_date   query string false "Filter by start date (RFC3339, e.g. 2024-01-01T00:00:00Z)"
+// @Param       to_date     query string false "Filter by end date (RFC3339)"
+// @Param       type        query string false "Filter by transaction type (income, expense, transfer, investment)"
+// @Param       category_id query int    false "Filter by category ID"
+// @Param       min_amount  query int    false "Filter by minimum amount (cents)"
+// @Param       max_amount  query int    false "Filter by maximum amount (cents)"
 // @Success     200 {object} pagination.PageResponse[models.Transaction] "Paginated transactions"
-// @Failure     400 {object} ErrorResponse "Invalid account ID"
+// @Failure     400 {object} ErrorResponse "Invalid input"
 // @Failure     401 {object} ErrorResponse "Unauthorized"
 // @Failure     404 {object} ErrorResponse "Account not found"
 // @Failure     500 {object} ErrorResponse "Server error"
@@ -131,13 +138,77 @@ func (h *TransactionHandler) GetAccountTransactions(c *gin.Context) {
 		return
 	}
 
-	result, err := h.transactionService.GetAccountTransactions(userID, accountID, page)
+	filter, err := parseTransactionFilter(c)
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	result, err := h.transactionService.GetAccountTransactions(userID, accountID, page, filter)
 	if err != nil {
 		respondWithError(c, err)
 		return
 	}
 
 	c.JSON(http.StatusOK, result)
+}
+
+func parseTransactionFilter(c *gin.Context) (services.TransactionFilter, error) {
+	var filter services.TransactionFilter
+
+	if v := c.Query("from_date"); v != "" {
+		t, err := time.Parse(time.RFC3339, v)
+		if err != nil {
+			return filter, apperrors.WithMessage(apperrors.ErrInvalidInput, "invalid from_date format, use RFC3339")
+		}
+		filter.FromDate = &t
+	}
+
+	if v := c.Query("to_date"); v != "" {
+		t, err := time.Parse(time.RFC3339, v)
+		if err != nil {
+			return filter, apperrors.WithMessage(apperrors.ErrInvalidInput, "invalid to_date format, use RFC3339")
+		}
+		filter.ToDate = &t
+	}
+
+	if v := c.Query("type"); v != "" {
+		txType := models.TransactionType(v)
+		switch txType {
+		case models.TransactionTypeIncome, models.TransactionTypeExpense,
+			models.TransactionTypeTransfer, models.TransactionTypeInvestment:
+			filter.Type = &txType
+		default:
+			return filter, apperrors.WithMessage(apperrors.ErrInvalidInput, "invalid type, must be income, expense, transfer, or investment")
+		}
+	}
+
+	if v := c.Query("category_id"); v != "" {
+		id, err := strconv.ParseUint(v, 10, 32)
+		if err != nil {
+			return filter, apperrors.WithMessage(apperrors.ErrInvalidInput, "invalid category_id")
+		}
+		catID := uint(id)
+		filter.CategoryID = &catID
+	}
+
+	if v := c.Query("min_amount"); v != "" {
+		amt, err := strconv.ParseInt(v, 10, 64)
+		if err != nil {
+			return filter, apperrors.WithMessage(apperrors.ErrInvalidInput, "invalid min_amount")
+		}
+		filter.MinAmount = &amt
+	}
+
+	if v := c.Query("max_amount"); v != "" {
+		amt, err := strconv.ParseInt(v, 10, 64)
+		if err != nil {
+			return filter, apperrors.WithMessage(apperrors.ErrInvalidInput, "invalid max_amount")
+		}
+		filter.MaxAmount = &amt
+	}
+
+	return filter, nil
 }
 
 // GetTransactionByID handles the retrieval of a specific transaction

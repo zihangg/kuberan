@@ -100,8 +100,8 @@ func (s *transactionService) createTransactionWithDB(
 	return transaction, nil
 }
 
-// GetAccountTransactions retrieves a paginated list of transactions for a specific account.
-func (s *transactionService) GetAccountTransactions(userID, accountID uint, page pagination.PageRequest) (*pagination.PageResponse[models.Transaction], error) {
+// GetAccountTransactions retrieves a paginated, filtered list of transactions for a specific account.
+func (s *transactionService) GetAccountTransactions(userID, accountID uint, page pagination.PageRequest, filter TransactionFilter) (*pagination.PageResponse[models.Transaction], error) {
 	// First verify the account belongs to the user
 	_, err := s.accountService.GetAccountByID(userID, accountID)
 	if err != nil {
@@ -110,8 +110,10 @@ func (s *transactionService) GetAccountTransactions(userID, accountID uint, page
 
 	page.Defaults()
 
-	var totalItems int64
 	base := s.db.Model(&models.Transaction{}).Where("user_id = ? AND account_id = ?", userID, accountID)
+	base = applyTransactionFilters(base, filter)
+
+	var totalItems int64
 	if err := base.Count(&totalItems).Error; err != nil {
 		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
@@ -125,6 +127,28 @@ func (s *transactionService) GetAccountTransactions(userID, accountID uint, page
 
 	result := pagination.NewPageResponse(transactions, page.Page, page.PageSize, totalItems)
 	return &result, nil
+}
+
+func applyTransactionFilters(q *gorm.DB, f TransactionFilter) *gorm.DB {
+	if f.FromDate != nil {
+		q = q.Where("date >= ?", *f.FromDate)
+	}
+	if f.ToDate != nil {
+		q = q.Where("date <= ?", *f.ToDate)
+	}
+	if f.Type != nil {
+		q = q.Where("type = ?", *f.Type)
+	}
+	if f.CategoryID != nil {
+		q = q.Where("category_id = ?", *f.CategoryID)
+	}
+	if f.MinAmount != nil {
+		q = q.Where("amount >= ?", *f.MinAmount)
+	}
+	if f.MaxAmount != nil {
+		q = q.Where("amount <= ?", *f.MaxAmount)
+	}
+	return q
 }
 
 // GetTransactionByID retrieves a transaction by ID for a specific user
