@@ -152,6 +152,7 @@ func run() error {
 	// Transaction routes
 	transactions := protected.Group("/transactions")
 	transactions.POST("", transactionHandler.CreateTransaction)
+	transactions.POST("/transfer", transactionHandler.CreateTransfer)
 	transactions.GET("/:id", transactionHandler.GetTransactionByID)
 	transactions.DELETE("/:id", transactionHandler.DeleteTransaction)
 

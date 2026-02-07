@@ -100,6 +100,70 @@ func (s *transactionService) createTransactionWithDB(
 	return transaction, nil
 }
 
+// CreateTransfer creates an account-to-account transfer within a single DB transaction.
+func (s *transactionService) CreateTransfer(
+	userID, fromAccountID, toAccountID uint,
+	amount int64,
+	description string,
+	date time.Time,
+) (*models.Transaction, error) {
+	if fromAccountID == toAccountID {
+		return nil, apperrors.ErrSameAccountTransfer
+	}
+
+	if amount <= 0 {
+		return nil, apperrors.WithMessage(apperrors.ErrInvalidInput, "amount must be greater than zero")
+	}
+
+	if date.IsZero() {
+		date = time.Now()
+	}
+
+	fromAccount, err := s.accountService.GetAccountByID(userID, fromAccountID)
+	if err != nil {
+		return nil, err
+	}
+
+	toAccount, err := s.accountService.GetAccountByID(userID, toAccountID)
+	if err != nil {
+		return nil, err
+	}
+
+	if fromAccount.Balance < amount {
+		return nil, apperrors.ErrInsufficientBalance
+	}
+
+	var result *models.Transaction
+	err = s.db.Transaction(func(tx *gorm.DB) error {
+		transaction := &models.Transaction{
+			UserID:      userID,
+			AccountID:   fromAccountID,
+			ToAccountID: &toAccountID,
+			Type:        models.TransactionTypeTransfer,
+			Amount:      amount,
+			Description: description,
+			Date:        date,
+		}
+		if txErr := tx.Create(transaction).Error; txErr != nil {
+			return apperrors.Wrap(apperrors.ErrInternalServer, txErr)
+		}
+
+		if txErr := s.accountService.UpdateAccountBalance(tx, fromAccount, models.TransactionTypeExpense, amount); txErr != nil {
+			return txErr
+		}
+		if txErr := s.accountService.UpdateAccountBalance(tx, toAccount, models.TransactionTypeIncome, amount); txErr != nil {
+			return txErr
+		}
+
+		result = transaction
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
 // GetAccountTransactions retrieves a paginated, filtered list of transactions for a specific account.
 func (s *transactionService) GetAccountTransactions(userID, accountID uint, page pagination.PageRequest, filter TransactionFilter) (*pagination.PageResponse[models.Transaction], error) {
 	// First verify the account belongs to the user
@@ -165,41 +229,41 @@ func (s *transactionService) GetTransactionByID(userID, transactionID uint) (*mo
 
 // DeleteTransaction deletes a transaction and updates the account balance
 func (s *transactionService) DeleteTransaction(userID, transactionID uint) error {
-	// Get the transaction
 	transaction, err := s.GetTransactionByID(userID, transactionID)
 	if err != nil {
 		return err
 	}
 
-	// Get the account
 	account, err := s.accountService.GetAccountByID(userID, transaction.AccountID)
 	if err != nil {
 		return err
 	}
 
-	// Within a database transaction to ensure consistency
 	return s.db.Transaction(func(tx *gorm.DB) error {
-		// Delete the transaction
-		if err := tx.Delete(transaction).Error; err != nil {
-			return apperrors.Wrap(apperrors.ErrInternalServer, err)
+		if txErr := tx.Delete(transaction).Error; txErr != nil {
+			return apperrors.Wrap(apperrors.ErrInternalServer, txErr)
 		}
 
-		// Reverse the effect on the account balance
-		var reverseType models.TransactionType
 		switch transaction.Type {
 		case models.TransactionTypeIncome:
-			reverseType = models.TransactionTypeExpense
+			return s.accountService.UpdateAccountBalance(tx, account, models.TransactionTypeExpense, transaction.Amount)
 		case models.TransactionTypeExpense:
-			reverseType = models.TransactionTypeIncome
+			return s.accountService.UpdateAccountBalance(tx, account, models.TransactionTypeIncome, transaction.Amount)
+		case models.TransactionTypeTransfer:
+			if transaction.ToAccountID == nil {
+				return apperrors.ErrInvalidTransactionType
+			}
+			toAccount, toErr := s.accountService.GetAccountByID(userID, *transaction.ToAccountID)
+			if toErr != nil {
+				return toErr
+			}
+			// Reverse: add back to from-account, subtract from to-account
+			if txErr := s.accountService.UpdateAccountBalance(tx, account, models.TransactionTypeIncome, transaction.Amount); txErr != nil {
+				return txErr
+			}
+			return s.accountService.UpdateAccountBalance(tx, toAccount, models.TransactionTypeExpense, transaction.Amount)
 		default:
 			return apperrors.ErrInvalidTransactionType
 		}
-
-		// Update account balance
-		if err := s.accountService.UpdateAccountBalance(tx, account, reverseType, transaction.Amount); err != nil {
-			return err
-		}
-
-		return nil
 	})
 }

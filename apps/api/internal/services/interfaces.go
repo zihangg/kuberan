@@ -52,6 +52,7 @@ type TransactionFilter struct {
 // TransactionServicer defines the contract for transaction-related business logic.
 type TransactionServicer interface {
 	CreateTransaction(userID, accountID uint, categoryID *uint, transactionType models.TransactionType, amount int64, description string, date time.Time) (*models.Transaction, error)
+	CreateTransfer(userID, fromAccountID, toAccountID uint, amount int64, description string, date time.Time) (*models.Transaction, error)
 	GetAccountTransactions(userID, accountID uint, page pagination.PageRequest, filter TransactionFilter) (*pagination.PageResponse[models.Transaction], error)
 	GetTransactionByID(userID, transactionID uint) (*models.Transaction, error)
 	DeleteTransaction(userID, transactionID uint) error

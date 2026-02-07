@@ -97,6 +97,70 @@ func (h *TransactionHandler) CreateTransaction(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{"transaction": transaction})
 }
 
+// CreateTransferRequest represents the request payload for creating a transfer
+type CreateTransferRequest struct {
+	FromAccountID uint       `json:"from_account_id" binding:"required"`
+	ToAccountID   uint       `json:"to_account_id" binding:"required"`
+	Amount        int64      `json:"amount" binding:"required,gt=0"`
+	Description   string     `json:"description" binding:"max=500"`
+	Date          *time.Time `json:"date"`
+}
+
+// CreateTransfer handles the creation of a transfer between two accounts
+// @Summary     Create a transfer
+// @Description Transfer funds from one account to another
+// @Tags        transactions
+// @Accept      json
+// @Produce     json
+// @Security    BearerAuth
+// @Param       request body CreateTransferRequest true "Transfer details"
+// @Success     201 {object} TransactionResponse "Transfer created"
+// @Failure     400 {object} ErrorResponse "Invalid input or insufficient balance"
+// @Failure     401 {object} ErrorResponse "Unauthorized"
+// @Failure     404 {object} ErrorResponse "Account not found"
+// @Failure     500 {object} ErrorResponse "Server error"
+// @Router      /transactions/transfer [post]
+func (h *TransactionHandler) CreateTransfer(c *gin.Context) {
+	userID, err := getUserID(c)
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	var req CreateTransferRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, err.Error()))
+		return
+	}
+
+	transferDate := time.Now()
+	if req.Date != nil {
+		transferDate = *req.Date
+	}
+
+	transaction, err := h.transactionService.CreateTransfer(
+		userID,
+		req.FromAccountID,
+		req.ToAccountID,
+		req.Amount,
+		req.Description,
+		transferDate,
+	)
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	h.auditService.Log(userID, "CREATE_TRANSFER", "transaction", transaction.ID, c.ClientIP(),
+		map[string]interface{}{
+			"from_account_id": req.FromAccountID,
+			"to_account_id":   req.ToAccountID,
+			"amount":          req.Amount,
+		})
+
+	c.JSON(http.StatusCreated, gin.H{"transaction": transaction})
+}
+
 // GetAccountTransactions handles the retrieval of transactions for a specific account
 // @Summary     Get account transactions
 // @Description Get a paginated list of transactions for a specific account with optional filters
