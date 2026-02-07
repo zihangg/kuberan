@@ -19,11 +19,11 @@ type Investment struct {
 	AccountID    uint      `gorm:"not null" json:"account_id"`
 	Symbol       string    `gorm:"not null" json:"symbol"` // Stock/ETF symbol or unique identifier
 	AssetType    AssetType `gorm:"not null" json:"asset_type"`
-	Name         string    `gorm:"not null" json:"name"`       // Full name of the investment
-	Quantity     float64   `gorm:"not null" json:"quantity"`   // Number of shares/units held
-	CostBasis    float64   `gorm:"not null" json:"cost_basis"` // Total cost basis for this holding
-	CurrentPrice float64   `json:"current_price"`              // Current market price per unit
-	LastUpdated  time.Time `json:"last_updated"`               // Last time the price was updated
+	Name         string    `gorm:"not null" json:"name"`                   // Full name of the investment
+	Quantity     float64   `gorm:"not null" json:"quantity"`               // Number of shares/units held
+	CostBasis    int64     `gorm:"type:bigint;not null" json:"cost_basis"` // Total cost basis in cents
+	CurrentPrice int64     `gorm:"type:bigint" json:"current_price"`       // Current market price per unit in cents
+	LastUpdated  time.Time `json:"last_updated"`                           // Last time the price was updated
 	Currency     string    `gorm:"not null;default:'USD'" json:"currency"`
 
 	// Stock/ETF specific fields
@@ -64,9 +64,9 @@ type InvestmentTransaction struct {
 	Type         InvestmentTransactionType `gorm:"not null" json:"type"`
 	Date         time.Time                 `gorm:"not null" json:"date"`
 	Quantity     float64                   `gorm:"not null" json:"quantity"`
-	PricePerUnit float64                   `gorm:"not null" json:"price_per_unit"`
-	TotalAmount  float64                   `gorm:"not null" json:"total_amount"`
-	Fee          float64                   `json:"fee"`
+	PricePerUnit int64                     `gorm:"type:bigint;not null" json:"price_per_unit"`
+	TotalAmount  int64                     `gorm:"type:bigint;not null" json:"total_amount"`
+	Fee          int64                     `gorm:"type:bigint" json:"fee"`
 	Notes        string                    `json:"notes"`
 
 	// For splits

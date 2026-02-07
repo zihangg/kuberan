@@ -21,7 +21,7 @@ func NewAccountService(db *gorm.DB) *AccountService {
 }
 
 // CreateCashAccount creates a new cash account for a user
-func (s *AccountService) CreateCashAccount(userID uint, name, description, currency string, initialBalance float64) (*models.Account, error) {
+func (s *AccountService) CreateCashAccount(userID uint, name, description, currency string, initialBalance int64) (*models.Account, error) {
 	// Validate input
 	if name == "" {
 		return nil, apperrors.WithMessage(apperrors.ErrInvalidInput, "account name is required")
@@ -124,7 +124,7 @@ func (s *AccountService) UpdateCashAccount(userID, accountID uint, name, descrip
 }
 
 // UpdateAccountBalance updates the balance of an account based on transaction
-func (s *AccountService) UpdateAccountBalance(tx *gorm.DB, account *models.Account, transactionType models.TransactionType, amount float64) error {
+func (s *AccountService) UpdateAccountBalance(tx *gorm.DB, account *models.Account, transactionType models.TransactionType, amount int64) error {
 	// Update the balance based on transaction type
 	switch transactionType {
 	case models.TransactionTypeIncome:

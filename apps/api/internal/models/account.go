@@ -22,7 +22,7 @@ type Account struct {
 	Name        string      `gorm:"not null" json:"name"`
 	Type        AccountType `gorm:"not null" json:"type"`
 	Description string      `json:"description"`
-	Balance     float64     `gorm:"not null;default:0" json:"balance"`
+	Balance     int64       `gorm:"type:bigint;not null;default:0" json:"balance"`
 	Currency    string      `gorm:"not null;default:'USD'" json:"currency"`
 	IsActive    bool        `gorm:"default:true" json:"is_active"`
 
@@ -61,9 +61,9 @@ func (a *Account) CalculateInvestmentBalance(tx *gorm.DB) error {
 		return nil
 	}
 
-	var total float64
+	var total int64
 	for i := range a.Investments {
-		total += a.Investments[i].Quantity * a.Investments[i].CurrentPrice
+		total += int64(a.Investments[i].Quantity * float64(a.Investments[i].CurrentPrice))
 	}
 	a.Balance = total
 	return tx.Save(a).Error

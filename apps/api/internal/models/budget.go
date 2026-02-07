@@ -16,7 +16,7 @@ type Budget struct {
 	UserID     uint         `gorm:"not null" json:"user_id"`
 	CategoryID uint         `gorm:"not null" json:"category_id"`
 	Name       string       `gorm:"not null" json:"name"`
-	Amount     float64      `gorm:"not null" json:"amount"`
+	Amount     int64        `gorm:"type:bigint;not null" json:"amount"`
 	Period     BudgetPeriod `gorm:"not null" json:"period"`
 	StartDate  time.Time    `gorm:"not null" json:"start_date"`
 	EndDate    *time.Time   `json:"end_date,omitempty"`

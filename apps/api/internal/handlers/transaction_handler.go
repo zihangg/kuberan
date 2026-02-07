@@ -27,7 +27,7 @@ type CreateTransactionRequest struct {
 	AccountID   uint                   `json:"account_id" binding:"required"`
 	CategoryID  *uint                  `json:"category_id"`
 	Type        models.TransactionType `json:"type" binding:"required,transaction_type"`
-	Amount      float64                `json:"amount" binding:"required,gt=0"`
+	Amount      int64                  `json:"amount" binding:"required,gt=0"`
 	Description string                 `json:"description" binding:"max=500"`
 	Date        *time.Time             `json:"date"`
 }
@@ -39,7 +39,7 @@ type TransactionResponse struct {
 	AccountID   uint                   `json:"account_id"`
 	CategoryID  *uint                  `json:"category_id,omitempty"`
 	Type        models.TransactionType `json:"type"`
-	Amount      float64                `json:"amount"`
+	Amount      int64                  `json:"amount"`
 	Description string                 `json:"description"`
 	Date        time.Time              `json:"date"`
 }

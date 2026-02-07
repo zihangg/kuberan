@@ -30,7 +30,7 @@ func (s *TransactionService) CreateTransaction(
 	accountID uint,
 	categoryID *uint,
 	transactionType models.TransactionType,
-	amount float64,
+	amount int64,
 	description string,
 	date time.Time,
 ) (*models.Transaction, error) {
@@ -73,7 +73,7 @@ func (s *TransactionService) createTransactionWithDB(
 	account *models.Account,
 	categoryID *uint,
 	transactionType models.TransactionType,
-	amount float64,
+	amount int64,
 	description string,
 	date time.Time,
 ) (*models.Transaction, error) {

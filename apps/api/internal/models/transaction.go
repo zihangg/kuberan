@@ -19,7 +19,7 @@ type Transaction struct {
 	AccountID   uint            `gorm:"not null" json:"account_id"`
 	CategoryID  *uint           `json:"category_id,omitempty"`
 	Type        TransactionType `gorm:"not null" json:"type"`
-	Amount      float64         `gorm:"not null" json:"amount"`
+	Amount      int64           `gorm:"type:bigint;not null" json:"amount"`
 	Description string          `json:"description"`
 	Date        time.Time       `gorm:"not null" json:"date"`
 

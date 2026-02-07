@@ -23,10 +23,10 @@ func NewAccountHandler(accountService *services.AccountService) *AccountHandler 
 
 // CreateCashAccountRequest represents the request payload for creating a cash account
 type CreateCashAccountRequest struct {
-	Name           string  `json:"name" binding:"required,min=1,max=100"`
-	Description    string  `json:"description" binding:"max=500"`
-	Currency       string  `json:"currency" binding:"omitempty,iso4217"`
-	InitialBalance float64 `json:"initial_balance" binding:"gte=0"`
+	Name           string `json:"name" binding:"required,min=1,max=100"`
+	Description    string `json:"description" binding:"max=500"`
+	Currency       string `json:"currency" binding:"omitempty,iso4217"`
+	InitialBalance int64  `json:"initial_balance" binding:"gte=0"`
 }
 
 // UpdateCashAccountRequest represents the request payload for updating a cash account
@@ -42,7 +42,7 @@ type AccountResponse struct {
 	Name        string             `json:"name"`
 	Type        models.AccountType `json:"type"`
 	Description string             `json:"description"`
-	Balance     float64            `json:"balance"`
+	Balance     int64              `json:"balance"`
 	Currency    string             `json:"currency"`
 	IsActive    bool               `json:"is_active"`
 }
