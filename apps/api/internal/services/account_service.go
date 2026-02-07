@@ -134,4 +134,4 @@ func (s *AccountService) UpdateAccountBalance(tx *gorm.DB, account *models.Accou
 
 	// Save the updated balance
 	return tx.Model(account).Update("balance", account.Balance).Error
-} 
+}

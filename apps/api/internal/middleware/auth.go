@@ -29,10 +29,10 @@ type JWTClaims struct {
 func GenerateToken(user *models.User) (string, error) {
 	// Get configuration
 	cfg := config.Get()
-	
+
 	// Set expiration time
 	expirationTime := time.Now().Add(cfg.JWTExpirationDur)
-	
+
 	claims := &JWTClaims{
 		UserID: user.ID,
 		Email:  user.Email,
@@ -94,4 +94,4 @@ func AuthMiddleware() gin.HandlerFunc {
 		c.Set("email", claims.Email)
 		c.Next()
 	}
-} 
+}

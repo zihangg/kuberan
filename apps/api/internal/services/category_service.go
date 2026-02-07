@@ -193,4 +193,4 @@ func (s *CategoryService) DeleteCategory(userID, categoryID uint) error {
 
 	// Delete the category
 	return s.db.Delete(category).Error
-} 
+}

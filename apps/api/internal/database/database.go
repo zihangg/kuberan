@@ -30,7 +30,7 @@ func (m *Manager) Migrate() error {
 	logger.Get().Info("Running database migrations...")
 
 	// List all models to migrate
-	models := []interface{}{
+	allModels := []interface{}{
 		&models.User{},
 		&models.Account{},
 		&models.Category{},
@@ -41,7 +41,7 @@ func (m *Manager) Migrate() error {
 	}
 
 	// Run migrations
-	for _, model := range models {
+	for _, model := range allModels {
 		if err := m.db.AutoMigrate(model); err != nil {
 			return fmt.Errorf("failed to migrate %T: %w", model, err)
 		}
@@ -54,4 +54,4 @@ func (m *Manager) Migrate() error {
 // DB returns the underlying GORM database instance
 func (m *Manager) DB() *gorm.DB {
 	return m.db
-} 
+}

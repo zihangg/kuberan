@@ -1,0 +1,65 @@
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  default: standard
+  enable:
+    - gocritic
+    - revive
+    - misspell
+    - unconvert
+    - unparam
+    - bodyclose
+    - nilerr
+    - copyloopvar
+    - sqlclosecheck
+  settings:
+    revive:
+      rules:
+        - name: exported
+          arguments:
+            - "checkPrivateReceivers"
+            - "sayRepetitiveInsteadOfStutters"
+        - name: unused-parameter
+          disabled: true
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - style
+        - performance
+      disabled-checks:
+        - ifElseChain
+        - hugeParam
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+    rules:
+      - path: _test\.go
+        linters:
+          - revive
+        text: "dot-imports"
+      - path: _test\.go
+        linters:
+          - revive
+        text: "exported"
+      - path: _test\.go
+        linters:
+          - unparam
+    paths:
+      - internal/docs/
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  exclusions:
+    generated: strict
+    paths:
+      - internal/docs/
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0

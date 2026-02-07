@@ -23,12 +23,12 @@ func NewTransactionHandler(transactionService *services.TransactionService) *Tra
 
 // CreateTransactionRequest represents the request payload for creating a transaction
 type CreateTransactionRequest struct {
-	AccountID    uint                   `json:"account_id" binding:"required"`
-	CategoryID   *uint                  `json:"category_id"`
-	Type         models.TransactionType `json:"type" binding:"required"`
-	Amount       float64                `json:"amount" binding:"required,gt=0"`
-	Description  string                 `json:"description"`
-	Date         *time.Time             `json:"date"`
+	AccountID   uint                   `json:"account_id" binding:"required"`
+	CategoryID  *uint                  `json:"category_id"`
+	Type        models.TransactionType `json:"type" binding:"required"`
+	Amount      float64                `json:"amount" binding:"required,gt=0"`
+	Description string                 `json:"description"`
+	Date        *time.Time             `json:"date"`
 }
 
 // TransactionResponse represents a transaction in the response
@@ -209,4 +209,4 @@ func (h *TransactionHandler) DeleteTransaction(c *gin.Context) {
 // MessageResponse represents a simple message response
 type MessageResponse struct {
 	Message string `json:"message"`
-} 
+}

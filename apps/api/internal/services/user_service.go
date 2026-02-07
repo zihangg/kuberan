@@ -84,4 +84,4 @@ func (s *UserService) GetUserByID(id uint) (*models.User, error) {
 func (s *UserService) VerifyPassword(user *models.User, password string) bool {
 	err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password))
 	return err == nil
-} 
+}

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"kuberan/internal/config"
 	"kuberan/internal/database"
 	"kuberan/internal/handlers"
@@ -35,29 +36,35 @@ func main() {
 	logger.Init(os.Getenv("ENV"))
 	defer logger.Sync()
 
+	if err := run(); err != nil {
+		logger.Get().Fatalf("Fatal error: %v", err)
+	}
+}
+
+func run() error {
 	log := logger.Get()
 
 	// Load configuration
 	appConfig, err := config.Load()
 	if err != nil {
-		log.Fatalf("Failed to load configuration: %v", err)
+		return fmt.Errorf("failed to load configuration: %w", err)
 	}
 
 	// Initialize database configuration
 	dbConfig, err := database.NewConfig()
 	if err != nil {
-		log.Fatalf("Failed to load database configuration: %v", err)
+		return fmt.Errorf("failed to load database configuration: %w", err)
 	}
 
 	// Create database manager
 	dbManager, err := database.NewManager(dbConfig)
 	if err != nil {
-		log.Fatalf("Failed to create database manager: %v", err)
+		return fmt.Errorf("failed to create database manager: %w", err)
 	}
 
 	// Run migrations
 	if err := dbManager.Migrate(); err != nil {
-		log.Fatalf("Failed to run database migrations: %v", err)
+		return fmt.Errorf("failed to run database migrations: %w", err)
 	}
 
 	// Initialize services
@@ -102,56 +109,42 @@ func main() {
 
 	// API v1 group
 	v1 := router.Group("/api/v1")
-	{
-		// Public routes
-		auth := v1.Group("/auth")
-		{
-			auth.POST("/register", authHandler.Register)
-			auth.POST("/login", authHandler.Login)
-		}
 
-		// Protected routes
-		protected := v1.Group("/")
-		protected.Use(middleware.AuthMiddleware())
-		{
-			// User profile
-			protected.GET("/profile", authHandler.GetProfile)
+	// Public routes
+	auth := v1.Group("/auth")
+	auth.POST("/register", authHandler.Register)
+	auth.POST("/login", authHandler.Login)
 
-			// Account routes
-			accounts := protected.Group("/accounts")
-			{
-				accounts.POST("/cash", accountHandler.CreateCashAccount)
-				accounts.GET("", accountHandler.GetUserAccounts)
-				accounts.GET("/:id", accountHandler.GetAccountByID)
-				accounts.PUT("/:id", accountHandler.UpdateCashAccount)
+	// Protected routes
+	protected := v1.Group("/")
+	protected.Use(middleware.AuthMiddleware())
 
-				// Transaction routes - change /:accountId to /transactions/:id to avoid conflict
-				accounts.GET("/:id/transactions", transactionHandler.GetAccountTransactions)
-			}
+	// User profile
+	protected.GET("/profile", authHandler.GetProfile)
 
-			// Transaction routes
-			transactions := protected.Group("/transactions")
-			{
-				transactions.POST("", transactionHandler.CreateTransaction)
-				transactions.GET("/:id", transactionHandler.GetTransactionByID)
-				transactions.DELETE("/:id", transactionHandler.DeleteTransaction)
-			}
+	// Account routes
+	accounts := protected.Group("/accounts")
+	accounts.POST("/cash", accountHandler.CreateCashAccount)
+	accounts.GET("", accountHandler.GetUserAccounts)
+	accounts.GET("/:id", accountHandler.GetAccountByID)
+	accounts.PUT("/:id", accountHandler.UpdateCashAccount)
+	accounts.GET("/:id/transactions", transactionHandler.GetAccountTransactions)
 
-			// Category routes
-			categories := protected.Group("/categories")
-			{
-				categories.POST("", categoryHandler.CreateCategory)
-				categories.GET("", categoryHandler.GetUserCategories)
-				categories.GET("/:id", categoryHandler.GetCategoryByID)
-				categories.PUT("/:id", categoryHandler.UpdateCategory)
-				categories.DELETE("/:id", categoryHandler.DeleteCategory)
-			}
-		}
-	}
+	// Transaction routes
+	transactions := protected.Group("/transactions")
+	transactions.POST("", transactionHandler.CreateTransaction)
+	transactions.GET("/:id", transactionHandler.GetTransactionByID)
+	transactions.DELETE("/:id", transactionHandler.DeleteTransaction)
+
+	// Category routes
+	categories := protected.Group("/categories")
+	categories.POST("", categoryHandler.CreateCategory)
+	categories.GET("", categoryHandler.GetUserCategories)
+	categories.GET("/:id", categoryHandler.GetCategoryByID)
+	categories.PUT("/:id", categoryHandler.UpdateCategory)
+	categories.DELETE("/:id", categoryHandler.DeleteCategory)
 
 	log.Infof("Starting Kuberan backend server on port %s", appConfig.Port)
 	log.Infof("Swagger documentation available at http://localhost:%s/swagger/index.html", appConfig.Port)
-	if err := router.Run(":" + appConfig.Port); err != nil {
-		log.Fatalf("Failed to start server: %v", err)
-	}
+	return router.Run(":" + appConfig.Port)
 }

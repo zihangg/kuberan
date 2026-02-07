@@ -36,14 +36,14 @@ type UpdateCashAccountRequest struct {
 
 // AccountResponse represents an account in the response
 type AccountResponse struct {
-	ID          uint              `json:"id"`
-	UserID      uint              `json:"user_id"`
-	Name        string            `json:"name"`
+	ID          uint               `json:"id"`
+	UserID      uint               `json:"user_id"`
+	Name        string             `json:"name"`
 	Type        models.AccountType `json:"type"`
-	Description string            `json:"description"`
-	Balance     float64           `json:"balance"`
-	Currency    string            `json:"currency"`
-	IsActive    bool              `json:"is_active"`
+	Description string             `json:"description"`
+	Balance     float64            `json:"balance"`
+	Currency    string             `json:"currency"`
+	IsActive    bool               `json:"is_active"`
 }
 
 // CreateCashAccount handles the creation of a new cash account
@@ -202,4 +202,4 @@ func (h *AccountHandler) UpdateCashAccount(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"account": account})
-} 
+}

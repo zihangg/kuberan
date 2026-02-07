@@ -27,14 +27,14 @@ type Account struct {
 	IsActive    bool        `gorm:"default:true" json:"is_active"`
 
 	// For investment accounts
-	Broker       string     `json:"broker,omitempty"`      // E.g., Robinhood, Fidelity, etc.
-	AccountNumber string    `json:"account_number,omitempty"`
-	Investments  []Investment `gorm:"foreignKey:AccountID" json:"investments,omitempty"`
-	
+	Broker        string       `json:"broker,omitempty"` // E.g., Robinhood, Fidelity, etc.
+	AccountNumber string       `json:"account_number,omitempty"`
+	Investments   []Investment `gorm:"foreignKey:AccountID" json:"investments,omitempty"`
+
 	// For debt accounts
-	InterestRate float64    `json:"interest_rate,omitempty"`
-	DueDate      time.Time  `json:"due_date,omitempty"`
-	
+	InterestRate float64   `json:"interest_rate,omitempty"`
+	DueDate      time.Time `json:"due_date,omitempty"`
+
 	// Relationships
 	Transactions []Transaction `gorm:"foreignKey:AccountID" json:"transactions,omitempty"`
 }
@@ -62,9 +62,9 @@ func (a *Account) CalculateInvestmentBalance(tx *gorm.DB) error {
 	}
 
 	var total float64
-	for _, investment := range a.Investments {
-		total += investment.Quantity * investment.CurrentPrice
+	for i := range a.Investments {
+		total += a.Investments[i].Quantity * a.Investments[i].CurrentPrice
 	}
 	a.Balance = total
 	return tx.Save(a).Error
-} 
+}

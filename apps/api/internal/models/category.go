@@ -18,10 +18,10 @@ type Category struct {
 	Icon        string       `json:"icon"`
 	Color       string       `json:"color"`
 	ParentID    *uint        `json:"parent_id,omitempty"`
-	
+
 	// Relationships
-	Parent      *Category     `gorm:"foreignKey:ParentID" json:"parent,omitempty"`
-	Children    []Category    `gorm:"foreignKey:ParentID" json:"children,omitempty"`
+	Parent       *Category     `gorm:"foreignKey:ParentID" json:"parent,omitempty"`
+	Children     []Category    `gorm:"foreignKey:ParentID" json:"children,omitempty"`
 	Transactions []Transaction `gorm:"foreignKey:CategoryID" json:"transactions,omitempty"`
 	Budgets      []Budget      `gorm:"foreignKey:CategoryID" json:"budgets,omitempty"`
-} 
+}

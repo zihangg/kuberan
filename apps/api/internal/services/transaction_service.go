@@ -151,11 +151,12 @@ func (s *TransactionService) DeleteTransaction(userID, transactionID uint) error
 
 		// Reverse the effect on the account balance
 		var reverseType models.TransactionType
-		if transaction.Type == models.TransactionTypeIncome {
+		switch transaction.Type {
+		case models.TransactionTypeIncome:
 			reverseType = models.TransactionTypeExpense
-		} else if transaction.Type == models.TransactionTypeExpense {
+		case models.TransactionTypeExpense:
 			reverseType = models.TransactionTypeIncome
-		} else {
+		default:
 			return errors.New("unsupported transaction type for deletion")
 		}
 
@@ -166,4 +167,4 @@ func (s *TransactionService) DeleteTransaction(userID, transactionID uint) error
 
 		return nil
 	})
-} 
+}
