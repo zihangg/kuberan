@@ -84,6 +84,7 @@ func run() error {
 	router := gin.New()
 	router.Use(gin.Recovery())
 	router.Use(middleware.RequestLogging())
+	router.Use(middleware.ErrorHandler())
 
 	// CORS middleware
 	router.Use(func(c *gin.Context) {
