@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"time"
 
@@ -9,8 +10,21 @@ import (
 	"github.com/joho/godotenv"
 )
 
-// Config holds application configuration
+// Environment represents the application environment.
+type Environment string
+
+// Environment constants.
+const (
+	Development Environment = "development"
+	Staging     Environment = "staging"
+	Production  Environment = "production"
+)
+
+// Config holds application configuration.
 type Config struct {
+	// Environment
+	Env Environment
+
 	// Server
 	Port string
 
@@ -38,6 +52,9 @@ func Load() (*Config, error) {
 
 	// Get values from environment variables with defaults
 	config := &Config{
+		// Environment
+		Env: Environment(getEnv("ENV", string(Development))),
+
 		// Server
 		Port: getEnv("PORT", "8080"),
 
@@ -62,6 +79,13 @@ func Load() (*Config, error) {
 	}
 	config.JWTExpirationDur = expDur
 
+	// Validate production configuration
+	if config.Env == Production {
+		if err := config.validateProduction(); err != nil {
+			return nil, err
+		}
+	}
+
 	appConfig = config
 	return config, nil
 }
@@ -76,6 +100,20 @@ func Get() *Config {
 		}
 	}
 	return appConfig
+}
+
+// validateProduction checks that production-unsafe defaults are not used.
+func (c *Config) validateProduction() error {
+	unsafeSecrets := []string{"", "fallback-secret-key-for-dev-only", "your-super-secret-key-change-in-production"}
+	for _, s := range unsafeSecrets {
+		if c.JWTSecret == s {
+			return fmt.Errorf("JWT_SECRET must be explicitly set in production")
+		}
+	}
+	if c.DBPassword == "kuberan" {
+		return fmt.Errorf("DB_PASSWORD must not be the default in production")
+	}
+	return nil
 }
 
 // getEnv retrieves an environment variable or returns a default value

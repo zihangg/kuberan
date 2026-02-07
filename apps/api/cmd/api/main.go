@@ -84,6 +84,11 @@ func run() error {
 	// Register custom validators before routes
 	validator.Register()
 
+	// Set Gin mode based on environment
+	if appConfig.Env == config.Production {
+		gin.SetMode(gin.ReleaseMode)
+	}
+
 	// Initialize Gin router
 	router := gin.New()
 	router.Use(gin.Recovery())
