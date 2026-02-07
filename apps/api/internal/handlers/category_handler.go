@@ -7,6 +7,7 @@ import (
 
 	apperrors "kuberan/internal/errors"
 	"kuberan/internal/models"
+	"kuberan/internal/pagination"
 	"kuberan/internal/services"
 )
 
@@ -98,15 +99,18 @@ func (h *CategoryHandler) CreateCategory(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{"category": category})
 }
 
-// GetUserCategories handles the retrieval of all categories for a user
-// @Summary     Get all categories
-// @Description Get all transaction categories for the authenticated user
+// GetUserCategories handles the retrieval of categories for a user
+// @Summary     Get categories
+// @Description Get a paginated list of transaction categories for the authenticated user
 // @Tags        categories
 // @Accept      json
 // @Produce     json
 // @Security    BearerAuth
-// @Param       type query string false "Filter by category type (income/expense)"
-// @Success     200 {array} CategoryResponse "List of categories"
+// @Param       type      query string false "Filter by category type (income/expense)"
+// @Param       page      query int    false "Page number (default 1)"
+// @Param       page_size query int    false "Items per page (default 20, max 100)"
+// @Success     200 {object} pagination.PageResponse[models.Category] "Paginated categories"
+// @Failure     400 {object} ErrorResponse "Invalid input"
 // @Failure     401 {object} ErrorResponse "Unauthorized"
 // @Failure     500 {object} ErrorResponse "Server error"
 // @Router      /categories [get]
@@ -123,12 +127,18 @@ func (h *CategoryHandler) GetUserCategories(c *gin.Context) {
 		return
 	}
 
-	var categories []models.Category
+	var page pagination.PageRequest
+	if err := c.ShouldBindQuery(&page); err != nil {
+		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, err.Error()))
+		return
+	}
+
+	var result *pagination.PageResponse[models.Category]
 
 	if categoryType != "" {
-		categories, err = h.categoryService.GetUserCategoriesByType(userID, models.CategoryType(categoryType))
+		result, err = h.categoryService.GetUserCategoriesByType(userID, models.CategoryType(categoryType), page)
 	} else {
-		categories, err = h.categoryService.GetUserCategories(userID)
+		result, err = h.categoryService.GetUserCategories(userID, page)
 	}
 
 	if err != nil {
@@ -136,7 +146,7 @@ func (h *CategoryHandler) GetUserCategories(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"categories": categories})
+	c.JSON(http.StatusOK, result)
 }
 
 // GetCategoryByID handles the retrieval of a specific category

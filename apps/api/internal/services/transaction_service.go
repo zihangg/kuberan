@@ -8,6 +8,7 @@ import (
 
 	apperrors "kuberan/internal/errors"
 	"kuberan/internal/models"
+	"kuberan/internal/pagination"
 )
 
 // transactionService handles transaction-related business logic.
@@ -99,22 +100,31 @@ func (s *transactionService) createTransactionWithDB(
 	return transaction, nil
 }
 
-// GetAccountTransactions retrieves transactions for a specific account
-func (s *transactionService) GetAccountTransactions(userID, accountID uint) ([]models.Transaction, error) {
+// GetAccountTransactions retrieves a paginated list of transactions for a specific account.
+func (s *transactionService) GetAccountTransactions(userID, accountID uint, page pagination.PageRequest) (*pagination.PageResponse[models.Transaction], error) {
 	// First verify the account belongs to the user
 	_, err := s.accountService.GetAccountByID(userID, accountID)
 	if err != nil {
 		return nil, err
 	}
 
+	page.Defaults()
+
+	var totalItems int64
+	base := s.db.Model(&models.Transaction{}).Where("user_id = ? AND account_id = ?", userID, accountID)
+	if err := base.Count(&totalItems).Error; err != nil {
+		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
+	}
+
 	var transactions []models.Transaction
-	if err := s.db.Where("user_id = ? AND account_id = ?", userID, accountID).
+	if err := base.Scopes(pagination.Paginate(page)).
 		Order("date DESC").
 		Find(&transactions).Error; err != nil {
 		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
 
-	return transactions, nil
+	result := pagination.NewPageResponse(transactions, page.Page, page.PageSize, totalItems)
+	return &result, nil
 }
 
 // GetTransactionByID retrieves a transaction by ID for a specific user

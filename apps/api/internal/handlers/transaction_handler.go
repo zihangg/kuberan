@@ -8,6 +8,7 @@ import (
 
 	apperrors "kuberan/internal/errors"
 	"kuberan/internal/models"
+	"kuberan/internal/pagination"
 	"kuberan/internal/services"
 )
 
@@ -97,13 +98,15 @@ func (h *TransactionHandler) CreateTransaction(c *gin.Context) {
 
 // GetAccountTransactions handles the retrieval of transactions for a specific account
 // @Summary     Get account transactions
-// @Description Get all transactions for a specific account
+// @Description Get a paginated list of transactions for a specific account
 // @Tags        accounts,transactions
 // @Accept      json
 // @Produce     json
 // @Security    BearerAuth
-// @Param       id path int true "Account ID"
-// @Success     200 {array} TransactionResponse "List of transactions"
+// @Param       id        path int true  "Account ID"
+// @Param       page      query int false "Page number (default 1)"
+// @Param       page_size query int false "Items per page (default 20, max 100)"
+// @Success     200 {object} pagination.PageResponse[models.Transaction] "Paginated transactions"
 // @Failure     400 {object} ErrorResponse "Invalid account ID"
 // @Failure     401 {object} ErrorResponse "Unauthorized"
 // @Failure     404 {object} ErrorResponse "Account not found"
@@ -122,13 +125,19 @@ func (h *TransactionHandler) GetAccountTransactions(c *gin.Context) {
 		return
 	}
 
-	transactions, err := h.transactionService.GetAccountTransactions(userID, accountID)
+	var page pagination.PageRequest
+	if err := c.ShouldBindQuery(&page); err != nil {
+		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, err.Error()))
+		return
+	}
+
+	result, err := h.transactionService.GetAccountTransactions(userID, accountID, page)
 	if err != nil {
 		respondWithError(c, err)
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"transactions": transactions})
+	c.JSON(http.StatusOK, result)
 }
 
 // GetTransactionByID handles the retrieval of a specific transaction

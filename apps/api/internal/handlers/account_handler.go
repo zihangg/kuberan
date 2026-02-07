@@ -7,6 +7,7 @@ import (
 
 	apperrors "kuberan/internal/errors"
 	"kuberan/internal/models"
+	"kuberan/internal/pagination"
 	"kuberan/internal/services"
 )
 
@@ -91,14 +92,16 @@ func (h *AccountHandler) CreateCashAccount(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{"account": account})
 }
 
-// GetUserAccounts handles the retrieval of all accounts for a user
-// @Summary     Get all user accounts
-// @Description Get all accounts for the authenticated user
+// GetUserAccounts handles the retrieval of accounts for a user
+// @Summary     Get user accounts
+// @Description Get a paginated list of accounts for the authenticated user
 // @Tags        accounts
 // @Accept      json
 // @Produce     json
 // @Security    BearerAuth
-// @Success     200 {array} AccountResponse "List of accounts"
+// @Param       page      query int false "Page number (default 1)"
+// @Param       page_size query int false "Items per page (default 20, max 100)"
+// @Success     200 {object} pagination.PageResponse[models.Account] "Paginated accounts"
 // @Failure     401 {object} ErrorResponse "Unauthorized"
 // @Failure     500 {object} ErrorResponse "Server error"
 // @Router      /accounts [get]
@@ -109,13 +112,19 @@ func (h *AccountHandler) GetUserAccounts(c *gin.Context) {
 		return
 	}
 
-	accounts, err := h.accountService.GetUserAccounts(userID)
+	var page pagination.PageRequest
+	if err := c.ShouldBindQuery(&page); err != nil {
+		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, err.Error()))
+		return
+	}
+
+	result, err := h.accountService.GetUserAccounts(userID, page)
 	if err != nil {
 		respondWithError(c, err)
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"accounts": accounts})
+	c.JSON(http.StatusOK, result)
 }
 
 // GetAccountByID handles the retrieval of a specific account for a user

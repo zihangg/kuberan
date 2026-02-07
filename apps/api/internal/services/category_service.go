@@ -7,6 +7,7 @@ import (
 
 	apperrors "kuberan/internal/errors"
 	"kuberan/internal/models"
+	"kuberan/internal/pagination"
 )
 
 // categoryService handles category-related business logic.
@@ -75,22 +76,42 @@ func (s *categoryService) CreateCategory(
 	return category, nil
 }
 
-// GetUserCategories retrieves all categories for a user
-func (s *categoryService) GetUserCategories(userID uint) ([]models.Category, error) {
-	var categories []models.Category
-	if err := s.db.Where("user_id = ?", userID).Find(&categories).Error; err != nil {
+// GetUserCategories retrieves a paginated list of categories for a user.
+func (s *categoryService) GetUserCategories(userID uint, page pagination.PageRequest) (*pagination.PageResponse[models.Category], error) {
+	page.Defaults()
+
+	var totalItems int64
+	base := s.db.Model(&models.Category{}).Where("user_id = ?", userID)
+	if err := base.Count(&totalItems).Error; err != nil {
 		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
-	return categories, nil
+
+	var categories []models.Category
+	if err := base.Scopes(pagination.Paginate(page)).Find(&categories).Error; err != nil {
+		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
+	}
+
+	result := pagination.NewPageResponse(categories, page.Page, page.PageSize, totalItems)
+	return &result, nil
 }
 
-// GetUserCategoriesByType retrieves all categories of a specific type for a user
-func (s *categoryService) GetUserCategoriesByType(userID uint, categoryType models.CategoryType) ([]models.Category, error) {
-	var categories []models.Category
-	if err := s.db.Where("user_id = ? AND type = ?", userID, categoryType).Find(&categories).Error; err != nil {
+// GetUserCategoriesByType retrieves a paginated list of categories of a specific type for a user.
+func (s *categoryService) GetUserCategoriesByType(userID uint, categoryType models.CategoryType, page pagination.PageRequest) (*pagination.PageResponse[models.Category], error) {
+	page.Defaults()
+
+	var totalItems int64
+	base := s.db.Model(&models.Category{}).Where("user_id = ? AND type = ?", userID, categoryType)
+	if err := base.Count(&totalItems).Error; err != nil {
 		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
-	return categories, nil
+
+	var categories []models.Category
+	if err := base.Scopes(pagination.Paginate(page)).Find(&categories).Error; err != nil {
+		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
+	}
+
+	result := pagination.NewPageResponse(categories, page.Page, page.PageSize, totalItems)
+	return &result, nil
 }
 
 // GetCategoryByID retrieves a category by ID for a specific user

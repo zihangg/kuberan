@@ -8,6 +8,7 @@ import (
 
 	apperrors "kuberan/internal/errors"
 	"kuberan/internal/models"
+	"kuberan/internal/pagination"
 )
 
 // accountService handles account-related business logic.
@@ -70,13 +71,23 @@ func (s *accountService) CreateCashAccount(userID uint, name, description, curre
 	return account, nil
 }
 
-// GetUserAccounts retrieves all accounts for a user
-func (s *accountService) GetUserAccounts(userID uint) ([]models.Account, error) {
-	var accounts []models.Account
-	if err := s.db.Where("user_id = ? AND is_active = ?", userID, true).Find(&accounts).Error; err != nil {
+// GetUserAccounts retrieves a paginated list of accounts for a user.
+func (s *accountService) GetUserAccounts(userID uint, page pagination.PageRequest) (*pagination.PageResponse[models.Account], error) {
+	page.Defaults()
+
+	var totalItems int64
+	base := s.db.Model(&models.Account{}).Where("user_id = ? AND is_active = ?", userID, true)
+	if err := base.Count(&totalItems).Error; err != nil {
 		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
-	return accounts, nil
+
+	var accounts []models.Account
+	if err := base.Scopes(pagination.Paginate(page)).Find(&accounts).Error; err != nil {
+		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
+	}
+
+	result := pagination.NewPageResponse(accounts, page.Page, page.PageSize, totalItems)
+	return &result, nil
 }
 
 // GetAccountByID retrieves an account by ID for a specific user
