@@ -6,6 +6,7 @@ import (
 
 	"gorm.io/gorm"
 
+	apperrors "kuberan/internal/errors"
 	"kuberan/internal/models"
 )
 
@@ -35,11 +36,11 @@ func (s *TransactionService) CreateTransaction(
 ) (*models.Transaction, error) {
 	// Validate input
 	if amount <= 0 {
-		return nil, errors.New("amount must be greater than zero")
+		return nil, apperrors.WithMessage(apperrors.ErrInvalidInput, "amount must be greater than zero")
 	}
 
 	if accountID == 0 {
-		return nil, errors.New("account ID is required")
+		return nil, apperrors.WithMessage(apperrors.ErrInvalidInput, "account ID is required")
 	}
 
 	// Default date to now if not provided
@@ -88,7 +89,7 @@ func (s *TransactionService) createTransactionWithDB(
 	}
 
 	if err := tx.Create(transaction).Error; err != nil {
-		return nil, err
+		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
 
 	if err := s.accountService.UpdateAccountBalance(tx, account, transactionType, amount); err != nil {
@@ -110,7 +111,7 @@ func (s *TransactionService) GetAccountTransactions(userID, accountID uint) ([]m
 	if err := s.db.Where("user_id = ? AND account_id = ?", userID, accountID).
 		Order("date DESC").
 		Find(&transactions).Error; err != nil {
-		return nil, err
+		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
 
 	return transactions, nil
@@ -121,9 +122,9 @@ func (s *TransactionService) GetTransactionByID(userID, transactionID uint) (*mo
 	var transaction models.Transaction
 	if err := s.db.Where("id = ? AND user_id = ?", transactionID, userID).First(&transaction).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New("transaction not found")
+			return nil, apperrors.ErrTransactionNotFound
 		}
-		return nil, err
+		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
 	return &transaction, nil
 }
@@ -146,7 +147,7 @@ func (s *TransactionService) DeleteTransaction(userID, transactionID uint) error
 	return s.db.Transaction(func(tx *gorm.DB) error {
 		// Delete the transaction
 		if err := tx.Delete(transaction).Error; err != nil {
-			return err
+			return apperrors.Wrap(apperrors.ErrInternalServer, err)
 		}
 
 		// Reverse the effect on the account balance
@@ -157,7 +158,7 @@ func (s *TransactionService) DeleteTransaction(userID, transactionID uint) error
 		case models.TransactionTypeExpense:
 			reverseType = models.TransactionTypeIncome
 		default:
-			return errors.New("unsupported transaction type for deletion")
+			return apperrors.ErrInvalidTransactionType
 		}
 
 		// Update account balance

@@ -7,6 +7,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 
+	apperrors "kuberan/internal/errors"
 	"kuberan/internal/models"
 )
 
@@ -24,20 +25,20 @@ func NewUserService(db *gorm.DB) *UserService {
 func (s *UserService) CreateUser(email, password, firstName, lastName string) (*models.User, error) {
 	// Validate input
 	if email == "" || password == "" {
-		return nil, errors.New("email and password are required")
+		return nil, apperrors.WithMessage(apperrors.ErrInvalidInput, "email and password are required")
 	}
 
 	// Check if user with email exists
 	var count int64
 	s.db.Model(&models.User{}).Where("email = ?", email).Count(&count)
 	if count > 0 {
-		return nil, errors.New("user with this email already exists")
+		return nil, apperrors.ErrDuplicateEmail
 	}
 
 	// Hash password
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
-		return nil, err
+		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
 
 	// Create user
@@ -50,7 +51,7 @@ func (s *UserService) CreateUser(email, password, firstName, lastName string) (*
 	}
 
 	if err := s.db.Create(user).Error; err != nil {
-		return nil, err
+		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
 
 	return user, nil
@@ -61,9 +62,9 @@ func (s *UserService) GetUserByEmail(email string) (*models.User, error) {
 	var user models.User
 	if err := s.db.Where("email = ? AND is_active = ?", strings.ToLower(email), true).First(&user).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New("user not found")
+			return nil, apperrors.ErrUserNotFound
 		}
-		return nil, err
+		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
 	return &user, nil
 }
@@ -73,9 +74,9 @@ func (s *UserService) GetUserByID(id uint) (*models.User, error) {
 	var user models.User
 	if err := s.db.First(&user, id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New("user not found")
+			return nil, apperrors.ErrUserNotFound
 		}
-		return nil, err
+		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
 	return &user, nil
 }

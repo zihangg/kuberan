@@ -5,6 +5,7 @@ import (
 
 	"gorm.io/gorm"
 
+	apperrors "kuberan/internal/errors"
 	"kuberan/internal/models"
 )
 
@@ -30,7 +31,7 @@ func (s *CategoryService) CreateCategory(
 ) (*models.Category, error) {
 	// Validate input
 	if name == "" {
-		return nil, errors.New("category name is required")
+		return nil, apperrors.WithMessage(apperrors.ErrInvalidInput, "category name is required")
 	}
 
 	// Check if a category with the same name already exists for this user
@@ -38,11 +39,11 @@ func (s *CategoryService) CreateCategory(
 	if err := s.db.Model(&models.Category{}).
 		Where("user_id = ? AND name = ?", userID, name).
 		Count(&count).Error; err != nil {
-		return nil, err
+		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
 
 	if count > 0 {
-		return nil, errors.New("category with this name already exists")
+		return nil, apperrors.WithMessage(apperrors.ErrInvalidInput, "category with this name already exists")
 	}
 
 	// If parentID is provided, check that it exists and belongs to the user
@@ -50,9 +51,9 @@ func (s *CategoryService) CreateCategory(
 		var parent models.Category
 		if err := s.db.Where("id = ? AND user_id = ?", *parentID, userID).First(&parent).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return nil, errors.New("parent category not found")
+				return nil, apperrors.WithMessage(apperrors.ErrCategoryNotFound, "parent category not found")
 			}
-			return nil, err
+			return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
 		}
 	}
 
@@ -68,7 +69,7 @@ func (s *CategoryService) CreateCategory(
 	}
 
 	if err := s.db.Create(category).Error; err != nil {
-		return nil, err
+		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
 
 	return category, nil
@@ -78,7 +79,7 @@ func (s *CategoryService) CreateCategory(
 func (s *CategoryService) GetUserCategories(userID uint) ([]models.Category, error) {
 	var categories []models.Category
 	if err := s.db.Where("user_id = ?", userID).Find(&categories).Error; err != nil {
-		return nil, err
+		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
 	return categories, nil
 }
@@ -87,7 +88,7 @@ func (s *CategoryService) GetUserCategories(userID uint) ([]models.Category, err
 func (s *CategoryService) GetUserCategoriesByType(userID uint, categoryType models.CategoryType) ([]models.Category, error) {
 	var categories []models.Category
 	if err := s.db.Where("user_id = ? AND type = ?", userID, categoryType).Find(&categories).Error; err != nil {
-		return nil, err
+		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
 	return categories, nil
 }
@@ -97,9 +98,9 @@ func (s *CategoryService) GetCategoryByID(userID, categoryID uint) (*models.Cate
 	var category models.Category
 	if err := s.db.Where("id = ? AND user_id = ?", categoryID, userID).First(&category).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New("category not found")
+			return nil, apperrors.ErrCategoryNotFound
 		}
-		return nil, err
+		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
 	return &category, nil
 }
@@ -123,15 +124,15 @@ func (s *CategoryService) UpdateCategory(
 	// If parentID is provided, check that it exists, belongs to the user, and is not the category itself
 	if parentID != nil && *parentID != 0 {
 		if *parentID == categoryID {
-			return nil, errors.New("category cannot be its own parent")
+			return nil, apperrors.ErrSelfParentCategory
 		}
 
 		var parent models.Category
 		if err := s.db.Where("id = ? AND user_id = ?", *parentID, userID).First(&parent).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return nil, errors.New("parent category not found")
+				return nil, apperrors.WithMessage(apperrors.ErrCategoryNotFound, "parent category not found")
 			}
-			return nil, err
+			return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
 		}
 	}
 
@@ -156,7 +157,7 @@ func (s *CategoryService) UpdateCategory(
 	// Apply updates if any
 	if len(updates) > 0 {
 		if err := s.db.Model(category).Updates(updates).Error; err != nil {
-			return nil, err
+			return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
 		}
 	}
 
@@ -174,23 +175,26 @@ func (s *CategoryService) DeleteCategory(userID, categoryID uint) error {
 	// Check if there are any child categories
 	var childCount int64
 	if err := s.db.Model(&models.Category{}).Where("parent_id = ?", categoryID).Count(&childCount).Error; err != nil {
-		return err
+		return apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
 
 	if childCount > 0 {
-		return errors.New("cannot delete category with child categories")
+		return apperrors.ErrCategoryHasChildren
 	}
 
 	// Check if there are any transactions using this category
 	var transactionCount int64
 	if err := s.db.Model(&models.Transaction{}).Where("category_id = ?", categoryID).Count(&transactionCount).Error; err != nil {
-		return err
+		return apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
 
 	if transactionCount > 0 {
-		return errors.New("cannot delete category that is used by transactions")
+		return apperrors.ErrCategoryInUse
 	}
 
 	// Delete the category
-	return s.db.Delete(category).Error
+	if err := s.db.Delete(category).Error; err != nil {
+		return apperrors.Wrap(apperrors.ErrInternalServer, err)
+	}
+	return nil
 }

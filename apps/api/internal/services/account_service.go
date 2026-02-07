@@ -6,6 +6,7 @@ import (
 
 	"gorm.io/gorm"
 
+	apperrors "kuberan/internal/errors"
 	"kuberan/internal/models"
 )
 
@@ -23,7 +24,7 @@ func NewAccountService(db *gorm.DB) *AccountService {
 func (s *AccountService) CreateCashAccount(userID uint, name, description, currency string, initialBalance float64) (*models.Account, error) {
 	// Validate input
 	if name == "" {
-		return nil, errors.New("account name is required")
+		return nil, apperrors.WithMessage(apperrors.ErrInvalidInput, "account name is required")
 	}
 
 	if currency == "" {
@@ -43,7 +44,7 @@ func (s *AccountService) CreateCashAccount(userID uint, name, description, curre
 
 	err := s.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(account).Error; err != nil {
-			return err
+			return apperrors.Wrap(apperrors.ErrInternalServer, err)
 		}
 
 		if initialBalance > 0 {
@@ -56,7 +57,7 @@ func (s *AccountService) CreateCashAccount(userID uint, name, description, curre
 				Date:        time.Now(),
 			}
 			if err := tx.Create(transaction).Error; err != nil {
-				return err
+				return apperrors.Wrap(apperrors.ErrInternalServer, err)
 			}
 		}
 
@@ -73,7 +74,7 @@ func (s *AccountService) CreateCashAccount(userID uint, name, description, curre
 func (s *AccountService) GetUserAccounts(userID uint) ([]models.Account, error) {
 	var accounts []models.Account
 	if err := s.db.Where("user_id = ? AND is_active = ?", userID, true).Find(&accounts).Error; err != nil {
-		return nil, err
+		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
 	return accounts, nil
 }
@@ -83,9 +84,9 @@ func (s *AccountService) GetAccountByID(userID, accountID uint) (*models.Account
 	var account models.Account
 	if err := s.db.Where("id = ? AND user_id = ? AND is_active = ?", accountID, userID, true).First(&account).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New("account not found")
+			return nil, apperrors.ErrAccountNotFound
 		}
-		return nil, err
+		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
 	return &account, nil
 }
@@ -100,7 +101,7 @@ func (s *AccountService) UpdateCashAccount(userID, accountID uint, name, descrip
 
 	// Ensure it's a cash account
 	if account.Type != models.AccountTypeCash {
-		return nil, errors.New("not a cash account")
+		return nil, apperrors.ErrNotCashAccount
 	}
 
 	// Update fields if provided
@@ -115,7 +116,7 @@ func (s *AccountService) UpdateCashAccount(userID, accountID uint, name, descrip
 	// Apply updates if any
 	if len(updates) > 0 {
 		if err := s.db.Model(account).Updates(updates).Error; err != nil {
-			return nil, err
+			return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
 		}
 	}
 
@@ -133,5 +134,8 @@ func (s *AccountService) UpdateAccountBalance(tx *gorm.DB, account *models.Accou
 	}
 
 	// Save the updated balance
-	return tx.Model(account).Update("balance", account.Balance).Error
+	if err := tx.Model(account).Update("balance", account.Balance).Error; err != nil {
+		return apperrors.Wrap(apperrors.ErrInternalServer, err)
+	}
+	return nil
 }
