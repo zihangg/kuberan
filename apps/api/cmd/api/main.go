@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"kuberan/internal/config"
 	"kuberan/internal/database"
@@ -11,6 +12,9 @@ import (
 	"kuberan/internal/validator"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	swaggerFiles "github.com/swaggo/files"
@@ -191,7 +195,43 @@ func run() error {
 	categories.PUT("/:id", categoryHandler.UpdateCategory)
 	categories.DELETE("/:id", categoryHandler.DeleteCategory)
 
-	log.Infof("Starting Kuberan backend server on port %s", appConfig.Port)
-	log.Infof("Swagger documentation available at http://localhost:%s/swagger/index.html", appConfig.Port)
-	return router.Run(":" + appConfig.Port)
+	// Create HTTP server
+	srv := &http.Server{
+		Addr:    ":" + appConfig.Port,
+		Handler: router,
+	}
+
+	// Start server in goroutine
+	go func() {
+		log.Infof("Starting Kuberan backend server on port %s", appConfig.Port)
+		log.Infof("Swagger documentation available at http://localhost:%s/swagger/index.html", appConfig.Port)
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Failed to start server: %v", err)
+		}
+	}()
+
+	// Wait for interrupt signal for graceful shutdown
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+	log.Info("Shutting down server...")
+
+	// Give outstanding requests 5 seconds to complete
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Errorf("Server forced to shutdown: %v", err)
+	}
+
+	// Close database connections
+	sqlDB, dbErr := db.DB()
+	if dbErr == nil {
+		if err := sqlDB.Close(); err != nil {
+			log.Errorf("Error closing database: %v", err)
+		}
+	}
+
+	log.Info("Server exited cleanly")
+	return nil
 }
