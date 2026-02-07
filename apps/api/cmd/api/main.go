@@ -63,9 +63,11 @@ func run() error {
 		return fmt.Errorf("failed to create database manager: %w", err)
 	}
 
-	// Run migrations
-	if err := dbManager.Migrate(); err != nil {
-		return fmt.Errorf("failed to run database migrations: %w", err)
+	// Run migrations automatically in development; in production, run manually via cmd/migrate
+	if appConfig.Env != config.Production {
+		if err := dbManager.RunMigrations(); err != nil {
+			return fmt.Errorf("failed to run database migrations: %w", err)
+		}
 	}
 
 	// Initialize services
