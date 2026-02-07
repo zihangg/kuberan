@@ -38,6 +38,7 @@ func (m *Manager) Migrate() error {
 		&models.Budget{},
 		&models.Investment{},
 		&models.InvestmentTransaction{},
+		&models.AuditLog{},
 	}
 
 	// Run migrations

@@ -45,3 +45,8 @@ type TransactionServicer interface {
 	GetTransactionByID(userID, transactionID uint) (*models.Transaction, error)
 	DeleteTransaction(userID, transactionID uint) error
 }
+
+// AuditServicer defines the contract for audit logging.
+type AuditServicer interface {
+	Log(userID uint, action, resourceType string, resourceID uint, ipAddress string, changes map[string]interface{})
+}
