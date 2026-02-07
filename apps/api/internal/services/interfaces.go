@@ -78,6 +78,35 @@ type BudgetServicer interface {
 	GetBudgetProgress(userID, budgetID uint) (*BudgetProgress, error)
 }
 
+// PortfolioSummary contains aggregated portfolio data across all investment accounts.
+type PortfolioSummary struct {
+	TotalValue     int64                            `json:"total_value"`
+	TotalCostBasis int64                            `json:"total_cost_basis"`
+	TotalGainLoss  int64                            `json:"total_gain_loss"`
+	GainLossPct    float64                          `json:"gain_loss_pct"`
+	HoldingsByType map[models.AssetType]TypeSummary `json:"holdings_by_type"`
+}
+
+// TypeSummary contains summary data for a single asset type.
+type TypeSummary struct {
+	Value int64 `json:"value"`
+	Count int   `json:"count"`
+}
+
+// InvestmentServicer defines the contract for investment-related business logic.
+type InvestmentServicer interface {
+	AddInvestment(userID, accountID uint, symbol, name string, assetType models.AssetType, quantity float64, purchasePrice int64, currency string, extraFields map[string]interface{}) (*models.Investment, error)
+	GetAccountInvestments(userID, accountID uint, page pagination.PageRequest) (*pagination.PageResponse[models.Investment], error)
+	GetInvestmentByID(userID, investmentID uint) (*models.Investment, error)
+	UpdateInvestmentPrice(userID, investmentID uint, currentPrice int64) (*models.Investment, error)
+	GetPortfolio(userID uint) (*PortfolioSummary, error)
+	RecordBuy(userID, investmentID uint, date time.Time, quantity float64, pricePerUnit int64, fee int64, notes string) (*models.InvestmentTransaction, error)
+	RecordSell(userID, investmentID uint, date time.Time, quantity float64, pricePerUnit int64, fee int64, notes string) (*models.InvestmentTransaction, error)
+	RecordDividend(userID, investmentID uint, date time.Time, amount int64, dividendType, notes string) (*models.InvestmentTransaction, error)
+	RecordSplit(userID, investmentID uint, date time.Time, splitRatio float64, notes string) (*models.InvestmentTransaction, error)
+	GetInvestmentTransactions(userID, investmentID uint, page pagination.PageRequest) (*pagination.PageResponse[models.InvestmentTransaction], error)
+}
+
 // AuditServicer defines the contract for audit logging.
 type AuditServicer interface {
 	Log(userID uint, action, resourceType string, resourceID uint, ipAddress string, changes map[string]interface{})

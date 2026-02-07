@@ -77,6 +77,7 @@ func run() error {
 	categoryService := services.NewCategoryService(db)
 	transactionService := services.NewTransactionService(db, accountService)
 	budgetService := services.NewBudgetService(db)
+	investmentService := services.NewInvestmentService(db, accountService)
 	auditService := services.NewAuditService(db)
 
 	// Initialize handlers
@@ -85,6 +86,7 @@ func run() error {
 	categoryHandler := handlers.NewCategoryHandler(categoryService, auditService)
 	transactionHandler := handlers.NewTransactionHandler(transactionService, auditService)
 	budgetHandler := handlers.NewBudgetHandler(budgetService, auditService)
+	investmentHandler := handlers.NewInvestmentHandler(investmentService, auditService)
 
 	// Register custom validators before routes
 	validator.Register()
@@ -151,6 +153,7 @@ func run() error {
 	accounts.GET("/:id", accountHandler.GetAccountByID)
 	accounts.PUT("/:id", accountHandler.UpdateCashAccount)
 	accounts.GET("/:id/transactions", transactionHandler.GetAccountTransactions)
+	accounts.GET("/:id/investments", investmentHandler.GetAccountInvestments)
 
 	// Transaction routes
 	transactions := protected.Group("/transactions")
@@ -167,6 +170,18 @@ func run() error {
 	budgets.PUT("/:id", budgetHandler.UpdateBudget)
 	budgets.DELETE("/:id", budgetHandler.DeleteBudget)
 	budgets.GET("/:id/progress", budgetHandler.GetBudgetProgress)
+
+	// Investment routes
+	investments := protected.Group("/investments")
+	investments.POST("", investmentHandler.AddInvestment)
+	investments.GET("/portfolio", investmentHandler.GetPortfolio)
+	investments.GET("/:id", investmentHandler.GetInvestment)
+	investments.PUT("/:id/price", investmentHandler.UpdatePrice)
+	investments.POST("/:id/buy", investmentHandler.RecordBuy)
+	investments.POST("/:id/sell", investmentHandler.RecordSell)
+	investments.POST("/:id/dividend", investmentHandler.RecordDividend)
+	investments.POST("/:id/split", investmentHandler.RecordSplit)
+	investments.GET("/:id/transactions", investmentHandler.GetInvestmentTransactions)
 
 	// Category routes
 	categories := protected.Group("/categories")
