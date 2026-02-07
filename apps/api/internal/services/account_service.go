@@ -71,6 +71,34 @@ func (s *accountService) CreateCashAccount(userID uint, name, description, curre
 	return account, nil
 }
 
+// CreateInvestmentAccount creates a new investment account for a user.
+func (s *accountService) CreateInvestmentAccount(userID uint, name, description, currency, broker, accountNumber string) (*models.Account, error) {
+	if name == "" {
+		return nil, apperrors.WithMessage(apperrors.ErrInvalidInput, "account name is required")
+	}
+
+	if currency == "" {
+		currency = "USD"
+	}
+
+	account := &models.Account{
+		UserID:        userID,
+		Name:          name,
+		Type:          models.AccountTypeInvestment,
+		Description:   description,
+		Currency:      currency,
+		Broker:        broker,
+		AccountNumber: accountNumber,
+		IsActive:      true,
+	}
+
+	if err := s.db.Create(account).Error; err != nil {
+		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
+	}
+
+	return account, nil
+}
+
 // GetUserAccounts retrieves a paginated list of accounts for a user.
 func (s *accountService) GetUserAccounts(userID uint, page pagination.PageRequest) (*pagination.PageResponse[models.Account], error) {
 	page.Defaults()

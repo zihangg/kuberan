@@ -146,6 +146,7 @@ func run() error {
 	// Account routes
 	accounts := protected.Group("/accounts")
 	accounts.POST("/cash", accountHandler.CreateCashAccount)
+	accounts.POST("/investment", accountHandler.CreateInvestmentAccount)
 	accounts.GET("", accountHandler.GetUserAccounts)
 	accounts.GET("/:id", accountHandler.GetAccountByID)
 	accounts.PUT("/:id", accountHandler.UpdateCashAccount)

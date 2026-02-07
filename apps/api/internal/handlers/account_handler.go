@@ -30,6 +30,15 @@ type CreateCashAccountRequest struct {
 	InitialBalance int64  `json:"initial_balance" binding:"gte=0"`
 }
 
+// CreateInvestmentAccountRequest represents the request payload for creating an investment account.
+type CreateInvestmentAccountRequest struct {
+	Name          string `json:"name" binding:"required,min=1,max=100"`
+	Description   string `json:"description" binding:"max=500"`
+	Currency      string `json:"currency" binding:"omitempty,iso4217"`
+	Broker        string `json:"broker" binding:"max=100"`
+	AccountNumber string `json:"account_number" binding:"max=50"`
+}
+
 // UpdateCashAccountRequest represents the request payload for updating a cash account
 type UpdateCashAccountRequest struct {
 	Name        string `json:"name" binding:"omitempty,min=1,max=100"`
@@ -88,6 +97,51 @@ func (h *AccountHandler) CreateCashAccount(c *gin.Context) {
 
 	h.auditService.Log(userID, "CREATE_ACCOUNT", "account", account.ID, c.ClientIP(),
 		map[string]interface{}{"name": req.Name, "currency": req.Currency})
+
+	c.JSON(http.StatusCreated, gin.H{"account": account})
+}
+
+// CreateInvestmentAccount handles the creation of a new investment account.
+// @Summary     Create an investment account
+// @Description Create a new investment account for the authenticated user
+// @Tags        accounts
+// @Accept      json
+// @Produce     json
+// @Security    BearerAuth
+// @Param       request body CreateInvestmentAccountRequest true "Investment account details"
+// @Success     201 {object} AccountResponse "Account created"
+// @Failure     400 {object} ErrorResponse "Invalid input"
+// @Failure     401 {object} ErrorResponse "Unauthorized"
+// @Failure     500 {object} ErrorResponse "Server error"
+// @Router      /accounts/investment [post]
+func (h *AccountHandler) CreateInvestmentAccount(c *gin.Context) {
+	userID, err := getUserID(c)
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	var req CreateInvestmentAccountRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, err.Error()))
+		return
+	}
+
+	account, err := h.accountService.CreateInvestmentAccount(
+		userID,
+		req.Name,
+		req.Description,
+		req.Currency,
+		req.Broker,
+		req.AccountNumber,
+	)
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	h.auditService.Log(userID, "CREATE_ACCOUNT", "account", account.ID, c.ClientIP(),
+		map[string]interface{}{"name": req.Name, "type": "investment", "broker": req.Broker})
 
 	c.JSON(http.StatusCreated, gin.H{"account": account})
 }
