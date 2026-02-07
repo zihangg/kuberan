@@ -13,11 +13,12 @@ import (
 // AccountHandler handles account-related requests.
 type AccountHandler struct {
 	accountService services.AccountServicer
+	auditService   services.AuditServicer
 }
 
 // NewAccountHandler creates a new AccountHandler.
-func NewAccountHandler(accountService services.AccountServicer) *AccountHandler {
-	return &AccountHandler{accountService: accountService}
+func NewAccountHandler(accountService services.AccountServicer, auditService services.AuditServicer) *AccountHandler {
+	return &AccountHandler{accountService: accountService, auditService: auditService}
 }
 
 // CreateCashAccountRequest represents the request payload for creating a cash account
@@ -83,6 +84,9 @@ func (h *AccountHandler) CreateCashAccount(c *gin.Context) {
 		respondWithError(c, err)
 		return
 	}
+
+	h.auditService.Log(userID, "CREATE_ACCOUNT", "account", account.ID, c.ClientIP(),
+		map[string]interface{}{"name": req.Name, "currency": req.Currency})
 
 	c.JSON(http.StatusCreated, gin.H{"account": account})
 }
@@ -194,6 +198,9 @@ func (h *AccountHandler) UpdateCashAccount(c *gin.Context) {
 		respondWithError(c, err)
 		return
 	}
+
+	h.auditService.Log(userID, "UPDATE_ACCOUNT", "account", accountID, c.ClientIP(),
+		map[string]interface{}{"name": req.Name, "description": req.Description})
 
 	c.JSON(http.StatusOK, gin.H{"account": account})
 }

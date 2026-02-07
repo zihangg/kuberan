@@ -13,11 +13,12 @@ import (
 // CategoryHandler handles category-related requests.
 type CategoryHandler struct {
 	categoryService services.CategoryServicer
+	auditService    services.AuditServicer
 }
 
 // NewCategoryHandler creates a new CategoryHandler.
-func NewCategoryHandler(categoryService services.CategoryServicer) *CategoryHandler {
-	return &CategoryHandler{categoryService: categoryService}
+func NewCategoryHandler(categoryService services.CategoryServicer, auditService services.AuditServicer) *CategoryHandler {
+	return &CategoryHandler{categoryService: categoryService, auditService: auditService}
 }
 
 // CreateCategoryRequest represents the request payload for creating a category
@@ -90,6 +91,9 @@ func (h *CategoryHandler) CreateCategory(c *gin.Context) {
 		respondWithError(c, err)
 		return
 	}
+
+	h.auditService.Log(userID, "CREATE_CATEGORY", "category", category.ID, c.ClientIP(),
+		map[string]interface{}{"name": req.Name, "type": req.Type})
 
 	c.JSON(http.StatusCreated, gin.H{"category": category})
 }
@@ -219,6 +223,9 @@ func (h *CategoryHandler) UpdateCategory(c *gin.Context) {
 		return
 	}
 
+	h.auditService.Log(userID, "UPDATE_CATEGORY", "category", categoryID, c.ClientIP(),
+		map[string]interface{}{"name": req.Name})
+
 	c.JSON(http.StatusOK, gin.H{"category": category})
 }
 
@@ -253,6 +260,8 @@ func (h *CategoryHandler) DeleteCategory(c *gin.Context) {
 		respondWithError(c, err)
 		return
 	}
+
+	h.auditService.Log(userID, "DELETE_CATEGORY", "category", categoryID, c.ClientIP(), nil)
 
 	c.JSON(http.StatusOK, gin.H{"message": "Category deleted successfully"})
 }

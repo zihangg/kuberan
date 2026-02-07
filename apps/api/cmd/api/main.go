@@ -74,12 +74,13 @@ func run() error {
 	accountService := services.NewAccountService(db)
 	categoryService := services.NewCategoryService(db)
 	transactionService := services.NewTransactionService(db, accountService)
+	auditService := services.NewAuditService(db)
 
 	// Initialize handlers
-	authHandler := handlers.NewAuthHandler(userService)
-	accountHandler := handlers.NewAccountHandler(accountService)
-	categoryHandler := handlers.NewCategoryHandler(categoryService)
-	transactionHandler := handlers.NewTransactionHandler(transactionService)
+	authHandler := handlers.NewAuthHandler(userService, auditService)
+	accountHandler := handlers.NewAccountHandler(accountService, auditService)
+	categoryHandler := handlers.NewCategoryHandler(categoryService, auditService)
+	transactionHandler := handlers.NewTransactionHandler(transactionService, auditService)
 
 	// Register custom validators before routes
 	validator.Register()

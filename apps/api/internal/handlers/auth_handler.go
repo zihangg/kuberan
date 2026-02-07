@@ -13,12 +13,13 @@ import (
 
 // AuthHandler handles authentication-related requests.
 type AuthHandler struct {
-	userService services.UserServicer
+	userService  services.UserServicer
+	auditService services.AuditServicer
 }
 
 // NewAuthHandler creates a new AuthHandler.
-func NewAuthHandler(userService services.UserServicer) *AuthHandler {
-	return &AuthHandler{userService: userService}
+func NewAuthHandler(userService services.UserServicer, auditService services.AuditServicer) *AuthHandler {
+	return &AuthHandler{userService: userService, auditService: auditService}
 }
 
 // RegisterRequest represents the registration request payload
@@ -85,6 +86,8 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
+	h.auditService.Log(user.ID, "REGISTER", "user", user.ID, c.ClientIP(), nil)
+
 	c.JSON(http.StatusCreated, gin.H{
 		"access_token":  accessToken,
 		"refresh_token": refreshToken,
@@ -119,6 +122,8 @@ func (h *AuthHandler) Login(c *gin.Context) {
 
 	user, err := h.userService.AttemptLogin(req.Email, req.Password)
 	if err != nil {
+		h.auditService.Log(0, "LOGIN_FAILED", "user", 0, c.ClientIP(),
+			map[string]interface{}{"email": req.Email})
 		respondWithError(c, err)
 		return
 	}
@@ -128,6 +133,8 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		respondWithError(c, err)
 		return
 	}
+
+	h.auditService.Log(user.ID, "LOGIN", "user", user.ID, c.ClientIP(), nil)
 
 	c.JSON(http.StatusOK, gin.H{
 		"access_token":  accessToken,

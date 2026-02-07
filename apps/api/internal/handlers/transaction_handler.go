@@ -14,11 +14,12 @@ import (
 // TransactionHandler handles transaction-related requests.
 type TransactionHandler struct {
 	transactionService services.TransactionServicer
+	auditService       services.AuditServicer
 }
 
 // NewTransactionHandler creates a new TransactionHandler.
-func NewTransactionHandler(transactionService services.TransactionServicer) *TransactionHandler {
-	return &TransactionHandler{transactionService: transactionService}
+func NewTransactionHandler(transactionService services.TransactionServicer, auditService services.AuditServicer) *TransactionHandler {
+	return &TransactionHandler{transactionService: transactionService, auditService: auditService}
 }
 
 // CreateTransactionRequest represents the request payload for creating a transaction
@@ -87,6 +88,9 @@ func (h *TransactionHandler) CreateTransaction(c *gin.Context) {
 		respondWithError(c, err)
 		return
 	}
+
+	h.auditService.Log(userID, "CREATE_TRANSACTION", "transaction", transaction.ID, c.ClientIP(),
+		map[string]interface{}{"type": req.Type, "amount": req.Amount, "account_id": req.AccountID})
 
 	c.JSON(http.StatusCreated, gin.H{"transaction": transaction})
 }
@@ -194,6 +198,8 @@ func (h *TransactionHandler) DeleteTransaction(c *gin.Context) {
 		respondWithError(c, err)
 		return
 	}
+
+	h.auditService.Log(userID, "DELETE_TRANSACTION", "transaction", transactionID, c.ClientIP(), nil)
 
 	c.JSON(http.StatusOK, gin.H{"message": "Transaction deleted successfully"})
 }
