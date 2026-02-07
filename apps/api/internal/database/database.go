@@ -2,6 +2,7 @@ package database
 
 import (
 	"fmt"
+	"time"
 
 	"kuberan/internal/logger"
 
@@ -24,6 +25,14 @@ func NewManager(config *Config) (*Manager, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to database: %w", err)
 	}
+
+	sqlDB, err := db.DB()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get underlying DB: %w", err)
+	}
+	sqlDB.SetMaxIdleConns(10)
+	sqlDB.SetMaxOpenConns(100)
+	sqlDB.SetConnMaxLifetime(time.Hour)
 
 	pgURL := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=%s",
 		config.User, config.Password, config.Host, config.Port, config.DBName, config.SSLMode)

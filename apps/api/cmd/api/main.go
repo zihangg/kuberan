@@ -117,7 +117,12 @@ func run() error {
 
 	// Health check endpoint
 	router.GET("/api/health", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"status": "ok"})
+		sqlDB, err := db.DB()
+		if err != nil || sqlDB.Ping() != nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"status": "error", "database": "unavailable"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"status": "ok", "database": "connected"})
 	})
 
 	// API v1 group
