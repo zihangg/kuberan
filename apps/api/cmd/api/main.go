@@ -2,6 +2,11 @@ package main
 
 import (
 	"fmt"
+	"kuberan/internal/config"
+	"kuberan/internal/database"
+	"kuberan/internal/handlers"
+	"kuberan/internal/middleware"
+	"kuberan/internal/services"
 	"log"
 	"net/http"
 
@@ -9,25 +14,13 @@ import (
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
 
-	"kuberan/internal/config"
-	"kuberan/internal/database"
 	_ "kuberan/internal/docs" // Import swagger docs
-	"kuberan/internal/handlers"
-	"kuberan/internal/middleware"
-	"kuberan/internal/services"
 )
 
 // @title           Kuberan API
 // @version         1.0
 // @description     Kuberan is a personal finance application that allows users to efficiently manage their finances, make budgets, and track investments.
 // @termsOfService  http://swagger.io/terms/
-
-// @contact.name   API Support
-// @contact.url    http://www.kuberan.io/support
-// @contact.email  support@kuberan.io
-
-// @license.name  MIT
-// @license.url   https://opensource.org/licenses/MIT
 
 // @host      localhost:8080
 // @BasePath  /api/v1
@@ -82,12 +75,12 @@ func main() {
 		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
 		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-		
+
 		if c.Request.Method == "OPTIONS" {
 			c.AbortWithStatus(http.StatusNoContent)
 			return
 		}
-		
+
 		c.Next()
 	})
 
@@ -115,7 +108,7 @@ func main() {
 		{
 			// User profile
 			protected.GET("/profile", authHandler.GetProfile)
-			
+
 			// Account routes
 			accounts := protected.Group("/accounts")
 			{
@@ -123,11 +116,11 @@ func main() {
 				accounts.GET("", accountHandler.GetUserAccounts)
 				accounts.GET("/:id", accountHandler.GetAccountByID)
 				accounts.PUT("/:id", accountHandler.UpdateCashAccount)
-				
+
 				// Transaction routes - change /:accountId to /transactions/:id to avoid conflict
 				accounts.GET("/:id/transactions", transactionHandler.GetAccountTransactions)
 			}
-			
+
 			// Transaction routes
 			transactions := protected.Group("/transactions")
 			{
@@ -135,7 +128,7 @@ func main() {
 				transactions.GET("/:id", transactionHandler.GetTransactionByID)
 				transactions.DELETE("/:id", transactionHandler.DeleteTransaction)
 			}
-			
+
 			// Category routes
 			categories := protected.Group("/categories")
 			{
