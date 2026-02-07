@@ -53,8 +53,16 @@ func (s *TransactionService) CreateTransaction(
 		return nil, err
 	}
 
-	// Start a transaction
-	return s.createTransactionWithDB(s.db, userID, account, categoryID, transactionType, amount, description, date)
+	var result *models.Transaction
+	err = s.db.Transaction(func(tx *gorm.DB) error {
+		var txErr error
+		result, txErr = s.createTransactionWithDB(tx, userID, account, categoryID, transactionType, amount, description, date)
+		return txErr
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
 // createTransactionWithDB creates a transaction with a given database connection (useful for transactions)
@@ -79,22 +87,11 @@ func (s *TransactionService) createTransactionWithDB(
 		Date:        date,
 	}
 
-	// Within a database transaction to ensure consistency
-	err := tx.Transaction(func(tx *gorm.DB) error {
-		// Create the transaction
-		if err := tx.Create(transaction).Error; err != nil {
-			return err
-		}
+	if err := tx.Create(transaction).Error; err != nil {
+		return nil, err
+	}
 
-		// Update account balance
-		if err := s.accountService.UpdateAccountBalance(tx, account, transactionType, amount); err != nil {
-			return err
-		}
-
-		return nil
-	})
-
-	if err != nil {
+	if err := s.accountService.UpdateAccountBalance(tx, account, transactionType, amount); err != nil {
 		return nil, err
 	}
 

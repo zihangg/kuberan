@@ -41,26 +41,29 @@ func (s *AccountService) CreateCashAccount(userID uint, name, description, curre
 		IsActive:    true,
 	}
 
-	if err := s.db.Create(account).Error; err != nil {
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(account).Error; err != nil {
+			return err
+		}
+
+		if initialBalance > 0 {
+			transaction := &models.Transaction{
+				UserID:      userID,
+				AccountID:   account.ID,
+				Type:        models.TransactionTypeIncome,
+				Amount:      initialBalance,
+				Description: "Initial balance",
+				Date:        time.Now(),
+			}
+			if err := tx.Create(transaction).Error; err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+	if err != nil {
 		return nil, err
-	}
-
-	// If there's an initial balance, create an initial deposit transaction
-	if initialBalance > 0 {
-		transaction := &models.Transaction{
-			UserID:      userID,
-			AccountID:   account.ID,
-			Type:        models.TransactionTypeIncome,
-			Amount:      initialBalance,
-			Description: "Initial balance",
-			Date:        time.Now(),
-		}
-
-		if err := s.db.Create(transaction).Error; err != nil {
-			// If transaction creation fails, don't fail the account creation
-			// but log the error in a real application
-			return account, nil
-		}
 	}
 
 	return account, nil
