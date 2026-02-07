@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"net/http"
-	"strconv"
 
 	"github.com/gin-gonic/gin"
 
@@ -11,13 +10,13 @@ import (
 	"kuberan/internal/services"
 )
 
-// CategoryHandler handles category-related requests
+// CategoryHandler handles category-related requests.
 type CategoryHandler struct {
-	categoryService *services.CategoryService
+	categoryService services.CategoryServicer
 }
 
-// NewCategoryHandler creates a new CategoryHandler
-func NewCategoryHandler(categoryService *services.CategoryService) *CategoryHandler {
+// NewCategoryHandler creates a new CategoryHandler.
+func NewCategoryHandler(categoryService services.CategoryServicer) *CategoryHandler {
 	return &CategoryHandler{categoryService: categoryService}
 }
 
@@ -66,9 +65,9 @@ type CategoryResponse struct {
 // @Failure     500 {object} ErrorResponse "Server error"
 // @Router      /categories [post]
 func (h *CategoryHandler) CreateCategory(c *gin.Context) {
-	userID, exists := c.Get("userID")
-	if !exists {
-		respondWithError(c, apperrors.ErrUnauthorized)
+	userID, err := getUserID(c)
+	if err != nil {
+		respondWithError(c, err)
 		return
 	}
 
@@ -79,7 +78,7 @@ func (h *CategoryHandler) CreateCategory(c *gin.Context) {
 	}
 
 	category, err := h.categoryService.CreateCategory(
-		userID.(uint),
+		userID,
 		req.Name,
 		req.Type,
 		req.Description,
@@ -108,9 +107,9 @@ func (h *CategoryHandler) CreateCategory(c *gin.Context) {
 // @Failure     500 {object} ErrorResponse "Server error"
 // @Router      /categories [get]
 func (h *CategoryHandler) GetUserCategories(c *gin.Context) {
-	userID, exists := c.Get("userID")
-	if !exists {
-		respondWithError(c, apperrors.ErrUnauthorized)
+	userID, err := getUserID(c)
+	if err != nil {
+		respondWithError(c, err)
 		return
 	}
 
@@ -121,12 +120,11 @@ func (h *CategoryHandler) GetUserCategories(c *gin.Context) {
 	}
 
 	var categories []models.Category
-	var err error
 
 	if categoryType != "" {
-		categories, err = h.categoryService.GetUserCategoriesByType(userID.(uint), models.CategoryType(categoryType))
+		categories, err = h.categoryService.GetUserCategoriesByType(userID, models.CategoryType(categoryType))
 	} else {
-		categories, err = h.categoryService.GetUserCategories(userID.(uint))
+		categories, err = h.categoryService.GetUserCategories(userID)
 	}
 
 	if err != nil {
@@ -152,19 +150,19 @@ func (h *CategoryHandler) GetUserCategories(c *gin.Context) {
 // @Failure     500 {object} ErrorResponse "Server error"
 // @Router      /categories/{id} [get]
 func (h *CategoryHandler) GetCategoryByID(c *gin.Context) {
-	userID, exists := c.Get("userID")
-	if !exists {
-		respondWithError(c, apperrors.ErrUnauthorized)
-		return
-	}
-
-	categoryID, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	userID, err := getUserID(c)
 	if err != nil {
-		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, "Invalid category ID"))
+		respondWithError(c, err)
 		return
 	}
 
-	category, err := h.categoryService.GetCategoryByID(userID.(uint), uint(categoryID))
+	categoryID, err := parsePathID(c, "id")
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	category, err := h.categoryService.GetCategoryByID(userID, categoryID)
 	if err != nil {
 		respondWithError(c, err)
 		return
@@ -189,15 +187,15 @@ func (h *CategoryHandler) GetCategoryByID(c *gin.Context) {
 // @Failure     500 {object} ErrorResponse "Server error"
 // @Router      /categories/{id} [put]
 func (h *CategoryHandler) UpdateCategory(c *gin.Context) {
-	userID, exists := c.Get("userID")
-	if !exists {
-		respondWithError(c, apperrors.ErrUnauthorized)
+	userID, err := getUserID(c)
+	if err != nil {
+		respondWithError(c, err)
 		return
 	}
 
-	categoryID, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	categoryID, err := parsePathID(c, "id")
 	if err != nil {
-		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, "Invalid category ID"))
+		respondWithError(c, err)
 		return
 	}
 
@@ -208,8 +206,8 @@ func (h *CategoryHandler) UpdateCategory(c *gin.Context) {
 	}
 
 	category, err := h.categoryService.UpdateCategory(
-		userID.(uint),
-		uint(categoryID),
+		userID,
+		categoryID,
 		req.Name,
 		req.Description,
 		req.Icon,
@@ -239,19 +237,19 @@ func (h *CategoryHandler) UpdateCategory(c *gin.Context) {
 // @Failure     500 {object} ErrorResponse "Server error"
 // @Router      /categories/{id} [delete]
 func (h *CategoryHandler) DeleteCategory(c *gin.Context) {
-	userID, exists := c.Get("userID")
-	if !exists {
-		respondWithError(c, apperrors.ErrUnauthorized)
-		return
-	}
-
-	categoryID, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	userID, err := getUserID(c)
 	if err != nil {
-		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, "Invalid category ID"))
+		respondWithError(c, err)
 		return
 	}
 
-	if err := h.categoryService.DeleteCategory(userID.(uint), uint(categoryID)); err != nil {
+	categoryID, err := parsePathID(c, "id")
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	if err := h.categoryService.DeleteCategory(userID, categoryID); err != nil {
 		respondWithError(c, err)
 		return
 	}

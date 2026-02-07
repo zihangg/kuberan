@@ -2,12 +2,35 @@ package handlers
 
 import (
 	"errors"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 
 	apperrors "kuberan/internal/errors"
 	"kuberan/internal/logger"
 )
+
+// getUserID extracts the authenticated user ID from the Gin context.
+// Returns ErrUnauthorized if not present.
+func getUserID(c *gin.Context) (uint, error) {
+	userID, exists := c.Get("userID")
+	if !exists {
+		return 0, apperrors.ErrUnauthorized
+	}
+	return userID.(uint), nil
+}
+
+// parsePathID parses a uint path parameter.
+// Returns ErrInvalidInput if the parameter is not a valid positive integer.
+//
+//nolint:unparam // param is intentionally generic for reuse across handlers with different path params
+func parsePathID(c *gin.Context, param string) (uint, error) {
+	id, err := strconv.ParseUint(c.Param(param), 10, 32)
+	if err != nil {
+		return 0, apperrors.WithMessage(apperrors.ErrInvalidInput, "Invalid "+param)
+	}
+	return uint(id), nil
+}
 
 // respondWithError writes a consistent JSON error response. If the error is an
 // *AppError it uses the error's status code, code, and message. Otherwise it

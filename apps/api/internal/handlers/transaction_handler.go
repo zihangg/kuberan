@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -12,13 +11,13 @@ import (
 	"kuberan/internal/services"
 )
 
-// TransactionHandler handles transaction-related requests
+// TransactionHandler handles transaction-related requests.
 type TransactionHandler struct {
-	transactionService *services.TransactionService
+	transactionService services.TransactionServicer
 }
 
-// NewTransactionHandler creates a new TransactionHandler
-func NewTransactionHandler(transactionService *services.TransactionService) *TransactionHandler {
+// NewTransactionHandler creates a new TransactionHandler.
+func NewTransactionHandler(transactionService services.TransactionServicer) *TransactionHandler {
 	return &TransactionHandler{transactionService: transactionService}
 }
 
@@ -58,9 +57,9 @@ type TransactionResponse struct {
 // @Failure     500 {object} ErrorResponse "Server error"
 // @Router      /transactions [post]
 func (h *TransactionHandler) CreateTransaction(c *gin.Context) {
-	userID, exists := c.Get("userID")
-	if !exists {
-		respondWithError(c, apperrors.ErrUnauthorized)
+	userID, err := getUserID(c)
+	if err != nil {
+		respondWithError(c, err)
 		return
 	}
 
@@ -76,7 +75,7 @@ func (h *TransactionHandler) CreateTransaction(c *gin.Context) {
 	}
 
 	transaction, err := h.transactionService.CreateTransaction(
-		userID.(uint),
+		userID,
 		req.AccountID,
 		req.CategoryID,
 		req.Type,
@@ -107,19 +106,19 @@ func (h *TransactionHandler) CreateTransaction(c *gin.Context) {
 // @Failure     500 {object} ErrorResponse "Server error"
 // @Router      /accounts/{id}/transactions [get]
 func (h *TransactionHandler) GetAccountTransactions(c *gin.Context) {
-	userID, exists := c.Get("userID")
-	if !exists {
-		respondWithError(c, apperrors.ErrUnauthorized)
-		return
-	}
-
-	accountID, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	userID, err := getUserID(c)
 	if err != nil {
-		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, "Invalid account ID"))
+		respondWithError(c, err)
 		return
 	}
 
-	transactions, err := h.transactionService.GetAccountTransactions(userID.(uint), uint(accountID))
+	accountID, err := parsePathID(c, "id")
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	transactions, err := h.transactionService.GetAccountTransactions(userID, accountID)
 	if err != nil {
 		respondWithError(c, err)
 		return
@@ -143,19 +142,19 @@ func (h *TransactionHandler) GetAccountTransactions(c *gin.Context) {
 // @Failure     500 {object} ErrorResponse "Server error"
 // @Router      /transactions/{id} [get]
 func (h *TransactionHandler) GetTransactionByID(c *gin.Context) {
-	userID, exists := c.Get("userID")
-	if !exists {
-		respondWithError(c, apperrors.ErrUnauthorized)
-		return
-	}
-
-	transactionID, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	userID, err := getUserID(c)
 	if err != nil {
-		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, "Invalid transaction ID"))
+		respondWithError(c, err)
 		return
 	}
 
-	transaction, err := h.transactionService.GetTransactionByID(userID.(uint), uint(transactionID))
+	transactionID, err := parsePathID(c, "id")
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	transaction, err := h.transactionService.GetTransactionByID(userID, transactionID)
 	if err != nil {
 		respondWithError(c, err)
 		return
@@ -179,19 +178,19 @@ func (h *TransactionHandler) GetTransactionByID(c *gin.Context) {
 // @Failure     500 {object} ErrorResponse "Server error"
 // @Router      /transactions/{id} [delete]
 func (h *TransactionHandler) DeleteTransaction(c *gin.Context) {
-	userID, exists := c.Get("userID")
-	if !exists {
-		respondWithError(c, apperrors.ErrUnauthorized)
-		return
-	}
-
-	transactionID, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	userID, err := getUserID(c)
 	if err != nil {
-		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, "Invalid transaction ID"))
+		respondWithError(c, err)
 		return
 	}
 
-	if err := h.transactionService.DeleteTransaction(userID.(uint), uint(transactionID)); err != nil {
+	transactionID, err := parsePathID(c, "id")
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	if err := h.transactionService.DeleteTransaction(userID, transactionID); err != nil {
 		respondWithError(c, err)
 		return
 	}

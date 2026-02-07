@@ -10,13 +10,13 @@ import (
 	"kuberan/internal/services"
 )
 
-// AuthHandler handles authentication-related requests
+// AuthHandler handles authentication-related requests.
 type AuthHandler struct {
-	userService *services.UserService
+	userService services.UserServicer
 }
 
-// NewAuthHandler creates a new AuthHandler
-func NewAuthHandler(userService *services.UserService) *AuthHandler {
+// NewAuthHandler creates a new AuthHandler.
+func NewAuthHandler(userService services.UserServicer) *AuthHandler {
 	return &AuthHandler{userService: userService}
 }
 
@@ -148,13 +148,13 @@ func (h *AuthHandler) Login(c *gin.Context) {
 // @Failure     500 {object} ErrorResponse "Server error"
 // @Router      /profile [get]
 func (h *AuthHandler) GetProfile(c *gin.Context) {
-	userID, exists := c.Get("userID")
-	if !exists {
-		respondWithError(c, apperrors.ErrUnauthorized)
+	userID, err := getUserID(c)
+	if err != nil {
+		respondWithError(c, err)
 		return
 	}
 
-	user, err := h.userService.GetUserByID(userID.(uint))
+	user, err := h.userService.GetUserByID(userID)
 	if err != nil {
 		respondWithError(c, err)
 		return

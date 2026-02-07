@@ -9,18 +9,18 @@ import (
 	"kuberan/internal/models"
 )
 
-// CategoryService handles category-related business logic
-type CategoryService struct {
+// categoryService handles category-related business logic.
+type categoryService struct {
 	db *gorm.DB
 }
 
-// NewCategoryService creates a new CategoryService
-func NewCategoryService(db *gorm.DB) *CategoryService {
-	return &CategoryService{db: db}
+// NewCategoryService creates a new CategoryServicer.
+func NewCategoryService(db *gorm.DB) CategoryServicer {
+	return &categoryService{db: db}
 }
 
 // CreateCategory creates a new category
-func (s *CategoryService) CreateCategory(
+func (s *categoryService) CreateCategory(
 	userID uint,
 	name string,
 	categoryType models.CategoryType,
@@ -76,7 +76,7 @@ func (s *CategoryService) CreateCategory(
 }
 
 // GetUserCategories retrieves all categories for a user
-func (s *CategoryService) GetUserCategories(userID uint) ([]models.Category, error) {
+func (s *categoryService) GetUserCategories(userID uint) ([]models.Category, error) {
 	var categories []models.Category
 	if err := s.db.Where("user_id = ?", userID).Find(&categories).Error; err != nil {
 		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
@@ -85,7 +85,7 @@ func (s *CategoryService) GetUserCategories(userID uint) ([]models.Category, err
 }
 
 // GetUserCategoriesByType retrieves all categories of a specific type for a user
-func (s *CategoryService) GetUserCategoriesByType(userID uint, categoryType models.CategoryType) ([]models.Category, error) {
+func (s *categoryService) GetUserCategoriesByType(userID uint, categoryType models.CategoryType) ([]models.Category, error) {
 	var categories []models.Category
 	if err := s.db.Where("user_id = ? AND type = ?", userID, categoryType).Find(&categories).Error; err != nil {
 		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
@@ -94,7 +94,7 @@ func (s *CategoryService) GetUserCategoriesByType(userID uint, categoryType mode
 }
 
 // GetCategoryByID retrieves a category by ID for a specific user
-func (s *CategoryService) GetCategoryByID(userID, categoryID uint) (*models.Category, error) {
+func (s *categoryService) GetCategoryByID(userID, categoryID uint) (*models.Category, error) {
 	var category models.Category
 	if err := s.db.Where("id = ? AND user_id = ?", categoryID, userID).First(&category).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -106,7 +106,7 @@ func (s *CategoryService) GetCategoryByID(userID, categoryID uint) (*models.Cate
 }
 
 // UpdateCategory updates an existing category
-func (s *CategoryService) UpdateCategory(
+func (s *categoryService) UpdateCategory(
 	userID uint,
 	categoryID uint,
 	name string,
@@ -165,7 +165,7 @@ func (s *CategoryService) UpdateCategory(
 }
 
 // DeleteCategory deletes a category
-func (s *CategoryService) DeleteCategory(userID, categoryID uint) error {
+func (s *categoryService) DeleteCategory(userID, categoryID uint) error {
 	// Get the category to ensure it exists and belongs to the user
 	category, err := s.GetCategoryByID(userID, categoryID)
 	if err != nil {

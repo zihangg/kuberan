@@ -10,18 +10,18 @@ import (
 	"kuberan/internal/models"
 )
 
-// AccountService handles account-related business logic
-type AccountService struct {
+// accountService handles account-related business logic.
+type accountService struct {
 	db *gorm.DB
 }
 
-// NewAccountService creates a new AccountService
-func NewAccountService(db *gorm.DB) *AccountService {
-	return &AccountService{db: db}
+// NewAccountService creates a new AccountServicer.
+func NewAccountService(db *gorm.DB) AccountServicer {
+	return &accountService{db: db}
 }
 
 // CreateCashAccount creates a new cash account for a user
-func (s *AccountService) CreateCashAccount(userID uint, name, description, currency string, initialBalance int64) (*models.Account, error) {
+func (s *accountService) CreateCashAccount(userID uint, name, description, currency string, initialBalance int64) (*models.Account, error) {
 	// Validate input
 	if name == "" {
 		return nil, apperrors.WithMessage(apperrors.ErrInvalidInput, "account name is required")
@@ -71,7 +71,7 @@ func (s *AccountService) CreateCashAccount(userID uint, name, description, curre
 }
 
 // GetUserAccounts retrieves all accounts for a user
-func (s *AccountService) GetUserAccounts(userID uint) ([]models.Account, error) {
+func (s *accountService) GetUserAccounts(userID uint) ([]models.Account, error) {
 	var accounts []models.Account
 	if err := s.db.Where("user_id = ? AND is_active = ?", userID, true).Find(&accounts).Error; err != nil {
 		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
@@ -80,7 +80,7 @@ func (s *AccountService) GetUserAccounts(userID uint) ([]models.Account, error) 
 }
 
 // GetAccountByID retrieves an account by ID for a specific user
-func (s *AccountService) GetAccountByID(userID, accountID uint) (*models.Account, error) {
+func (s *accountService) GetAccountByID(userID, accountID uint) (*models.Account, error) {
 	var account models.Account
 	if err := s.db.Where("id = ? AND user_id = ? AND is_active = ?", accountID, userID, true).First(&account).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -92,7 +92,7 @@ func (s *AccountService) GetAccountByID(userID, accountID uint) (*models.Account
 }
 
 // UpdateCashAccount updates an existing cash account
-func (s *AccountService) UpdateCashAccount(userID, accountID uint, name, description string) (*models.Account, error) {
+func (s *accountService) UpdateCashAccount(userID, accountID uint, name, description string) (*models.Account, error) {
 	// Get the account
 	account, err := s.GetAccountByID(userID, accountID)
 	if err != nil {
@@ -124,7 +124,7 @@ func (s *AccountService) UpdateCashAccount(userID, accountID uint, name, descrip
 }
 
 // UpdateAccountBalance updates the balance of an account based on transaction
-func (s *AccountService) UpdateAccountBalance(tx *gorm.DB, account *models.Account, transactionType models.TransactionType, amount int64) error {
+func (s *accountService) UpdateAccountBalance(tx *gorm.DB, account *models.Account, transactionType models.TransactionType, amount int64) error {
 	// Update the balance based on transaction type
 	switch transactionType {
 	case models.TransactionTypeIncome:

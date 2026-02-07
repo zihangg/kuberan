@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"net/http"
-	"strconv"
 
 	"github.com/gin-gonic/gin"
 
@@ -11,13 +10,13 @@ import (
 	"kuberan/internal/services"
 )
 
-// AccountHandler handles account-related requests
+// AccountHandler handles account-related requests.
 type AccountHandler struct {
-	accountService *services.AccountService
+	accountService services.AccountServicer
 }
 
-// NewAccountHandler creates a new AccountHandler
-func NewAccountHandler(accountService *services.AccountService) *AccountHandler {
+// NewAccountHandler creates a new AccountHandler.
+func NewAccountHandler(accountService services.AccountServicer) *AccountHandler {
 	return &AccountHandler{accountService: accountService}
 }
 
@@ -61,9 +60,9 @@ type AccountResponse struct {
 // @Failure     500 {object} ErrorResponse "Server error"
 // @Router      /accounts/cash [post]
 func (h *AccountHandler) CreateCashAccount(c *gin.Context) {
-	userID, exists := c.Get("userID")
-	if !exists {
-		respondWithError(c, apperrors.ErrUnauthorized)
+	userID, err := getUserID(c)
+	if err != nil {
+		respondWithError(c, err)
 		return
 	}
 
@@ -74,7 +73,7 @@ func (h *AccountHandler) CreateCashAccount(c *gin.Context) {
 	}
 
 	account, err := h.accountService.CreateCashAccount(
-		userID.(uint),
+		userID,
 		req.Name,
 		req.Description,
 		req.Currency,
@@ -100,13 +99,13 @@ func (h *AccountHandler) CreateCashAccount(c *gin.Context) {
 // @Failure     500 {object} ErrorResponse "Server error"
 // @Router      /accounts [get]
 func (h *AccountHandler) GetUserAccounts(c *gin.Context) {
-	userID, exists := c.Get("userID")
-	if !exists {
-		respondWithError(c, apperrors.ErrUnauthorized)
+	userID, err := getUserID(c)
+	if err != nil {
+		respondWithError(c, err)
 		return
 	}
 
-	accounts, err := h.accountService.GetUserAccounts(userID.(uint))
+	accounts, err := h.accountService.GetUserAccounts(userID)
 	if err != nil {
 		respondWithError(c, err)
 		return
@@ -130,19 +129,19 @@ func (h *AccountHandler) GetUserAccounts(c *gin.Context) {
 // @Failure     500 {object} ErrorResponse "Server error"
 // @Router      /accounts/{id} [get]
 func (h *AccountHandler) GetAccountByID(c *gin.Context) {
-	userID, exists := c.Get("userID")
-	if !exists {
-		respondWithError(c, apperrors.ErrUnauthorized)
-		return
-	}
-
-	accountID, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	userID, err := getUserID(c)
 	if err != nil {
-		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, "Invalid account ID"))
+		respondWithError(c, err)
 		return
 	}
 
-	account, err := h.accountService.GetAccountByID(userID.(uint), uint(accountID))
+	accountID, err := parsePathID(c, "id")
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	account, err := h.accountService.GetAccountByID(userID, accountID)
 	if err != nil {
 		respondWithError(c, err)
 		return
@@ -167,15 +166,15 @@ func (h *AccountHandler) GetAccountByID(c *gin.Context) {
 // @Failure     500 {object} ErrorResponse "Server error"
 // @Router      /accounts/{id} [put]
 func (h *AccountHandler) UpdateCashAccount(c *gin.Context) {
-	userID, exists := c.Get("userID")
-	if !exists {
-		respondWithError(c, apperrors.ErrUnauthorized)
+	userID, err := getUserID(c)
+	if err != nil {
+		respondWithError(c, err)
 		return
 	}
 
-	accountID, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	accountID, err := parsePathID(c, "id")
 	if err != nil {
-		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, "Invalid account ID"))
+		respondWithError(c, err)
 		return
 	}
 
@@ -186,8 +185,8 @@ func (h *AccountHandler) UpdateCashAccount(c *gin.Context) {
 	}
 
 	account, err := h.accountService.UpdateCashAccount(
-		userID.(uint),
-		uint(accountID),
+		userID,
+		accountID,
 		req.Name,
 		req.Description,
 	)

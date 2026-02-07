@@ -10,22 +10,22 @@ import (
 	"kuberan/internal/models"
 )
 
-// TransactionService handles transaction-related business logic
-type TransactionService struct {
+// transactionService handles transaction-related business logic.
+type transactionService struct {
 	db             *gorm.DB
-	accountService *AccountService
+	accountService AccountServicer
 }
 
-// NewTransactionService creates a new TransactionService
-func NewTransactionService(db *gorm.DB, accountService *AccountService) *TransactionService {
-	return &TransactionService{
+// NewTransactionService creates a new TransactionServicer.
+func NewTransactionService(db *gorm.DB, accountService AccountServicer) TransactionServicer {
+	return &transactionService{
 		db:             db,
 		accountService: accountService,
 	}
 }
 
 // CreateTransaction creates a new transaction for a user's account
-func (s *TransactionService) CreateTransaction(
+func (s *transactionService) CreateTransaction(
 	userID uint,
 	accountID uint,
 	categoryID *uint,
@@ -67,7 +67,7 @@ func (s *TransactionService) CreateTransaction(
 }
 
 // createTransactionWithDB creates a transaction with a given database connection (useful for transactions)
-func (s *TransactionService) createTransactionWithDB(
+func (s *transactionService) createTransactionWithDB(
 	tx *gorm.DB,
 	userID uint,
 	account *models.Account,
@@ -100,7 +100,7 @@ func (s *TransactionService) createTransactionWithDB(
 }
 
 // GetAccountTransactions retrieves transactions for a specific account
-func (s *TransactionService) GetAccountTransactions(userID, accountID uint) ([]models.Transaction, error) {
+func (s *transactionService) GetAccountTransactions(userID, accountID uint) ([]models.Transaction, error) {
 	// First verify the account belongs to the user
 	_, err := s.accountService.GetAccountByID(userID, accountID)
 	if err != nil {
@@ -118,7 +118,7 @@ func (s *TransactionService) GetAccountTransactions(userID, accountID uint) ([]m
 }
 
 // GetTransactionByID retrieves a transaction by ID for a specific user
-func (s *TransactionService) GetTransactionByID(userID, transactionID uint) (*models.Transaction, error) {
+func (s *transactionService) GetTransactionByID(userID, transactionID uint) (*models.Transaction, error) {
 	var transaction models.Transaction
 	if err := s.db.Where("id = ? AND user_id = ?", transactionID, userID).First(&transaction).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -130,7 +130,7 @@ func (s *TransactionService) GetTransactionByID(userID, transactionID uint) (*mo
 }
 
 // DeleteTransaction deletes a transaction and updates the account balance
-func (s *TransactionService) DeleteTransaction(userID, transactionID uint) error {
+func (s *transactionService) DeleteTransaction(userID, transactionID uint) error {
 	// Get the transaction
 	transaction, err := s.GetTransactionByID(userID, transactionID)
 	if err != nil {
