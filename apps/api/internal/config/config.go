@@ -1,9 +1,10 @@
 package config
 
 import (
-	"log"
 	"os"
 	"time"
+
+	"kuberan/internal/logger"
 
 	"github.com/joho/godotenv"
 )
@@ -32,7 +33,7 @@ var appConfig *Config
 func Load() (*Config, error) {
 	// Load .env file if not already loaded
 	if err := godotenv.Load(); err != nil {
-		log.Println("Warning: .env file not found")
+		logger.Get().Warn(".env file not found")
 	}
 
 	// Get values from environment variables with defaults
@@ -56,7 +57,7 @@ func Load() (*Config, error) {
 	expStr := getEnv("JWT_EXPIRES_IN", "24h")
 	expDur, err := time.ParseDuration(expStr)
 	if err != nil {
-		log.Printf("Warning: invalid JWT_EXPIRES_IN value '%s', falling back to 24h\n", expStr)
+		logger.Get().Warnf("Invalid JWT_EXPIRES_IN value '%s', falling back to 24h", expStr)
 		expDur = 24 * time.Hour
 	}
 	config.JWTExpirationDur = expDur
@@ -71,7 +72,7 @@ func Get() *Config {
 		var err error
 		appConfig, err = Load()
 		if err != nil {
-			log.Fatalf("Failed to load configuration: %v", err)
+			logger.Get().Fatalf("Failed to load configuration: %v", err)
 		}
 	}
 	return appConfig

@@ -1,14 +1,14 @@
 package main
 
 import (
-	"fmt"
 	"kuberan/internal/config"
 	"kuberan/internal/database"
 	"kuberan/internal/handlers"
+	"kuberan/internal/logger"
 	"kuberan/internal/middleware"
 	"kuberan/internal/services"
-	"log"
 	"net/http"
+	"os"
 
 	"github.com/gin-gonic/gin"
 	swaggerFiles "github.com/swaggo/files"
@@ -31,6 +31,12 @@ import (
 // @description Type "Bearer" followed by a space and JWT token.
 
 func main() {
+	// Initialize logger (use ENV var if available, default to development)
+	logger.Init(os.Getenv("ENV"))
+	defer logger.Sync()
+
+	log := logger.Get()
+
 	// Load configuration
 	appConfig, err := config.Load()
 	if err != nil {
@@ -141,8 +147,8 @@ func main() {
 		}
 	}
 
-	fmt.Printf("Starting Kuberan backend server on port %s...\n", appConfig.Port)
-	fmt.Printf("Swagger documentation available at http://localhost:%s/swagger/index.html\n", appConfig.Port)
+	log.Infof("Starting Kuberan backend server on port %s", appConfig.Port)
+	log.Infof("Swagger documentation available at http://localhost:%s/swagger/index.html", appConfig.Port)
 	if err := router.Run(":" + appConfig.Port); err != nil {
 		log.Fatalf("Failed to start server: %v", err)
 	}

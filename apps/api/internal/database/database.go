@@ -2,8 +2,8 @@ package database
 
 import (
 	"fmt"
-	"log"
 
+	"kuberan/internal/logger"
 	"kuberan/internal/models"
 
 	"gorm.io/driver/postgres"
@@ -27,7 +27,7 @@ func NewManager(config *Config) (*Manager, error) {
 
 // Migrate runs database migrations
 func (m *Manager) Migrate() error {
-	log.Println("Running database migrations...")
+	logger.Get().Info("Running database migrations...")
 
 	// List all models to migrate
 	models := []interface{}{
@@ -47,7 +47,7 @@ func (m *Manager) Migrate() error {
 		}
 	}
 
-	log.Println("Database migrations completed successfully")
+	logger.Get().Info("Database migrations completed successfully")
 	return nil
 }
 
