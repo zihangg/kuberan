@@ -203,17 +203,8 @@ func (s *categoryService) DeleteCategory(userID, categoryID uint) error {
 		return apperrors.ErrCategoryHasChildren
 	}
 
-	// Check if there are any transactions using this category
-	var transactionCount int64
-	if err := s.db.Model(&models.Transaction{}).Where("category_id = ?", categoryID).Count(&transactionCount).Error; err != nil {
-		return apperrors.Wrap(apperrors.ErrInternalServer, err)
-	}
-
-	if transactionCount > 0 {
-		return apperrors.ErrCategoryInUse
-	}
-
-	// Delete the category
+	// Soft-delete the category. Existing transactions keep their category_id
+	// reference to the soft-deleted category for historical records.
 	if err := s.db.Delete(category).Error; err != nil {
 		return apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
