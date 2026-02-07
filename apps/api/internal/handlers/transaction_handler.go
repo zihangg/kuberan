@@ -7,6 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	apperrors "kuberan/internal/errors"
 	"kuberan/internal/models"
 	"kuberan/internal/services"
 )
@@ -57,20 +58,18 @@ type TransactionResponse struct {
 // @Failure     500 {object} ErrorResponse "Server error"
 // @Router      /transactions [post]
 func (h *TransactionHandler) CreateTransaction(c *gin.Context) {
-	// Get user ID from context
 	userID, exists := c.Get("userID")
 	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		respondWithError(c, apperrors.ErrUnauthorized)
 		return
 	}
 
 	var req CreateTransactionRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, err.Error()))
 		return
 	}
 
-	// Set default date to now if not provided
 	transactionDate := time.Now()
 	if req.Date != nil {
 		transactionDate = *req.Date
@@ -86,7 +85,7 @@ func (h *TransactionHandler) CreateTransaction(c *gin.Context) {
 		transactionDate,
 	)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondWithError(c, err)
 		return
 	}
 
@@ -108,23 +107,21 @@ func (h *TransactionHandler) CreateTransaction(c *gin.Context) {
 // @Failure     500 {object} ErrorResponse "Server error"
 // @Router      /accounts/{id}/transactions [get]
 func (h *TransactionHandler) GetAccountTransactions(c *gin.Context) {
-	// Get user ID from context
 	userID, exists := c.Get("userID")
 	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		respondWithError(c, apperrors.ErrUnauthorized)
 		return
 	}
 
-	// Get account ID from URL
 	accountID, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid account ID"})
+		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, "Invalid account ID"))
 		return
 	}
 
 	transactions, err := h.transactionService.GetAccountTransactions(userID.(uint), uint(accountID))
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondWithError(c, err)
 		return
 	}
 
@@ -146,23 +143,21 @@ func (h *TransactionHandler) GetAccountTransactions(c *gin.Context) {
 // @Failure     500 {object} ErrorResponse "Server error"
 // @Router      /transactions/{id} [get]
 func (h *TransactionHandler) GetTransactionByID(c *gin.Context) {
-	// Get user ID from context
 	userID, exists := c.Get("userID")
 	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		respondWithError(c, apperrors.ErrUnauthorized)
 		return
 	}
 
-	// Get transaction ID from URL
 	transactionID, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid transaction ID"})
+		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, "Invalid transaction ID"))
 		return
 	}
 
 	transaction, err := h.transactionService.GetTransactionByID(userID.(uint), uint(transactionID))
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		respondWithError(c, err)
 		return
 	}
 
@@ -184,22 +179,20 @@ func (h *TransactionHandler) GetTransactionByID(c *gin.Context) {
 // @Failure     500 {object} ErrorResponse "Server error"
 // @Router      /transactions/{id} [delete]
 func (h *TransactionHandler) DeleteTransaction(c *gin.Context) {
-	// Get user ID from context
 	userID, exists := c.Get("userID")
 	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		respondWithError(c, apperrors.ErrUnauthorized)
 		return
 	}
 
-	// Get transaction ID from URL
 	transactionID, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid transaction ID"})
+		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, "Invalid transaction ID"))
 		return
 	}
 
 	if err := h.transactionService.DeleteTransaction(userID.(uint), uint(transactionID)); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondWithError(c, err)
 		return
 	}
 

@@ -5,6 +5,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	apperrors "kuberan/internal/errors"
 	"kuberan/internal/middleware"
 	"kuberan/internal/services"
 )
@@ -61,20 +62,19 @@ type AuthResponse struct {
 func (h *AuthHandler) Register(c *gin.Context) {
 	var req RegisterRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, err.Error()))
 		return
 	}
 
 	user, err := h.userService.CreateUser(req.Email, req.Password, req.FirstName, req.LastName)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondWithError(c, err)
 		return
 	}
 
-	// Generate token
 	token, err := middleware.GenerateToken(user)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate token"})
+		respondWithError(c, apperrors.Wrap(apperrors.ErrInternalServer, err))
 		return
 	}
 
@@ -104,25 +104,24 @@ func (h *AuthHandler) Register(c *gin.Context) {
 func (h *AuthHandler) Login(c *gin.Context) {
 	var req LoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, err.Error()))
 		return
 	}
 
 	user, err := h.userService.GetUserByEmail(req.Email)
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid credentials"})
+		respondWithError(c, apperrors.ErrInvalidCredentials)
 		return
 	}
 
 	if !h.userService.VerifyPassword(user, req.Password) {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid credentials"})
+		respondWithError(c, apperrors.ErrInvalidCredentials)
 		return
 	}
 
-	// Generate token
 	token, err := middleware.GenerateToken(user)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate token"})
+		respondWithError(c, apperrors.Wrap(apperrors.ErrInternalServer, err))
 		return
 	}
 
@@ -151,13 +150,13 @@ func (h *AuthHandler) Login(c *gin.Context) {
 func (h *AuthHandler) GetProfile(c *gin.Context) {
 	userID, exists := c.Get("userID")
 	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		respondWithError(c, apperrors.ErrUnauthorized)
 		return
 	}
 
 	user, err := h.userService.GetUserByID(userID.(uint))
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve user profile"})
+		respondWithError(c, err)
 		return
 	}
 
@@ -171,7 +170,13 @@ func (h *AuthHandler) GetProfile(c *gin.Context) {
 	})
 }
 
-// ErrorResponse represents an error response
+// ErrorDetail represents the inner error object in an error response.
+type ErrorDetail struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
+// ErrorResponse represents an error response.
 type ErrorResponse struct {
-	Error string `json:"error"`
+	Error ErrorDetail `json:"error"`
 }

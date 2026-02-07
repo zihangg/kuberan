@@ -6,6 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	apperrors "kuberan/internal/errors"
 	"kuberan/internal/models"
 	"kuberan/internal/services"
 )
@@ -60,16 +61,15 @@ type AccountResponse struct {
 // @Failure     500 {object} ErrorResponse "Server error"
 // @Router      /accounts/cash [post]
 func (h *AccountHandler) CreateCashAccount(c *gin.Context) {
-	// Get user ID from context (set by AuthMiddleware)
 	userID, exists := c.Get("userID")
 	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		respondWithError(c, apperrors.ErrUnauthorized)
 		return
 	}
 
 	var req CreateCashAccountRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, err.Error()))
 		return
 	}
 
@@ -81,7 +81,7 @@ func (h *AccountHandler) CreateCashAccount(c *gin.Context) {
 		req.InitialBalance,
 	)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondWithError(c, err)
 		return
 	}
 
@@ -100,16 +100,15 @@ func (h *AccountHandler) CreateCashAccount(c *gin.Context) {
 // @Failure     500 {object} ErrorResponse "Server error"
 // @Router      /accounts [get]
 func (h *AccountHandler) GetUserAccounts(c *gin.Context) {
-	// Get user ID from context
 	userID, exists := c.Get("userID")
 	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		respondWithError(c, apperrors.ErrUnauthorized)
 		return
 	}
 
 	accounts, err := h.accountService.GetUserAccounts(userID.(uint))
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve accounts"})
+		respondWithError(c, err)
 		return
 	}
 
@@ -131,23 +130,21 @@ func (h *AccountHandler) GetUserAccounts(c *gin.Context) {
 // @Failure     500 {object} ErrorResponse "Server error"
 // @Router      /accounts/{id} [get]
 func (h *AccountHandler) GetAccountByID(c *gin.Context) {
-	// Get user ID from context
 	userID, exists := c.Get("userID")
 	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		respondWithError(c, apperrors.ErrUnauthorized)
 		return
 	}
 
-	// Get account ID from URL
 	accountID, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid account ID"})
+		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, "Invalid account ID"))
 		return
 	}
 
 	account, err := h.accountService.GetAccountByID(userID.(uint), uint(accountID))
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		respondWithError(c, err)
 		return
 	}
 
@@ -170,23 +167,21 @@ func (h *AccountHandler) GetAccountByID(c *gin.Context) {
 // @Failure     500 {object} ErrorResponse "Server error"
 // @Router      /accounts/{id} [put]
 func (h *AccountHandler) UpdateCashAccount(c *gin.Context) {
-	// Get user ID from context
 	userID, exists := c.Get("userID")
 	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		respondWithError(c, apperrors.ErrUnauthorized)
 		return
 	}
 
-	// Get account ID from URL
 	accountID, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid account ID"})
+		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, "Invalid account ID"))
 		return
 	}
 
 	var req UpdateCashAccountRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, err.Error()))
 		return
 	}
 
@@ -197,7 +192,7 @@ func (h *AccountHandler) UpdateCashAccount(c *gin.Context) {
 		req.Description,
 	)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondWithError(c, err)
 		return
 	}
 
