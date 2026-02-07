@@ -74,7 +74,9 @@ func main() {
 	transactionHandler := handlers.NewTransactionHandler(transactionService)
 
 	// Initialize Gin router
-	router := gin.Default()
+	router := gin.New()
+	router.Use(gin.Recovery())
+	router.Use(middleware.RequestLogging())
 
 	// CORS middleware
 	router.Use(func(c *gin.Context) {
