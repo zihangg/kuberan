@@ -124,6 +124,7 @@ func run() error {
 	auth := v1.Group("/auth")
 	auth.POST("/register", authHandler.Register)
 	auth.POST("/login", authHandler.Login)
+	auth.POST("/refresh", authHandler.RefreshToken)
 
 	// Protected routes
 	protected := v1.Group("/")

@@ -7,6 +7,7 @@ import (
 
 	apperrors "kuberan/internal/errors"
 	"kuberan/internal/middleware"
+	"kuberan/internal/models"
 	"kuberan/internal/services"
 )
 
@@ -34,6 +35,11 @@ type LoginRequest struct {
 	Password string `json:"password" binding:"required"`
 }
 
+// RefreshRequest represents the token refresh request payload.
+type RefreshRequest struct {
+	RefreshToken string `json:"refresh_token" binding:"required"`
+}
+
 // UserResponse represents the user data in the response
 type UserResponse struct {
 	ID        uint   `json:"id"`
@@ -42,10 +48,11 @@ type UserResponse struct {
 	LastName  string `json:"last_name"`
 }
 
-// AuthResponse represents the authentication response with token
+// AuthResponse represents the authentication response with tokens.
 type AuthResponse struct {
-	Token string       `json:"token"`
-	User  UserResponse `json:"user"`
+	AccessToken  string       `json:"access_token"`
+	RefreshToken string       `json:"refresh_token"`
+	User         UserResponse `json:"user"`
 }
 
 // Register handles user registration
@@ -55,7 +62,7 @@ type AuthResponse struct {
 // @Accept      json
 // @Produce     json
 // @Param       request body RegisterRequest true "User registration data"
-// @Success     201 {object} AuthResponse "User registered and token generated"
+// @Success     201 {object} AuthResponse "User registered and tokens generated"
 // @Failure     400 {object} ErrorResponse "Invalid input"
 // @Failure     500 {object} ErrorResponse "Server error"
 // @Router      /auth/register [post]
@@ -72,14 +79,15 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
-	token, err := middleware.GenerateToken(user)
+	accessToken, refreshToken, err := h.generateTokenPair(user)
 	if err != nil {
-		respondWithError(c, apperrors.Wrap(apperrors.ErrInternalServer, err))
+		respondWithError(c, err)
 		return
 	}
 
 	c.JSON(http.StatusCreated, gin.H{
-		"token": token,
+		"access_token":  accessToken,
+		"refresh_token": refreshToken,
 		"user": gin.H{
 			"id":         user.ID,
 			"email":      user.Email,
@@ -91,14 +99,15 @@ func (h *AuthHandler) Register(c *gin.Context) {
 
 // Login handles user login
 // @Summary     Login user
-// @Description Authenticate a user and get a token
+// @Description Authenticate a user and get access and refresh tokens
 // @Tags        auth
 // @Accept      json
 // @Produce     json
 // @Param       request body LoginRequest true "User login credentials"
-// @Success     200 {object} AuthResponse "User authenticated and token generated"
+// @Success     200 {object} AuthResponse "User authenticated and tokens generated"
 // @Failure     400 {object} ErrorResponse "Invalid input"
 // @Failure     401 {object} ErrorResponse "Invalid credentials"
+// @Failure     423 {object} ErrorResponse "Account locked"
 // @Failure     500 {object} ErrorResponse "Server error"
 // @Router      /auth/login [post]
 func (h *AuthHandler) Login(c *gin.Context) {
@@ -114,14 +123,80 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
-	token, err := middleware.GenerateToken(user)
+	accessToken, refreshToken, err := h.generateTokenPair(user)
 	if err != nil {
-		respondWithError(c, apperrors.Wrap(apperrors.ErrInternalServer, err))
+		respondWithError(c, err)
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"token": token,
+		"access_token":  accessToken,
+		"refresh_token": refreshToken,
+		"user": gin.H{
+			"id":         user.ID,
+			"email":      user.Email,
+			"first_name": user.FirstName,
+			"last_name":  user.LastName,
+		},
+	})
+}
+
+// RefreshToken exchanges a valid refresh token for a new token pair.
+// @Summary     Refresh access token
+// @Description Exchange a valid refresh token for new access and refresh tokens
+// @Tags        auth
+// @Accept      json
+// @Produce     json
+// @Param       request body RefreshRequest true "Refresh token"
+// @Success     200 {object} AuthResponse "New tokens generated"
+// @Failure     400 {object} ErrorResponse "Invalid input"
+// @Failure     401 {object} ErrorResponse "Invalid or expired refresh token"
+// @Failure     500 {object} ErrorResponse "Server error"
+// @Router      /auth/refresh [post]
+func (h *AuthHandler) RefreshToken(c *gin.Context) {
+	var req RefreshRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, err.Error()))
+		return
+	}
+
+	// Validate the refresh token JWT
+	claims, err := middleware.ValidateRefreshToken(req.RefreshToken)
+	if err != nil {
+		respondWithError(c, apperrors.ErrUnauthorized)
+		return
+	}
+
+	// Verify the token hash matches what's stored in the DB
+	storedHash, err := h.userService.GetRefreshTokenHash(claims.UserID)
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	incomingHash := middleware.HashToken(req.RefreshToken)
+	if storedHash == "" || storedHash != incomingHash {
+		respondWithError(c, apperrors.ErrUnauthorized)
+		return
+	}
+
+	// Get the user to generate new tokens
+	user, err := h.userService.GetUserByID(claims.UserID)
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	// Generate new token pair (rotation)
+	accessToken, refreshToken, err := h.generateTokenPair(user)
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"access_token":  accessToken,
+		"refresh_token": refreshToken,
 		"user": gin.H{
 			"id":         user.ID,
 			"email":      user.Email,
@@ -163,6 +238,27 @@ func (h *AuthHandler) GetProfile(c *gin.Context) {
 			"last_name":  user.LastName,
 		},
 	})
+}
+
+// generateTokenPair creates a new access/refresh token pair and stores
+// the refresh token hash in the database.
+func (h *AuthHandler) generateTokenPair(user *models.User) (accessToken, refreshToken string, err error) {
+	accessToken, err = middleware.GenerateAccessToken(user)
+	if err != nil {
+		return "", "", apperrors.Wrap(apperrors.ErrInternalServer, err)
+	}
+
+	refreshToken, err = middleware.GenerateRefreshToken(user)
+	if err != nil {
+		return "", "", apperrors.Wrap(apperrors.ErrInternalServer, err)
+	}
+
+	// Store refresh token hash for validation on refresh
+	if err := h.userService.StoreRefreshTokenHash(user.ID, middleware.HashToken(refreshToken)); err != nil {
+		return "", "", err
+	}
+
+	return accessToken, refreshToken, nil
 }
 
 // ErrorDetail represents the inner error object in an error response.

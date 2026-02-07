@@ -15,6 +15,8 @@ type UserServicer interface {
 	GetUserByID(id uint) (*models.User, error)
 	VerifyPassword(user *models.User, password string) bool
 	AttemptLogin(email, password string) (*models.User, error)
+	StoreRefreshTokenHash(userID uint, tokenHash string) error
+	GetRefreshTokenHash(userID uint) (string, error)
 }
 
 // AccountServicer defines the contract for account-related business logic.
