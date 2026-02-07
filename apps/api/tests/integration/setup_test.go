@@ -73,13 +73,19 @@ func setupApp(t *testing.T) *testApp {
 	// Services
 	userService := services.NewUserService(db)
 	accountService := services.NewAccountService(db)
+	categoryService := services.NewCategoryService(db)
 	transactionService := services.NewTransactionService(db, accountService)
+	budgetService := services.NewBudgetService(db)
+	investmentService := services.NewInvestmentService(db, accountService)
 	auditService := services.NewAuditService(db)
 
 	// Handlers
 	authHandler := handlers.NewAuthHandler(userService, auditService)
 	accountHandler := handlers.NewAccountHandler(accountService, auditService)
+	categoryHandler := handlers.NewCategoryHandler(categoryService, auditService)
 	transactionHandler := handlers.NewTransactionHandler(transactionService, auditService)
+	budgetHandler := handlers.NewBudgetHandler(budgetService, auditService)
+	investmentHandler := handlers.NewInvestmentHandler(investmentService, auditService)
 
 	// Router
 	router := gin.New()
@@ -102,16 +108,41 @@ func setupApp(t *testing.T) *testApp {
 
 	accounts := protected.Group("/accounts")
 	accounts.POST("/cash", accountHandler.CreateCashAccount)
+	accounts.POST("/investment", accountHandler.CreateInvestmentAccount)
 	accounts.GET("", accountHandler.GetUserAccounts)
 	accounts.GET("/:id", accountHandler.GetAccountByID)
 	accounts.PUT("/:id", accountHandler.UpdateCashAccount)
 	accounts.GET("/:id/transactions", transactionHandler.GetAccountTransactions)
+	accounts.GET("/:id/investments", investmentHandler.GetAccountInvestments)
 
 	transactions := protected.Group("/transactions")
 	transactions.POST("", transactionHandler.CreateTransaction)
 	transactions.POST("/transfer", transactionHandler.CreateTransfer)
 	transactions.GET("/:id", transactionHandler.GetTransactionByID)
 	transactions.DELETE("/:id", transactionHandler.DeleteTransaction)
+
+	categories := protected.Group("/categories")
+	categories.POST("", categoryHandler.CreateCategory)
+	categories.GET("", categoryHandler.GetUserCategories)
+
+	budgets := protected.Group("/budgets")
+	budgets.POST("", budgetHandler.CreateBudget)
+	budgets.GET("", budgetHandler.GetBudgets)
+	budgets.GET("/:id", budgetHandler.GetBudget)
+	budgets.PUT("/:id", budgetHandler.UpdateBudget)
+	budgets.DELETE("/:id", budgetHandler.DeleteBudget)
+	budgets.GET("/:id/progress", budgetHandler.GetBudgetProgress)
+
+	investments := protected.Group("/investments")
+	investments.POST("", investmentHandler.AddInvestment)
+	investments.GET("/portfolio", investmentHandler.GetPortfolio)
+	investments.GET("/:id", investmentHandler.GetInvestment)
+	investments.PUT("/:id/price", investmentHandler.UpdatePrice)
+	investments.POST("/:id/buy", investmentHandler.RecordBuy)
+	investments.POST("/:id/sell", investmentHandler.RecordSell)
+	investments.POST("/:id/dividend", investmentHandler.RecordDividend)
+	investments.POST("/:id/split", investmentHandler.RecordSplit)
+	investments.GET("/:id/transactions", investmentHandler.GetInvestmentTransactions)
 
 	return &testApp{DB: db, Router: router}
 }
