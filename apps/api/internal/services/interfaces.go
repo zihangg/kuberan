@@ -58,6 +58,25 @@ type TransactionServicer interface {
 	DeleteTransaction(userID, transactionID uint) error
 }
 
+// BudgetProgress contains spending vs budget data for a budget's current period.
+type BudgetProgress struct {
+	BudgetID   uint    `json:"budget_id"`
+	Budgeted   int64   `json:"budgeted"`
+	Spent      int64   `json:"spent"`
+	Remaining  int64   `json:"remaining"`
+	Percentage float64 `json:"percentage"`
+}
+
+// BudgetServicer defines the contract for budget-related business logic.
+type BudgetServicer interface {
+	CreateBudget(userID, categoryID uint, name string, amount int64, period models.BudgetPeriod, startDate time.Time, endDate *time.Time) (*models.Budget, error)
+	GetUserBudgets(userID uint, page pagination.PageRequest, isActive *bool, period *models.BudgetPeriod) (*pagination.PageResponse[models.Budget], error)
+	GetBudgetByID(userID, budgetID uint) (*models.Budget, error)
+	UpdateBudget(userID, budgetID uint, name string, amount *int64, period *models.BudgetPeriod, endDate *time.Time) (*models.Budget, error)
+	DeleteBudget(userID, budgetID uint) error
+	GetBudgetProgress(userID, budgetID uint) (*BudgetProgress, error)
+}
+
 // AuditServicer defines the contract for audit logging.
 type AuditServicer interface {
 	Log(userID uint, action, resourceType string, resourceID uint, ipAddress string, changes map[string]interface{})

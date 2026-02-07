@@ -76,6 +76,7 @@ func run() error {
 	accountService := services.NewAccountService(db)
 	categoryService := services.NewCategoryService(db)
 	transactionService := services.NewTransactionService(db, accountService)
+	budgetService := services.NewBudgetService(db)
 	auditService := services.NewAuditService(db)
 
 	// Initialize handlers
@@ -83,6 +84,7 @@ func run() error {
 	accountHandler := handlers.NewAccountHandler(accountService, auditService)
 	categoryHandler := handlers.NewCategoryHandler(categoryService, auditService)
 	transactionHandler := handlers.NewTransactionHandler(transactionService, auditService)
+	budgetHandler := handlers.NewBudgetHandler(budgetService, auditService)
 
 	// Register custom validators before routes
 	validator.Register()
@@ -155,6 +157,15 @@ func run() error {
 	transactions.POST("/transfer", transactionHandler.CreateTransfer)
 	transactions.GET("/:id", transactionHandler.GetTransactionByID)
 	transactions.DELETE("/:id", transactionHandler.DeleteTransaction)
+
+	// Budget routes
+	budgets := protected.Group("/budgets")
+	budgets.POST("", budgetHandler.CreateBudget)
+	budgets.GET("", budgetHandler.GetBudgets)
+	budgets.GET("/:id", budgetHandler.GetBudget)
+	budgets.PUT("/:id", budgetHandler.UpdateBudget)
+	budgets.DELETE("/:id", budgetHandler.DeleteBudget)
+	budgets.GET("/:id/progress", budgetHandler.GetBudgetProgress)
 
 	// Category routes
 	categories := protected.Group("/categories")
