@@ -1,9 +1,17 @@
 basePath: /api/v1
 definitions:
-  handlers.AccountResponse:
+  gorm.DeletedAt:
+    properties:
+      time:
+        type: string
+      valid:
+        description: Valid is true if Time is not NULL
+        type: boolean
+    type: object
+  internal_handlers.AccountResponse:
     properties:
       balance:
-        type: number
+        type: integer
       currency:
         type: string
       description:
@@ -15,18 +23,63 @@ definitions:
       name:
         type: string
       type:
-        $ref: '#/definitions/models.AccountType'
+        $ref: '#/definitions/kuberan_internal_models.AccountType'
       user_id:
         type: integer
     type: object
-  handlers.AuthResponse:
+  internal_handlers.AddInvestmentRequest:
     properties:
-      token:
+      account_id:
+        type: integer
+      asset_type:
+        $ref: '#/definitions/kuberan_internal_models.AssetType'
+      coupon_rate:
+        type: number
+      currency:
+        type: string
+      exchange:
+        description: Asset-type-specific optional fields
+        type: string
+      maturity_date:
+        type: string
+      name:
+        maxLength: 200
+        minLength: 1
+        type: string
+      network:
+        type: string
+      property_type:
+        type: string
+      purchase_price:
+        type: integer
+      quantity:
+        type: number
+      symbol:
+        maxLength: 20
+        minLength: 1
+        type: string
+      wallet_address:
+        type: string
+      yield_to_maturity:
+        type: number
+    required:
+    - account_id
+    - asset_type
+    - name
+    - purchase_price
+    - quantity
+    - symbol
+    type: object
+  internal_handlers.AuthResponse:
+    properties:
+      access_token:
+        type: string
+      refresh_token:
         type: string
       user:
-        $ref: '#/definitions/handlers.UserResponse'
+        $ref: '#/definitions/internal_handlers.UserResponse'
     type: object
-  handlers.CategoryResponse:
+  internal_handlers.CategoryResponse:
     properties:
       color:
         type: string
@@ -41,66 +94,143 @@ definitions:
       parent_id:
         type: integer
       type:
-        $ref: '#/definitions/models.CategoryType'
+        $ref: '#/definitions/kuberan_internal_models.CategoryType'
       user_id:
         type: integer
     type: object
-  handlers.CreateCashAccountRequest:
+  internal_handlers.CreateBudgetRequest:
+    properties:
+      amount:
+        type: integer
+      category_id:
+        type: integer
+      end_date:
+        type: string
+      name:
+        maxLength: 100
+        minLength: 1
+        type: string
+      period:
+        $ref: '#/definitions/kuberan_internal_models.BudgetPeriod'
+      start_date:
+        type: string
+    required:
+    - amount
+    - category_id
+    - name
+    - period
+    - start_date
+    type: object
+  internal_handlers.CreateCashAccountRequest:
     properties:
       currency:
         type: string
       description:
+        maxLength: 500
         type: string
       initial_balance:
-        type: number
+        minimum: 0
+        type: integer
       name:
+        maxLength: 100
+        minLength: 1
         type: string
     required:
     - name
     type: object
-  handlers.CreateCategoryRequest:
+  internal_handlers.CreateCategoryRequest:
     properties:
       color:
         type: string
       description:
+        maxLength: 500
         type: string
       icon:
+        maxLength: 50
         type: string
       name:
+        maxLength: 100
+        minLength: 1
         type: string
       parent_id:
         type: integer
       type:
-        $ref: '#/definitions/models.CategoryType'
+        $ref: '#/definitions/kuberan_internal_models.CategoryType'
     required:
     - name
     - type
     type: object
-  handlers.CreateTransactionRequest:
+  internal_handlers.CreateInvestmentAccountRequest:
+    properties:
+      account_number:
+        maxLength: 50
+        type: string
+      broker:
+        maxLength: 100
+        type: string
+      currency:
+        type: string
+      description:
+        maxLength: 500
+        type: string
+      name:
+        maxLength: 100
+        minLength: 1
+        type: string
+    required:
+    - name
+    type: object
+  internal_handlers.CreateTransactionRequest:
     properties:
       account_id:
         type: integer
       amount:
-        type: number
+        type: integer
       category_id:
         type: integer
       date:
         type: string
       description:
+        maxLength: 500
         type: string
       type:
-        $ref: '#/definitions/models.TransactionType'
+        $ref: '#/definitions/kuberan_internal_models.TransactionType'
     required:
     - account_id
     - amount
     - type
     type: object
-  handlers.ErrorResponse:
+  internal_handlers.CreateTransferRequest:
     properties:
-      error:
+      amount:
+        type: integer
+      date:
+        type: string
+      description:
+        maxLength: 500
+        type: string
+      from_account_id:
+        type: integer
+      to_account_id:
+        type: integer
+    required:
+    - amount
+    - from_account_id
+    - to_account_id
+    type: object
+  internal_handlers.ErrorDetail:
+    properties:
+      code:
+        type: string
+      message:
         type: string
     type: object
-  handlers.LoginRequest:
+  internal_handlers.ErrorResponse:
+    properties:
+      error:
+        $ref: '#/definitions/internal_handlers.ErrorDetail'
+    type: object
+  internal_handlers.LoginRequest:
     properties:
       email:
         type: string
@@ -110,32 +240,110 @@ definitions:
     - email
     - password
     type: object
-  handlers.MessageResponse:
+  internal_handlers.MessageResponse:
     properties:
       message:
         type: string
     type: object
-  handlers.RegisterRequest:
+  internal_handlers.RecordBuyRequest:
+    properties:
+      date:
+        type: string
+      fee:
+        minimum: 0
+        type: integer
+      notes:
+        maxLength: 500
+        type: string
+      price_per_unit:
+        type: integer
+      quantity:
+        type: number
+    required:
+    - date
+    - price_per_unit
+    - quantity
+    type: object
+  internal_handlers.RecordDividendRequest:
+    properties:
+      amount:
+        type: integer
+      date:
+        type: string
+      dividend_type:
+        maxLength: 50
+        type: string
+      notes:
+        maxLength: 500
+        type: string
+    required:
+    - amount
+    - date
+    type: object
+  internal_handlers.RecordSellRequest:
+    properties:
+      date:
+        type: string
+      fee:
+        minimum: 0
+        type: integer
+      notes:
+        maxLength: 500
+        type: string
+      price_per_unit:
+        type: integer
+      quantity:
+        type: number
+    required:
+    - date
+    - price_per_unit
+    - quantity
+    type: object
+  internal_handlers.RecordSplitRequest:
+    properties:
+      date:
+        type: string
+      notes:
+        maxLength: 500
+        type: string
+      split_ratio:
+        type: number
+    required:
+    - date
+    - split_ratio
+    type: object
+  internal_handlers.RefreshRequest:
+    properties:
+      refresh_token:
+        type: string
+    required:
+    - refresh_token
+    type: object
+  internal_handlers.RegisterRequest:
     properties:
       email:
+        maxLength: 255
         type: string
       first_name:
+        maxLength: 100
         type: string
       last_name:
+        maxLength: 100
         type: string
       password:
-        minLength: 6
+        maxLength: 128
+        minLength: 8
         type: string
     required:
     - email
     - password
     type: object
-  handlers.TransactionResponse:
+  internal_handlers.TransactionResponse:
     properties:
       account_id:
         type: integer
       amount:
-        type: number
+        type: integer
       category_id:
         type: integer
       date:
@@ -145,31 +353,58 @@ definitions:
       id:
         type: integer
       type:
-        $ref: '#/definitions/models.TransactionType'
+        $ref: '#/definitions/kuberan_internal_models.TransactionType'
       user_id:
         type: integer
     type: object
-  handlers.UpdateCashAccountRequest:
+  internal_handlers.UpdateBudgetRequest:
     properties:
-      description:
+      amount:
+        type: integer
+      end_date:
         type: string
       name:
+        maxLength: 100
+        minLength: 1
+        type: string
+      period:
+        $ref: '#/definitions/kuberan_internal_models.BudgetPeriod'
+    type: object
+  internal_handlers.UpdateCashAccountRequest:
+    properties:
+      description:
+        maxLength: 500
+        type: string
+      name:
+        maxLength: 100
+        minLength: 1
         type: string
     type: object
-  handlers.UpdateCategoryRequest:
+  internal_handlers.UpdateCategoryRequest:
     properties:
       color:
         type: string
       description:
+        maxLength: 500
         type: string
       icon:
+        maxLength: 50
         type: string
       name:
+        maxLength: 100
+        minLength: 1
         type: string
       parent_id:
         type: integer
     type: object
-  handlers.UserResponse:
+  internal_handlers.UpdatePriceRequest:
+    properties:
+      current_price:
+        type: integer
+    required:
+    - current_price
+    type: object
+  internal_handlers.UserResponse:
     properties:
       email:
         type: string
@@ -180,7 +415,51 @@ definitions:
       last_name:
         type: string
     type: object
-  models.AccountType:
+  kuberan_internal_models.Account:
+    properties:
+      account_number:
+        type: string
+      balance:
+        type: integer
+      broker:
+        description: For investment accounts
+        type: string
+      created_at:
+        type: string
+      currency:
+        type: string
+      deleted_at:
+        $ref: '#/definitions/gorm.DeletedAt'
+      description:
+        type: string
+      due_date:
+        type: string
+      id:
+        type: integer
+      interest_rate:
+        description: For debt accounts
+        type: number
+      investments:
+        items:
+          $ref: '#/definitions/kuberan_internal_models.Investment'
+        type: array
+      is_active:
+        type: boolean
+      name:
+        type: string
+      transactions:
+        description: Relationships
+        items:
+          $ref: '#/definitions/kuberan_internal_models.Transaction'
+        type: array
+      type:
+        $ref: '#/definitions/kuberan_internal_models.AccountType'
+      updated_at:
+        type: string
+      user_id:
+        type: integer
+    type: object
+  kuberan_internal_models.AccountType:
     enum:
     - cash
     - investment
@@ -190,7 +469,101 @@ definitions:
     - AccountTypeCash
     - AccountTypeInvestment
     - AccountTypeDebt
-  models.CategoryType:
+  kuberan_internal_models.AssetType:
+    enum:
+    - stock
+    - etf
+    - bond
+    - crypto
+    - reit
+    type: string
+    x-enum-varnames:
+    - AssetTypeStock
+    - AssetTypeETF
+    - AssetTypeBond
+    - AssetTypeCrypto
+    - AssetTypeREIT
+  kuberan_internal_models.Budget:
+    properties:
+      amount:
+        type: integer
+      category:
+        allOf:
+        - $ref: '#/definitions/kuberan_internal_models.Category'
+        description: Relationships
+      category_id:
+        type: integer
+      created_at:
+        type: string
+      deleted_at:
+        $ref: '#/definitions/gorm.DeletedAt'
+      end_date:
+        type: string
+      id:
+        type: integer
+      is_active:
+        type: boolean
+      name:
+        type: string
+      period:
+        $ref: '#/definitions/kuberan_internal_models.BudgetPeriod'
+      start_date:
+        type: string
+      updated_at:
+        type: string
+      user_id:
+        type: integer
+    type: object
+  kuberan_internal_models.BudgetPeriod:
+    enum:
+    - monthly
+    - yearly
+    type: string
+    x-enum-varnames:
+    - BudgetPeriodMonthly
+    - BudgetPeriodYearly
+  kuberan_internal_models.Category:
+    properties:
+      budgets:
+        items:
+          $ref: '#/definitions/kuberan_internal_models.Budget'
+        type: array
+      children:
+        items:
+          $ref: '#/definitions/kuberan_internal_models.Category'
+        type: array
+      color:
+        type: string
+      created_at:
+        type: string
+      deleted_at:
+        $ref: '#/definitions/gorm.DeletedAt'
+      description:
+        type: string
+      icon:
+        type: string
+      id:
+        type: integer
+      name:
+        type: string
+      parent:
+        allOf:
+        - $ref: '#/definitions/kuberan_internal_models.Category'
+        description: Relationships
+      parent_id:
+        type: integer
+      transactions:
+        items:
+          $ref: '#/definitions/kuberan_internal_models.Transaction'
+        type: array
+      type:
+        $ref: '#/definitions/kuberan_internal_models.CategoryType'
+      updated_at:
+        type: string
+      user_id:
+        type: integer
+    type: object
+  kuberan_internal_models.CategoryType:
     enum:
     - income
     - expense
@@ -198,7 +571,155 @@ definitions:
     x-enum-varnames:
     - CategoryTypeIncome
     - CategoryTypeExpense
-  models.TransactionType:
+  kuberan_internal_models.Investment:
+    properties:
+      account:
+        allOf:
+        - $ref: '#/definitions/kuberan_internal_models.Account'
+        description: Relationships
+      account_id:
+        type: integer
+      asset_type:
+        $ref: '#/definitions/kuberan_internal_models.AssetType'
+      cost_basis:
+        description: Total cost basis in cents
+        type: integer
+      coupon_rate:
+        type: number
+      created_at:
+        type: string
+      currency:
+        type: string
+      current_price:
+        description: Current market price per unit in cents
+        type: integer
+      deleted_at:
+        $ref: '#/definitions/gorm.DeletedAt'
+      exchange:
+        description: Stock/ETF specific fields
+        type: string
+      id:
+        type: integer
+      last_updated:
+        description: Last time the price was updated
+        type: string
+      maturity_date:
+        description: Bond specific fields
+        type: string
+      name:
+        description: Full name of the investment
+        type: string
+      network:
+        description: Crypto specific fields
+        type: string
+      property_type:
+        description: REIT specific fields
+        type: string
+      quantity:
+        description: Number of shares/units held
+        type: number
+      symbol:
+        description: Stock/ETF symbol or unique identifier
+        type: string
+      transactions:
+        items:
+          $ref: '#/definitions/kuberan_internal_models.InvestmentTransaction'
+        type: array
+      updated_at:
+        type: string
+      wallet_address:
+        type: string
+      yield_to_maturity:
+        type: number
+    type: object
+  kuberan_internal_models.InvestmentTransaction:
+    properties:
+      created_at:
+        type: string
+      date:
+        type: string
+      deleted_at:
+        $ref: '#/definitions/gorm.DeletedAt'
+      dividend_type:
+        description: For dividends
+        type: string
+      fee:
+        type: integer
+      id:
+        type: integer
+      investment:
+        allOf:
+        - $ref: '#/definitions/kuberan_internal_models.Investment'
+        description: Relationships
+      investment_id:
+        type: integer
+      notes:
+        type: string
+      price_per_unit:
+        type: integer
+      quantity:
+        type: number
+      split_ratio:
+        description: For splits
+        type: number
+      total_amount:
+        type: integer
+      type:
+        $ref: '#/definitions/kuberan_internal_models.InvestmentTransactionType'
+      updated_at:
+        type: string
+    type: object
+  kuberan_internal_models.InvestmentTransactionType:
+    enum:
+    - buy
+    - sell
+    - dividend
+    - split
+    - transfer
+    type: string
+    x-enum-varnames:
+    - InvestmentTransactionBuy
+    - InvestmentTransactionSell
+    - InvestmentTransactionDividend
+    - InvestmentTransactionSplit
+    - InvestmentTransactionTransfer
+  kuberan_internal_models.Transaction:
+    properties:
+      account:
+        allOf:
+        - $ref: '#/definitions/kuberan_internal_models.Account'
+        description: Relationships
+      account_id:
+        type: integer
+      amount:
+        type: integer
+      category:
+        $ref: '#/definitions/kuberan_internal_models.Category'
+      category_id:
+        type: integer
+      created_at:
+        type: string
+      date:
+        type: string
+      deleted_at:
+        $ref: '#/definitions/gorm.DeletedAt'
+      description:
+        type: string
+      id:
+        type: integer
+      to_account:
+        $ref: '#/definitions/kuberan_internal_models.Account'
+      to_account_id:
+        description: For transfers
+        type: integer
+      type:
+        $ref: '#/definitions/kuberan_internal_models.TransactionType'
+      updated_at:
+        type: string
+      user_id:
+        type: integer
+    type: object
+  kuberan_internal_models.TransactionType:
     enum:
     - income
     - expense
@@ -210,17 +731,136 @@ definitions:
     - TransactionTypeExpense
     - TransactionTypeTransfer
     - TransactionTypeInvestment
+  kuberan_internal_pagination.PageResponse-kuberan_internal_models_Account:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/kuberan_internal_models.Account'
+        type: array
+      page:
+        type: integer
+      page_size:
+        type: integer
+      total_items:
+        type: integer
+      total_pages:
+        type: integer
+    type: object
+  kuberan_internal_pagination.PageResponse-kuberan_internal_models_Budget:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/kuberan_internal_models.Budget'
+        type: array
+      page:
+        type: integer
+      page_size:
+        type: integer
+      total_items:
+        type: integer
+      total_pages:
+        type: integer
+    type: object
+  kuberan_internal_pagination.PageResponse-kuberan_internal_models_Category:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/kuberan_internal_models.Category'
+        type: array
+      page:
+        type: integer
+      page_size:
+        type: integer
+      total_items:
+        type: integer
+      total_pages:
+        type: integer
+    type: object
+  kuberan_internal_pagination.PageResponse-kuberan_internal_models_Investment:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/kuberan_internal_models.Investment'
+        type: array
+      page:
+        type: integer
+      page_size:
+        type: integer
+      total_items:
+        type: integer
+      total_pages:
+        type: integer
+    type: object
+  kuberan_internal_pagination.PageResponse-kuberan_internal_models_InvestmentTransaction:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/kuberan_internal_models.InvestmentTransaction'
+        type: array
+      page:
+        type: integer
+      page_size:
+        type: integer
+      total_items:
+        type: integer
+      total_pages:
+        type: integer
+    type: object
+  kuberan_internal_pagination.PageResponse-kuberan_internal_models_Transaction:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/kuberan_internal_models.Transaction'
+        type: array
+      page:
+        type: integer
+      page_size:
+        type: integer
+      total_items:
+        type: integer
+      total_pages:
+        type: integer
+    type: object
+  kuberan_internal_services.BudgetProgress:
+    properties:
+      budget_id:
+        type: integer
+      budgeted:
+        type: integer
+      percentage:
+        type: number
+      remaining:
+        type: integer
+      spent:
+        type: integer
+    type: object
+  kuberan_internal_services.PortfolioSummary:
+    properties:
+      gain_loss_pct:
+        type: number
+      holdings_by_type:
+        additionalProperties:
+          $ref: '#/definitions/kuberan_internal_services.TypeSummary'
+        type: object
+      total_cost_basis:
+        type: integer
+      total_gain_loss:
+        type: integer
+      total_value:
+        type: integer
+    type: object
+  kuberan_internal_services.TypeSummary:
+    properties:
+      count:
+        type: integer
+      value:
+        type: integer
+    type: object
 host: localhost:8080
 info:
-  contact:
-    email: support@kuberan.io
-    name: API Support
-    url: http://www.kuberan.io/support
+  contact: {}
   description: Kuberan is a personal finance application that allows users to efficiently
     manage their finances, make budgets, and track investments.
-  license:
-    name: MIT
-    url: https://opensource.org/licenses/MIT
   termsOfService: http://swagger.io/terms/
   title: Kuberan API
   version: "1.0"
@@ -229,27 +869,34 @@ paths:
     get:
       consumes:
       - application/json
-      description: Get all accounts for the authenticated user
+      description: Get a paginated list of accounts for the authenticated user
+      parameters:
+      - description: Page number (default 1)
+        in: query
+        name: page
+        type: integer
+      - description: Items per page (default 20, max 100)
+        in: query
+        name: page_size
+        type: integer
       produces:
       - application/json
       responses:
         "200":
-          description: List of accounts
+          description: Paginated accounts
           schema:
-            items:
-              $ref: '#/definitions/handlers.AccountResponse'
-            type: array
+            $ref: '#/definitions/kuberan_internal_pagination.PageResponse-kuberan_internal_models_Account'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/handlers.ErrorResponse'
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
         "500":
           description: Server error
           schema:
-            $ref: '#/definitions/handlers.ErrorResponse'
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
       security:
       - BearerAuth: []
-      summary: Get all user accounts
+      summary: Get user accounts
       tags:
       - accounts
   /accounts/{id}:
@@ -269,23 +916,23 @@ paths:
         "200":
           description: Account details
           schema:
-            $ref: '#/definitions/handlers.AccountResponse'
+            $ref: '#/definitions/internal_handlers.AccountResponse'
         "400":
           description: Invalid account ID
           schema:
-            $ref: '#/definitions/handlers.ErrorResponse'
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/handlers.ErrorResponse'
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
         "404":
           description: Account not found
           schema:
-            $ref: '#/definitions/handlers.ErrorResponse'
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
         "500":
           description: Server error
           schema:
-            $ref: '#/definitions/handlers.ErrorResponse'
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
       security:
       - BearerAuth: []
       summary: Get account by ID
@@ -306,71 +953,148 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/handlers.UpdateCashAccountRequest'
+          $ref: '#/definitions/internal_handlers.UpdateCashAccountRequest'
       produces:
       - application/json
       responses:
         "200":
           description: Updated account
           schema:
-            $ref: '#/definitions/handlers.AccountResponse'
+            $ref: '#/definitions/internal_handlers.AccountResponse'
         "400":
           description: Invalid input or account ID
           schema:
-            $ref: '#/definitions/handlers.ErrorResponse'
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/handlers.ErrorResponse'
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
         "404":
           description: Account not found
           schema:
-            $ref: '#/definitions/handlers.ErrorResponse'
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
         "500":
           description: Server error
           schema:
-            $ref: '#/definitions/handlers.ErrorResponse'
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
       security:
       - BearerAuth: []
       summary: Update cash account
       tags:
       - accounts
+  /accounts/{id}/investments:
+    get:
+      consumes:
+      - application/json
+      description: Get a paginated list of investments for an account
+      parameters:
+      - description: Account ID
+        in: path
+        name: id
+        type: integer
+      - description: Page number (default 1)
+        in: query
+        name: page
+        type: integer
+      - description: Items per page (default 20, max 100)
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Paginated investments
+          schema:
+            $ref: '#/definitions/kuberan_internal_pagination.PageResponse-kuberan_internal_models_Investment'
+        "400":
+          description: Invalid input
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "404":
+          description: Account not found
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get account investments
+      tags:
+      - investments
   /accounts/{id}/transactions:
     get:
       consumes:
       - application/json
-      description: Get all transactions for a specific account
+      description: Get a paginated list of transactions for a specific account with
+        optional filters
       parameters:
       - description: Account ID
         in: path
         name: id
         required: true
         type: integer
+      - description: Page number (default 1)
+        in: query
+        name: page
+        type: integer
+      - description: Items per page (default 20, max 100)
+        in: query
+        name: page_size
+        type: integer
+      - description: Filter by start date (RFC3339, e.g. 2024-01-01T00:00:00Z)
+        in: query
+        name: from_date
+        type: string
+      - description: Filter by end date (RFC3339)
+        in: query
+        name: to_date
+        type: string
+      - description: Filter by transaction type (income, expense, transfer, investment)
+        in: query
+        name: type
+        type: string
+      - description: Filter by category ID
+        in: query
+        name: category_id
+        type: integer
+      - description: Filter by minimum amount (cents)
+        in: query
+        name: min_amount
+        type: integer
+      - description: Filter by maximum amount (cents)
+        in: query
+        name: max_amount
+        type: integer
       produces:
       - application/json
       responses:
         "200":
-          description: List of transactions
+          description: Paginated transactions
           schema:
-            items:
-              $ref: '#/definitions/handlers.TransactionResponse'
-            type: array
+            $ref: '#/definitions/kuberan_internal_pagination.PageResponse-kuberan_internal_models_Transaction'
         "400":
-          description: Invalid account ID
+          description: Invalid input
           schema:
-            $ref: '#/definitions/handlers.ErrorResponse'
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/handlers.ErrorResponse'
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
         "404":
           description: Account not found
           schema:
-            $ref: '#/definitions/handlers.ErrorResponse'
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
         "500":
           description: Server error
           schema:
-            $ref: '#/definitions/handlers.ErrorResponse'
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
       security:
       - BearerAuth: []
       summary: Get account transactions
@@ -388,63 +1112,137 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/handlers.CreateCashAccountRequest'
+          $ref: '#/definitions/internal_handlers.CreateCashAccountRequest'
       produces:
       - application/json
       responses:
         "201":
           description: Account created
           schema:
-            $ref: '#/definitions/handlers.AccountResponse'
+            $ref: '#/definitions/internal_handlers.AccountResponse'
         "400":
           description: Invalid input
           schema:
-            $ref: '#/definitions/handlers.ErrorResponse'
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/handlers.ErrorResponse'
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
         "500":
           description: Server error
           schema:
-            $ref: '#/definitions/handlers.ErrorResponse'
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
       security:
       - BearerAuth: []
       summary: Create a cash account
+      tags:
+      - accounts
+  /accounts/investment:
+    post:
+      consumes:
+      - application/json
+      description: Create a new investment account for the authenticated user
+      parameters:
+      - description: Investment account details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handlers.CreateInvestmentAccountRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Account created
+          schema:
+            $ref: '#/definitions/internal_handlers.AccountResponse'
+        "400":
+          description: Invalid input
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create an investment account
       tags:
       - accounts
   /auth/login:
     post:
       consumes:
       - application/json
-      description: Authenticate a user and get a token
+      description: Authenticate a user and get access and refresh tokens
       parameters:
       - description: User login credentials
         in: body
         name: request
         required: true
         schema:
-          $ref: '#/definitions/handlers.LoginRequest'
+          $ref: '#/definitions/internal_handlers.LoginRequest'
       produces:
       - application/json
       responses:
         "200":
-          description: User authenticated and token generated
+          description: User authenticated and tokens generated
           schema:
-            $ref: '#/definitions/handlers.AuthResponse'
+            $ref: '#/definitions/internal_handlers.AuthResponse'
         "400":
           description: Invalid input
           schema:
-            $ref: '#/definitions/handlers.ErrorResponse'
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
         "401":
           description: Invalid credentials
           schema:
-            $ref: '#/definitions/handlers.ErrorResponse'
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "423":
+          description: Account locked
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
         "500":
           description: Server error
           schema:
-            $ref: '#/definitions/handlers.ErrorResponse'
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
       summary: Login user
+      tags:
+      - auth
+  /auth/refresh:
+    post:
+      consumes:
+      - application/json
+      description: Exchange a valid refresh token for new access and refresh tokens
+      parameters:
+      - description: Refresh token
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handlers.RefreshRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: New tokens generated
+          schema:
+            $ref: '#/definitions/internal_handlers.AuthResponse'
+        "400":
+          description: Invalid input
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "401":
+          description: Invalid or expired refresh token
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      summary: Refresh access token
       tags:
       - auth
   /auth/register:
@@ -458,55 +1256,311 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/handlers.RegisterRequest'
+          $ref: '#/definitions/internal_handlers.RegisterRequest'
       produces:
       - application/json
       responses:
         "201":
-          description: User registered and token generated
+          description: User registered and tokens generated
           schema:
-            $ref: '#/definitions/handlers.AuthResponse'
+            $ref: '#/definitions/internal_handlers.AuthResponse'
         "400":
           description: Invalid input
           schema:
-            $ref: '#/definitions/handlers.ErrorResponse'
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
         "500":
           description: Server error
           schema:
-            $ref: '#/definitions/handlers.ErrorResponse'
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
       summary: Register a new user
       tags:
       - auth
+  /budgets:
+    get:
+      consumes:
+      - application/json
+      description: Get a paginated list of budgets for the authenticated user
+      parameters:
+      - description: Filter by active status
+        in: query
+        name: is_active
+        type: boolean
+      - description: Filter by period (monthly/yearly)
+        in: query
+        name: period
+        type: string
+      - description: Page number (default 1)
+        in: query
+        name: page
+        type: integer
+      - description: Items per page (default 20, max 100)
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Paginated budgets
+          schema:
+            $ref: '#/definitions/kuberan_internal_pagination.PageResponse-kuberan_internal_models_Budget'
+        "400":
+          description: Invalid input
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get budgets
+      tags:
+      - budgets
+    post:
+      consumes:
+      - application/json
+      description: Create a new budget for a category
+      parameters:
+      - description: Budget details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handlers.CreateBudgetRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Budget created
+          schema:
+            $ref: '#/definitions/kuberan_internal_models.Budget'
+        "400":
+          description: Invalid input
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "404":
+          description: Category not found
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create a budget
+      tags:
+      - budgets
+  /budgets/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Delete a budget by ID (soft delete)
+      parameters:
+      - description: Budget ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Budget deleted
+          schema:
+            $ref: '#/definitions/internal_handlers.MessageResponse'
+        "400":
+          description: Invalid budget ID
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "404":
+          description: Budget not found
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete budget
+      tags:
+      - budgets
+    get:
+      consumes:
+      - application/json
+      description: Get a specific budget by ID
+      parameters:
+      - description: Budget ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Budget details
+          schema:
+            $ref: '#/definitions/kuberan_internal_models.Budget'
+        "400":
+          description: Invalid budget ID
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "404":
+          description: Budget not found
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get budget by ID
+      tags:
+      - budgets
+    put:
+      consumes:
+      - application/json
+      description: Update an existing budget
+      parameters:
+      - description: Budget ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Updated budget details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handlers.UpdateBudgetRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Updated budget
+          schema:
+            $ref: '#/definitions/kuberan_internal_models.Budget'
+        "400":
+          description: Invalid input or budget ID
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "404":
+          description: Budget not found
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update budget
+      tags:
+      - budgets
+  /budgets/{id}/progress:
+    get:
+      consumes:
+      - application/json
+      description: Get spending progress for a budget in the current period
+      parameters:
+      - description: Budget ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Budget progress
+          schema:
+            $ref: '#/definitions/kuberan_internal_services.BudgetProgress'
+        "400":
+          description: Invalid budget ID
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "404":
+          description: Budget not found
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get budget progress
+      tags:
+      - budgets
   /categories:
     get:
       consumes:
       - application/json
-      description: Get all transaction categories for the authenticated user
+      description: Get a paginated list of transaction categories for the authenticated
+        user
       parameters:
       - description: Filter by category type (income/expense)
         in: query
         name: type
         type: string
+      - description: Page number (default 1)
+        in: query
+        name: page
+        type: integer
+      - description: Items per page (default 20, max 100)
+        in: query
+        name: page_size
+        type: integer
       produces:
       - application/json
       responses:
         "200":
-          description: List of categories
+          description: Paginated categories
           schema:
-            items:
-              $ref: '#/definitions/handlers.CategoryResponse'
-            type: array
+            $ref: '#/definitions/kuberan_internal_pagination.PageResponse-kuberan_internal_models_Category'
+        "400":
+          description: Invalid input
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/handlers.ErrorResponse'
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
         "500":
           description: Server error
           schema:
-            $ref: '#/definitions/handlers.ErrorResponse'
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
       security:
       - BearerAuth: []
-      summary: Get all categories
+      summary: Get categories
       tags:
       - categories
     post:
@@ -519,26 +1573,26 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/handlers.CreateCategoryRequest'
+          $ref: '#/definitions/internal_handlers.CreateCategoryRequest'
       produces:
       - application/json
       responses:
         "201":
           description: Category created
           schema:
-            $ref: '#/definitions/handlers.CategoryResponse'
+            $ref: '#/definitions/internal_handlers.CategoryResponse'
         "400":
           description: Invalid input
           schema:
-            $ref: '#/definitions/handlers.ErrorResponse'
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/handlers.ErrorResponse'
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
         "500":
           description: Server error
           schema:
-            $ref: '#/definitions/handlers.ErrorResponse'
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
       security:
       - BearerAuth: []
       summary: Create a category
@@ -561,23 +1615,23 @@ paths:
         "200":
           description: Category deleted
           schema:
-            $ref: '#/definitions/handlers.MessageResponse'
+            $ref: '#/definitions/internal_handlers.MessageResponse'
         "400":
           description: Invalid category ID or cannot delete category in use
           schema:
-            $ref: '#/definitions/handlers.ErrorResponse'
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/handlers.ErrorResponse'
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
         "404":
           description: Category not found
           schema:
-            $ref: '#/definitions/handlers.ErrorResponse'
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
         "500":
           description: Server error
           schema:
-            $ref: '#/definitions/handlers.ErrorResponse'
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
       security:
       - BearerAuth: []
       summary: Delete category
@@ -599,23 +1653,23 @@ paths:
         "200":
           description: Category details
           schema:
-            $ref: '#/definitions/handlers.CategoryResponse'
+            $ref: '#/definitions/internal_handlers.CategoryResponse'
         "400":
           description: Invalid category ID
           schema:
-            $ref: '#/definitions/handlers.ErrorResponse'
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/handlers.ErrorResponse'
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
         "404":
           description: Category not found
           schema:
-            $ref: '#/definitions/handlers.ErrorResponse'
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
         "500":
           description: Server error
           schema:
-            $ref: '#/definitions/handlers.ErrorResponse'
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
       security:
       - BearerAuth: []
       summary: Get category by ID
@@ -636,35 +1690,411 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/handlers.UpdateCategoryRequest'
+          $ref: '#/definitions/internal_handlers.UpdateCategoryRequest'
       produces:
       - application/json
       responses:
         "200":
           description: Updated category
           schema:
-            $ref: '#/definitions/handlers.CategoryResponse'
+            $ref: '#/definitions/internal_handlers.CategoryResponse'
         "400":
           description: Invalid input or category ID
           schema:
-            $ref: '#/definitions/handlers.ErrorResponse'
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/handlers.ErrorResponse'
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
         "404":
           description: Category not found
           schema:
-            $ref: '#/definitions/handlers.ErrorResponse'
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
         "500":
           description: Server error
           schema:
-            $ref: '#/definitions/handlers.ErrorResponse'
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
       security:
       - BearerAuth: []
       summary: Update category
       tags:
       - categories
+  /investments:
+    post:
+      consumes:
+      - application/json
+      description: Add a new investment holding to an investment account
+      parameters:
+      - description: Investment details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handlers.AddInvestmentRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Investment created
+          schema:
+            $ref: '#/definitions/kuberan_internal_models.Investment'
+        "400":
+          description: Invalid input
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "404":
+          description: Account not found
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Add investment
+      tags:
+      - investments
+  /investments/{id}:
+    get:
+      consumes:
+      - application/json
+      description: Get a specific investment by ID
+      parameters:
+      - description: Investment ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Investment details
+          schema:
+            $ref: '#/definitions/kuberan_internal_models.Investment'
+        "400":
+          description: Invalid investment ID
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "404":
+          description: Investment not found
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get investment by ID
+      tags:
+      - investments
+  /investments/{id}/buy:
+    post:
+      consumes:
+      - application/json
+      description: Record a buy transaction for an investment holding
+      parameters:
+      - description: Investment ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Buy details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handlers.RecordBuyRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Transaction created
+          schema:
+            $ref: '#/definitions/kuberan_internal_models.InvestmentTransaction'
+        "400":
+          description: Invalid input
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "404":
+          description: Investment not found
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Record buy transaction
+      tags:
+      - investments
+  /investments/{id}/dividend:
+    post:
+      consumes:
+      - application/json
+      description: Record a dividend payment for an investment holding
+      parameters:
+      - description: Investment ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Dividend details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handlers.RecordDividendRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Transaction created
+          schema:
+            $ref: '#/definitions/kuberan_internal_models.InvestmentTransaction'
+        "400":
+          description: Invalid input
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "404":
+          description: Investment not found
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Record dividend
+      tags:
+      - investments
+  /investments/{id}/price:
+    put:
+      consumes:
+      - application/json
+      description: Update the current market price of an investment
+      parameters:
+      - description: Investment ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Price update
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handlers.UpdatePriceRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Updated investment
+          schema:
+            $ref: '#/definitions/kuberan_internal_models.Investment'
+        "400":
+          description: Invalid input
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "404":
+          description: Investment not found
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update investment price
+      tags:
+      - investments
+  /investments/{id}/sell:
+    post:
+      consumes:
+      - application/json
+      description: Record a sell transaction for an investment holding
+      parameters:
+      - description: Investment ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Sell details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handlers.RecordSellRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Transaction created
+          schema:
+            $ref: '#/definitions/kuberan_internal_models.InvestmentTransaction'
+        "400":
+          description: Invalid input or insufficient shares
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "404":
+          description: Investment not found
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Record sell transaction
+      tags:
+      - investments
+  /investments/{id}/split:
+    post:
+      consumes:
+      - application/json
+      description: Record a stock split for an investment holding
+      parameters:
+      - description: Investment ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Split details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handlers.RecordSplitRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Transaction created
+          schema:
+            $ref: '#/definitions/kuberan_internal_models.InvestmentTransaction'
+        "400":
+          description: Invalid input
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "404":
+          description: Investment not found
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Record stock split
+      tags:
+      - investments
+  /investments/{id}/transactions:
+    get:
+      consumes:
+      - application/json
+      description: Get a paginated list of transactions for an investment
+      parameters:
+      - description: Investment ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Page number (default 1)
+        in: query
+        name: page
+        type: integer
+      - description: Items per page (default 20, max 100)
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Paginated transactions
+          schema:
+            $ref: '#/definitions/kuberan_internal_pagination.PageResponse-kuberan_internal_models_InvestmentTransaction'
+        "400":
+          description: Invalid input
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "404":
+          description: Investment not found
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get investment transactions
+      tags:
+      - investments
+  /investments/portfolio:
+    get:
+      consumes:
+      - application/json
+      description: Get an aggregated portfolio summary across all investment accounts
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Portfolio summary
+          schema:
+            $ref: '#/definitions/kuberan_internal_services.PortfolioSummary'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get portfolio summary
+      tags:
+      - investments
   /profile:
     get:
       consumes:
@@ -676,15 +2106,15 @@ paths:
         "200":
           description: User profile
           schema:
-            $ref: '#/definitions/handlers.UserResponse'
+            $ref: '#/definitions/internal_handlers.UserResponse'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/handlers.ErrorResponse'
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
         "500":
           description: Server error
           schema:
-            $ref: '#/definitions/handlers.ErrorResponse'
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
       security:
       - BearerAuth: []
       summary: Get user profile
@@ -701,26 +2131,26 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/handlers.CreateTransactionRequest'
+          $ref: '#/definitions/internal_handlers.CreateTransactionRequest'
       produces:
       - application/json
       responses:
         "201":
           description: Transaction created
           schema:
-            $ref: '#/definitions/handlers.TransactionResponse'
+            $ref: '#/definitions/internal_handlers.TransactionResponse'
         "400":
           description: Invalid input
           schema:
-            $ref: '#/definitions/handlers.ErrorResponse'
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/handlers.ErrorResponse'
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
         "500":
           description: Server error
           schema:
-            $ref: '#/definitions/handlers.ErrorResponse'
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
       security:
       - BearerAuth: []
       summary: Create a transaction
@@ -743,23 +2173,23 @@ paths:
         "200":
           description: Transaction deleted
           schema:
-            $ref: '#/definitions/handlers.MessageResponse'
+            $ref: '#/definitions/internal_handlers.MessageResponse'
         "400":
           description: Invalid transaction ID
           schema:
-            $ref: '#/definitions/handlers.ErrorResponse'
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/handlers.ErrorResponse'
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
         "404":
           description: Transaction not found
           schema:
-            $ref: '#/definitions/handlers.ErrorResponse'
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
         "500":
           description: Server error
           schema:
-            $ref: '#/definitions/handlers.ErrorResponse'
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
       security:
       - BearerAuth: []
       summary: Delete transaction
@@ -781,26 +2211,66 @@ paths:
         "200":
           description: Transaction details
           schema:
-            $ref: '#/definitions/handlers.TransactionResponse'
+            $ref: '#/definitions/internal_handlers.TransactionResponse'
         "400":
           description: Invalid transaction ID
           schema:
-            $ref: '#/definitions/handlers.ErrorResponse'
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/handlers.ErrorResponse'
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
         "404":
           description: Transaction not found
           schema:
-            $ref: '#/definitions/handlers.ErrorResponse'
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
         "500":
           description: Server error
           schema:
-            $ref: '#/definitions/handlers.ErrorResponse'
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
       security:
       - BearerAuth: []
       summary: Get transaction by ID
+      tags:
+      - transactions
+  /transactions/transfer:
+    post:
+      consumes:
+      - application/json
+      description: Transfer funds from one account to another
+      parameters:
+      - description: Transfer details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handlers.CreateTransferRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Transfer created
+          schema:
+            $ref: '#/definitions/internal_handlers.TransactionResponse'
+        "400":
+          description: Invalid input or insufficient balance
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "404":
+          description: Account not found
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create a transfer
       tags:
       - transactions
 securityDefinitions:

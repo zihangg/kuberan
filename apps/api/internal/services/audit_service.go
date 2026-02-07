@@ -2,11 +2,10 @@ package services
 
 import (
 	"encoding/json"
-
-	"gorm.io/gorm"
-
 	"kuberan/internal/logger"
 	"kuberan/internal/models"
+
+	"gorm.io/gorm"
 )
 
 // auditService handles audit log recording.
@@ -19,9 +18,9 @@ func NewAuditService(db *gorm.DB) AuditServicer {
 	return &auditService{db: db}
 }
 
-// Log records an audit event. Errors are logged but never propagated
+// Log records an audit event. Errors are logged but never propagate
 // to avoid disrupting the main operation.
-func (s *auditService) Log(userID uint, action, resourceType string, resourceID uint, ipAddress string, changes map[string]interface{}) {
+func (s *auditService) Log(userID uint, action, resourceType string, resourceID uint, ipAddress string, changes map[string]any) {
 	var changesJSON string
 	if changes != nil {
 		data, err := json.Marshal(changes)

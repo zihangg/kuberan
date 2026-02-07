@@ -47,7 +47,7 @@ migrate-version:
 
 # Documentation
 swagger:
-	swag init -g cmd/api/main.go -d . --output internal/docs
+	swag init -g cmd/api/main.go -d . --output internal/docs --parseDependency
 
 clean:
 	rm -rf bin/ tmp/ coverage.out coverage.html
