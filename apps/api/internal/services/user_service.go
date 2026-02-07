@@ -3,12 +3,18 @@ package services
 import (
 	"errors"
 	"strings"
+	"time"
 
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 
 	apperrors "kuberan/internal/errors"
 	"kuberan/internal/models"
+)
+
+const (
+	maxFailedAttempts = 5
+	lockoutDuration   = 15 * time.Minute
 )
 
 // userService handles user-related business logic.
@@ -85,4 +91,38 @@ func (s *userService) GetUserByID(id uint) (*models.User, error) {
 func (s *userService) VerifyPassword(user *models.User, password string) bool {
 	err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password))
 	return err == nil
+}
+
+// AttemptLogin authenticates a user by email and password with lockout protection.
+// Returns the user on success, or an appropriate AppError on failure.
+func (s *userService) AttemptLogin(email, password string) (*models.User, error) {
+	user, err := s.GetUserByEmail(email)
+	if err != nil {
+		return nil, apperrors.ErrInvalidCredentials
+	}
+
+	// Check if account is locked
+	if user.LockedUntil != nil && user.LockedUntil.After(time.Now()) {
+		return nil, apperrors.ErrAccountLocked
+	}
+
+	// Verify password
+	if !s.VerifyPassword(user, password) {
+		user.FailedLoginAttempts++
+		if user.FailedLoginAttempts >= maxFailedAttempts {
+			lockUntil := time.Now().Add(lockoutDuration)
+			user.LockedUntil = &lockUntil
+		}
+		s.db.Save(user)
+		return nil, apperrors.ErrInvalidCredentials
+	}
+
+	// Successful login: reset failed attempts
+	now := time.Now()
+	user.FailedLoginAttempts = 0
+	user.LockedUntil = nil
+	user.LastLoginAt = &now
+	s.db.Save(user)
+
+	return user, nil
 }

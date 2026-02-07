@@ -14,6 +14,7 @@ type UserServicer interface {
 	GetUserByEmail(email string) (*models.User, error)
 	GetUserByID(id uint) (*models.User, error)
 	VerifyPassword(user *models.User, password string) bool
+	AttemptLogin(email, password string) (*models.User, error)
 }
 
 // AccountServicer defines the contract for account-related business logic.

@@ -108,14 +108,9 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
-	user, err := h.userService.GetUserByEmail(req.Email)
+	user, err := h.userService.AttemptLogin(req.Email, req.Password)
 	if err != nil {
-		respondWithError(c, apperrors.ErrInvalidCredentials)
-		return
-	}
-
-	if !h.userService.VerifyPassword(user, req.Password) {
-		respondWithError(c, apperrors.ErrInvalidCredentials)
+		respondWithError(c, err)
 		return
 	}
 
