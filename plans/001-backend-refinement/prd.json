@@ -1,0 +1,900 @@
+[
+  {
+    "category": "cleanup",
+    "description": "Delete duplicate domain packages that are unused copies of internal/models/",
+    "steps": [
+      "Delete internal/account/ directory entirely",
+      "Delete internal/auth/ directory entirely",
+      "Delete internal/budget/ directory entirely",
+      "Delete internal/category/ directory entirely",
+      "Delete internal/transaction/ directory entirely",
+      "Delete internal/investment/ directory entirely",
+      "Verify no remaining imports reference these deleted packages",
+      "Run go build ./... to confirm compilation"
+    ],
+    "passes": true
+  },
+  {
+    "category": "cleanup",
+    "description": "Delete abandoned code (internal/app and internal/router)",
+    "steps": [
+      "Delete internal/app/ directory (abandoned bootstrap with import cycle errors)",
+      "Delete internal/router/ directory (empty stub)",
+      "Remove any references to these packages from other files",
+      "Run go build ./... to confirm compilation"
+    ],
+    "passes": true
+  },
+  {
+    "category": "cleanup",
+    "description": "Move main.go to cmd/api/main.go and update build references",
+    "steps": [
+      "Create apps/api/cmd/api/ directory",
+      "Move apps/api/main.go to apps/api/cmd/api/main.go",
+      "Update apps/api/air.toml: change build command to 'go build -o ./tmp/api ./cmd/api'",
+      "Update apps/api/dockerfiles/Dockerfile.dev if it references main.go path",
+      "Update root package.json build:backend script to 'go build -o ../../bin/api ./cmd/api'",
+      "Run go build ./cmd/api to confirm compilation"
+    ],
+    "passes": true
+  },
+  {
+    "category": "cleanup",
+    "description": "Fix account creation atomicity bug in CreateCashAccount",
+    "steps": [
+      "Open internal/services/account_service.go, method CreateCashAccount",
+      "Wrap account creation and initial transaction insert in a single s.db.Transaction() call",
+      "Ensure initial transaction failure rolls back account creation",
+      "Remove the silent error swallow (return account, nil on transaction error)",
+      "Run go build ./... to confirm compilation"
+    ],
+    "passes": true
+  },
+  {
+    "category": "cleanup",
+    "description": "Fix nested transaction pattern in TransactionService",
+    "steps": [
+      "Open internal/services/transaction_service.go",
+      "Move the DB transaction opening from createTransactionWithDB to CreateTransaction",
+      "Pass the tx handle into createTransactionWithDB so it operates directly on the passed tx",
+      "Remove the inner tx.Transaction() call in createTransactionWithDB",
+      "Run go build ./... to confirm compilation"
+    ],
+    "passes": true
+  },
+  {
+    "category": "cleanup",
+    "description": "Create Zap structured logger package",
+    "steps": [
+      "Add go.uber.org/zap dependency",
+      "Create internal/logger/logger.go with Init(env string) and Get() *zap.SugaredLogger",
+      "Init creates JSON encoder for production, console encoder for development",
+      "Initialize logger in cmd/api/main.go before anything else",
+      "Run go build ./... to confirm compilation"
+    ],
+    "passes": true
+  },
+  {
+    "category": "cleanup",
+    "description": "Create request logging middleware with request IDs",
+    "steps": [
+      "Add github.com/google/uuid dependency",
+      "Create internal/middleware/logging.go",
+      "Generate UUID request ID per request, set in Gin context and X-Request-ID header",
+      "Log method, path, status code, latency, client IP, request ID using Zap",
+      "Register middleware on the router in main.go",
+      "Run go build ./... to confirm compilation"
+    ],
+    "passes": true
+  },
+  {
+    "category": "cleanup",
+    "description": "Replace all log.Println/Fatalf/Printf calls with Zap logger",
+    "steps": [
+      "Update internal/config/config.go: replace 3 occurrences of log/fmt calls",
+      "Update internal/database/database.go: replace 2 occurrences",
+      "Update cmd/api/main.go: replace 3 occurrences",
+      "Search entire codebase for remaining log.Println, log.Fatalf, fmt.Printf calls",
+      "Verify zero calls to log.Println, log.Fatalf, or fmt.Printf remain",
+      "Run go build ./... to confirm compilation"
+    ],
+    "passes": true
+  },
+  {
+    "category": "infrastructure",
+    "description": "Install and configure golangci-lint with .golangci.yml",
+    "steps": [
+      "Create apps/api/.golangci.yml with linters: errcheck, govet, ineffassign, staticcheck, unused, gosimple, gocritic, revive, misspell, unconvert, unparam, gofmt, goimports, bodyclose, nilerr, exportloopref, sqlclosecheck",
+      "Configure linter settings for revive, gocritic",
+      "Add exclude rules for test files (dot-imports, exported comments, unparam)",
+      "Exclude auto-generated swagger docs from style linters",
+      "Run golangci-lint run ./... to verify config loads correctly"
+    ],
+    "passes": true
+  },
+  {
+    "category": "infrastructure",
+    "description": "Create verification script (scripts/check.sh)",
+    "steps": [
+      "Create apps/api/scripts/check.sh",
+      "Script runs in order: go build ./..., go vet ./..., golangci-lint run ./..., go test ./..., go test -race ./...",
+      "Uses set -euo pipefail to fail fast on any error",
+      "Make script executable: chmod +x",
+      "Run the script to verify it works end-to-end"
+    ],
+    "passes": true
+  },
+  {
+    "category": "infrastructure",
+    "description": "Create Makefile with check, check-fast, test, and other targets",
+    "steps": [
+      "Create apps/api/Makefile",
+      "Add targets: dev, build, test, test-cover, test-race, lint, fmt, check-fast, check, migrate-up, migrate-down, migrate-version, swagger, clean",
+      "check-fast runs: go build, go vet, golangci-lint (no tests)",
+      "check runs: ./scripts/check.sh (full verification)",
+      "Verify make check-fast works"
+    ],
+    "passes": true
+  },
+  {
+    "category": "infrastructure",
+    "description": "Fix all existing lint issues reported by golangci-lint",
+    "steps": [
+      "Run golangci-lint run ./... and capture all issues",
+      "Fix unused variables and imports",
+      "Fix unhandled errors (errcheck)",
+      "Fix ineffective assignments (ineffassign)",
+      "Add missing godoc comments on exported types (revive)",
+      "Fix any other reported issues without using //nolint suppressions",
+      "Run golangci-lint run ./... and verify zero issues"
+    ],
+    "passes": true
+  },
+  {
+    "category": "error-handling",
+    "description": "Create AppError type with predefined sentinel errors",
+    "steps": [
+      "Create internal/errors/errors.go",
+      "Define AppError struct with Code, Message, StatusCode, Internal fields",
+      "Implement Error() and Unwrap() methods",
+      "Create Wrap() and WithMessage() helper functions",
+      "Define all sentinel errors: ErrUnauthorized, ErrInvalidCredentials, ErrForbidden, ErrAccountLocked, ErrInvalidInput, ErrNotFound, ErrUserNotFound, ErrDuplicateEmail, ErrAccountNotFound, ErrNotCashAccount, ErrCategoryNotFound, ErrCategoryInUse, ErrCategoryHasChildren, ErrSelfParentCategory, ErrTransactionNotFound, ErrInvalidTransactionType, ErrInsufficientBalance, ErrSameAccountTransfer, ErrBudgetNotFound, ErrInvestmentNotFound, ErrInsufficientShares, ErrInternalServer",
+      "Run go build ./... to confirm compilation"
+    ],
+    "passes": true
+  },
+  {
+    "category": "error-handling",
+    "description": "Create error handling middleware for Gin",
+    "steps": [
+      "Create internal/middleware/error.go",
+      "Middleware calls c.Next() then checks for errors in Gin context",
+      "If error is *AppError: respond with {\"error\": {\"code\": \"...\", \"message\": \"...\"}}",
+      "If error is unexpected: log full error with Zap, respond with generic ErrInternalServer",
+      "Register middleware on the router in main.go",
+      "Run go build ./... to confirm compilation"
+    ],
+    "passes": true
+  },
+  {
+    "category": "error-handling",
+    "description": "Refactor all services to return AppError instead of errors.New",
+    "steps": [
+      "Update services/user_service.go: replace string errors with ErrInvalidInput, ErrDuplicateEmail, ErrUserNotFound",
+      "Update services/account_service.go: replace with ErrInvalidInput, ErrAccountNotFound, ErrNotCashAccount",
+      "Update services/category_service.go: replace with ErrInvalidInput, ErrCategoryNotFound, ErrSelfParentCategory, ErrCategoryHasChildren, ErrCategoryInUse",
+      "Update services/transaction_service.go: replace with ErrInvalidInput, ErrTransactionNotFound, ErrInvalidTransactionType",
+      "Wrap GORM errors with Wrap(sentinel, gormErr) so internal errors are logged but not exposed",
+      "Verify no services return errors.New() or raw error strings",
+      "Run go build ./... to confirm compilation"
+    ],
+    "passes": true
+  },
+  {
+    "category": "error-handling",
+    "description": "Refactor all handlers to use AppError error responses",
+    "steps": [
+      "Update auth_handler.go: replace c.JSON(status, gin.H{\"error\": err.Error()}) with AppError handling",
+      "Update account_handler.go: same pattern",
+      "Update category_handler.go: same pattern",
+      "Update transaction_handler.go: same pattern",
+      "Use errors.As() to check for *AppError and extract code/message/status",
+      "Unexpected errors return generic INTERNAL_ERROR with Zap logging",
+      "Verify no handler returns err.Error() directly to clients",
+      "Run go build ./... to confirm compilation"
+    ],
+    "passes": true
+  },
+  {
+    "category": "validation",
+    "description": "Create and register custom Gin validators",
+    "steps": [
+      "Create internal/validator/validator.go",
+      "Implement iso4217 validator (check against list of valid currency codes)",
+      "Implement hex_color validator (regex ^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$)",
+      "Implement transaction_type validator (income, expense, transfer, investment)",
+      "Implement category_type validator (income, expense)",
+      "Implement account_type validator (cash, investment, debt)",
+      "Implement budget_period validator (monthly, yearly)",
+      "Implement asset_type validator (stock, etf, bond, crypto, reit)",
+      "Create Register() function and call it from main.go before setting up routes",
+      "Run go build ./... to confirm compilation"
+    ],
+    "passes": true
+  },
+  {
+    "category": "validation",
+    "description": "Update all request DTOs with proper validation tags",
+    "steps": [
+      "Update auth_handler.go RegisterRequest: add email, min=8/max=128 for password, max=100 for names",
+      "Update account_handler.go CreateCashAccountRequest: add min=1/max=100 for name, max=500 description, iso4217 currency, gte=0 initial_balance",
+      "Update account_handler.go UpdateCashAccountRequest: add omitempty+min=1/max=100 name, max=500 description",
+      "Update category_handler.go CreateCategoryRequest: add required+category_type, max limits, hex_color",
+      "Update category_handler.go UpdateCategoryRequest: add omitempty variants",
+      "Update transaction_handler.go CreateTransactionRequest: add required+transaction_type, gt=0 amount, max=500 description",
+      "Run go build ./... to confirm compilation"
+    ],
+    "passes": true
+  },
+  {
+    "category": "validation",
+    "description": "Add query parameter validation for list endpoints",
+    "steps": [
+      "Update category_handler.go GetUserCategories: validate type query param is empty, 'income', or 'expense'",
+      "Return 400 INVALID_INPUT for invalid type values instead of silently returning empty results",
+      "Apply same pattern to any other list endpoints with query filters",
+      "Run go build ./... to confirm compilation"
+    ],
+    "passes": true
+  },
+  {
+    "category": "data-model",
+    "description": "Convert all monetary model fields from float64 to int64",
+    "steps": [
+      "Update models/account.go: Balance float64 -> int64",
+      "Update models/transaction.go: Amount float64 -> int64",
+      "Update models/budget.go: Amount float64 -> int64",
+      "Update models/investment.go: CostBasis, CurrentPrice float64 -> int64",
+      "Update models/investment.go: keep Quantity, YieldToMaturity, CouponRate as float64",
+      "Update InvestmentTransaction: PricePerUnit, TotalAmount, Fee float64 -> int64; keep Quantity, SplitRatio as float64",
+      "Update GORM tags to gorm:\"type:bigint;not null;default:0\" where appropriate",
+      "Run go build ./... (expect service/handler errors, those are fixed next)"
+    ],
+    "passes": true
+  },
+  {
+    "category": "data-model",
+    "description": "Update all services and handlers for int64 money",
+    "steps": [
+      "Update AccountService: CreateCashAccount and UpdateAccountBalance to use int64",
+      "Update TransactionService: CreateTransaction to use int64 amount",
+      "Update all handler request/response DTOs from float64 to int64 for monetary fields",
+      "Verify all arithmetic in services operates on int64 with no float conversions for money",
+      "Run go build ./... to confirm compilation",
+      "Run ./scripts/check.sh for full verification"
+    ],
+    "passes": true
+  },
+  {
+    "category": "data-model",
+    "description": "Create database migration for float-to-cents conversion",
+    "steps": [
+      "Create migration file to ALTER COLUMN types from float to bigint with USING (value * 100)::bigint",
+      "Cover tables: accounts.balance, transactions.amount, budgets.amount, investments.cost_basis, investments.current_price, investment_transactions.price_per_unit/total_amount/fee",
+      "Create corresponding down migration to reverse the conversion",
+      "Note: this migration will be numbered after the migration infra is set up in Phase 8"
+    ],
+    "passes": true
+  },
+  {
+    "category": "architecture",
+    "description": "Define service interfaces in interfaces.go",
+    "steps": [
+      "Create internal/services/interfaces.go",
+      "Define UserServicer interface with all public methods",
+      "Define AccountServicer interface with all public methods",
+      "Define CategoryServicer interface with all public methods",
+      "Define TransactionServicer interface with all public methods",
+      "Define BudgetServicer interface (stub for now, expanded in Phase 11)",
+      "Define InvestmentServicer interface (stub for now, expanded in Phase 12)",
+      "Define AuditServicer interface",
+      "Run go build ./... to confirm compilation"
+    ],
+    "passes": true
+  },
+  {
+    "category": "architecture",
+    "description": "Rename concrete service structs to unexported and return interfaces",
+    "steps": [
+      "Rename UserService -> userService, AccountService -> accountService, etc.",
+      "Update constructors to return interfaces: NewUserService() UserServicer",
+      "Ensure all concrete methods satisfy their respective interfaces",
+      "Run go build ./... to confirm compilation"
+    ],
+    "passes": true
+  },
+  {
+    "category": "architecture",
+    "description": "Update all handler constructors to accept service interfaces",
+    "steps": [
+      "Update AuthHandler to accept services.UserServicer",
+      "Update AccountHandler to accept services.AccountServicer",
+      "Update CategoryHandler to accept services.CategoryServicer",
+      "Update TransactionHandler to accept services.TransactionServicer",
+      "Update main.go to pass interfaces to handler constructors",
+      "Run go build ./... to confirm compilation"
+    ],
+    "passes": true
+  },
+  {
+    "category": "architecture",
+    "description": "Extract handler helper functions (getUserID, parsePathID)",
+    "steps": [
+      "Create internal/handlers/helpers.go",
+      "Implement getUserID(c *gin.Context) (uint, error) returning ErrUnauthorized if not present",
+      "Implement parsePathID(c *gin.Context, param string) (uint, error) returning ErrInvalidInput on parse failure",
+      "Replace all 12+ occurrences of userID extraction boilerplate across all handlers",
+      "Replace all 10+ occurrences of strconv.ParseUint path param parsing",
+      "Run go build ./... to confirm compilation",
+      "Run ./scripts/check.sh for full verification"
+    ],
+    "passes": true
+  },
+  {
+    "category": "security",
+    "description": "Add JWT secret and DB password enforcement for production",
+    "steps": [
+      "Update internal/config/config.go: add validation after loading config",
+      "In production, reject default/empty JWT_SECRET values",
+      "In production, reject default DB_PASSWORD ('kuberan')",
+      "Return clear error messages indicating what needs to be configured",
+      "Run go build ./... to confirm compilation"
+    ],
+    "passes": true
+  },
+  {
+    "category": "security",
+    "description": "Implement token refresh with refresh token rotation",
+    "steps": [
+      "Add RefreshTokenHash string field to User model",
+      "Update middleware/auth.go: rename GenerateToken to GenerateAccessToken (15min expiry)",
+      "Add GenerateRefreshToken function (7d expiry, different claims)",
+      "Add ValidateRefreshToken function",
+      "Update login flow to return both access_token and refresh_token",
+      "Store hash of refresh token in users.refresh_token_hash on login",
+      "Create POST /api/v1/auth/refresh endpoint",
+      "Refresh flow: validate refresh JWT, verify hash matches DB, generate new token pair, update hash (rotation)",
+      "Run go build ./... to confirm compilation"
+    ],
+    "passes": true
+  },
+  {
+    "category": "security",
+    "description": "Implement login security with failed attempts and account lockout",
+    "steps": [
+      "Add FailedLoginAttempts int and LockedUntil *time.Time to User model",
+      "Add LastLoginAt *time.Time to User model",
+      "Create AttemptLogin method in UserService (or update existing login logic)",
+      "Check LockedUntil before password verification, return ErrAccountLocked if locked",
+      "On wrong password: increment FailedLoginAttempts, lock after 5 failures (15min)",
+      "On correct password: reset FailedLoginAttempts, clear LockedUntil, set LastLoginAt",
+      "Run go build ./... to confirm compilation"
+    ],
+    "passes": true
+  },
+  {
+    "category": "security",
+    "description": "Create audit log model and service",
+    "steps": [
+      "Create internal/models/audit_log.go with AuditLog model (UserID, Action, ResourceType, ResourceID, IPAddress, Changes)",
+      "Create internal/services/audit_service.go implementing AuditServicer",
+      "Log method serializes changes map to JSON string and inserts AuditLog record",
+      "Make audit logging fire-and-forget (log errors but don't fail main operation)",
+      "Run go build ./... to confirm compilation"
+    ],
+    "passes": true
+  },
+  {
+    "category": "security",
+    "description": "Add audit logging to all sensitive operations across handlers",
+    "steps": [
+      "Inject AuditServicer into all handlers that need it",
+      "Add audit logging for: LOGIN, LOGIN_FAILED, REGISTER",
+      "Add audit logging for: CREATE_ACCOUNT, UPDATE_ACCOUNT",
+      "Add audit logging for: CREATE_TRANSACTION, DELETE_TRANSACTION, CREATE_TRANSFER",
+      "Add audit logging for: CREATE_CATEGORY, UPDATE_CATEGORY, DELETE_CATEGORY",
+      "Add audit logging for: CREATE_BUDGET, UPDATE_BUDGET, DELETE_BUDGET",
+      "Add audit logging for: INVESTMENT_BUY, INVESTMENT_SELL, INVESTMENT_DIVIDEND, INVESTMENT_SPLIT",
+      "Run go build ./... to confirm compilation",
+      "Run ./scripts/check.sh for full verification"
+    ],
+    "passes": true
+  },
+  {
+    "category": "infrastructure",
+    "description": "Set up golang-migrate and create migration directory",
+    "steps": [
+      "Add github.com/golang-migrate/migrate/v4 dependency",
+      "Create apps/api/migrations/ directory",
+      "Run go mod tidy to ensure dependency is resolved"
+    ],
+    "passes": true
+  },
+  {
+    "category": "infrastructure",
+    "description": "Create SQL migration files for core tables (users, accounts, categories, transactions)",
+    "steps": [
+      "Create 000001_create_users.up.sql and .down.sql",
+      "Create 000002_create_accounts.up.sql and .down.sql",
+      "Create 000003_create_categories.up.sql and .down.sql",
+      "Create 000004_create_transactions.up.sql and .down.sql",
+      "Define tables explicitly with column types, constraints, foreign keys, indexes",
+      "Down migrations must DROP TABLE cleanly"
+    ],
+    "passes": true
+  },
+  {
+    "category": "infrastructure",
+    "description": "Create SQL migration files for remaining tables (budgets, investments, audit_logs, security fields, indexes)",
+    "steps": [
+      "Create 000005_create_budgets.up.sql and .down.sql",
+      "Create 000006_create_investments.up.sql and .down.sql",
+      "Create 000007_create_investment_transactions.up.sql and .down.sql",
+      "Create 000008_create_audit_logs.up.sql and .down.sql",
+      "Create 000009_add_user_security_fields.up.sql and .down.sql (RefreshTokenHash, FailedLoginAttempts, LockedUntil, LastLoginAt)",
+      "Create 000010_convert_money_to_cents.up.sql and .down.sql",
+      "Create 000011_add_performance_indexes.up.sql and .down.sql"
+    ],
+    "passes": true
+  },
+  {
+    "category": "infrastructure",
+    "description": "Create migration CLI tool (cmd/migrate/main.go)",
+    "steps": [
+      "Create apps/api/cmd/migrate/main.go",
+      "Support commands: up (apply all pending), down N (rollback N), version (show current)",
+      "Reuse config and database packages for DB connection",
+      "Read migration files from migrations/ directory",
+      "Run go build ./cmd/migrate to confirm compilation"
+    ],
+    "passes": true
+  },
+  {
+    "category": "infrastructure",
+    "description": "Remove AutoMigrate and integrate golang-migrate into server startup",
+    "steps": [
+      "Remove Migrate() method from internal/database/database.go that calls db.AutoMigrate()",
+      "Remove dbManager.Migrate() call from cmd/api/main.go",
+      "In development mode (ENV=development), optionally run golang-migrate on server start",
+      "In production, migrations must be run explicitly before deployment",
+      "Run go build ./... to confirm compilation"
+    ],
+    "passes": true
+  },
+  {
+    "category": "pagination",
+    "description": "Create pagination utility (PageRequest, PageResponse, Paginate scope)",
+    "steps": [
+      "Create internal/pagination/pagination.go",
+      "Define PageRequest with Page and PageSize fields, validation tags, Defaults() and Offset() methods",
+      "Define generic PageResponse[T] with Data, Page, PageSize, TotalItems, TotalPages",
+      "Create Paginate() GORM scope function that applies Offset and Limit",
+      "Run go build ./... to confirm compilation"
+    ],
+    "passes": true
+  },
+  {
+    "category": "pagination",
+    "description": "Add pagination to all list endpoints and update service interfaces",
+    "steps": [
+      "Update service interfaces to accept PageRequest and return PageResponse",
+      "Update AccountService.GetUserAccounts to support pagination",
+      "Update CategoryService.GetUserCategories to support pagination",
+      "Update TransactionService.GetAccountTransactions to support pagination",
+      "Update all corresponding handlers to parse page/page_size query params",
+      "Default to page=1, page_size=20 when not provided",
+      "Run go build ./... to confirm compilation"
+    ],
+    "passes": true
+  },
+  {
+    "category": "pagination",
+    "description": "Add transaction list filters (date range, type, category, amount)",
+    "steps": [
+      "Add from_date, to_date query params to GET /accounts/:id/transactions",
+      "Add type filter query param",
+      "Add category_id filter query param",
+      "Add min_amount, max_amount filter query params",
+      "Update TransactionService to build dynamic GORM query with these filters",
+      "Run go build ./... to confirm compilation"
+    ],
+    "passes": true
+  },
+  {
+    "category": "pagination",
+    "description": "Create performance indexes migration",
+    "steps": [
+      "Create 000011_add_performance_indexes.up.sql (if not already created)",
+      "Add indexes: idx_transactions_user_date, idx_transactions_account, idx_transactions_category",
+      "Add indexes: idx_accounts_user_active, idx_categories_user_type, idx_budgets_user_active",
+      "Add indexes: idx_investments_account, idx_audit_logs_user",
+      "Create corresponding down migration to drop all indexes"
+    ],
+    "passes": true
+  },
+  {
+    "category": "pagination",
+    "description": "Configure database connection pooling and health check",
+    "steps": [
+      "Update internal/database/database.go: set MaxIdleConns=10, MaxOpenConns=100, ConnMaxLifetime=1h",
+      "Update health check endpoint to ping DB: return 503 if DB unavailable, 200 with status otherwise",
+      "Run go build ./... to confirm compilation"
+    ],
+    "passes": true
+  },
+  {
+    "category": "feature",
+    "description": "Implement CreateTransfer service method for account-to-account transfers",
+    "steps": [
+      "Add CreateTransfer method to TransactionService",
+      "Validate fromAccountID != toAccountID (return ErrSameAccountTransfer)",
+      "Verify both accounts exist and belong to user (return ErrAccountNotFound)",
+      "Check from-account has sufficient balance (return ErrInsufficientBalance)",
+      "Within single DB transaction: create transfer record, decrease from-balance, increase to-balance",
+      "Set Type=TransactionTypeTransfer, AccountID=from, ToAccountID=to on the transaction record",
+      "Run go build ./... to confirm compilation"
+    ],
+    "passes": true
+  },
+  {
+    "category": "feature",
+    "description": "Implement transfer deletion that reverses both account balances",
+    "steps": [
+      "Update DeleteTransaction method to handle TransactionTypeTransfer",
+      "Get both accounts (from and to) from the transfer record",
+      "Within DB transaction: delete the transfer, add amount back to from-account, subtract from to-account",
+      "Run go build ./... to confirm compilation"
+    ],
+    "passes": true
+  },
+  {
+    "category": "feature",
+    "description": "Create transfer endpoint and handler",
+    "steps": [
+      "Create CreateTransferRequest DTO with FromAccountID, ToAccountID, Amount, Description, Date",
+      "Add validation tags: required on IDs, gt=0 on Amount, max=500 on Description",
+      "Create CreateTransfer handler method",
+      "Register POST /api/v1/transactions/transfer route in main.go",
+      "Run go build ./... to confirm compilation",
+      "Run ./scripts/check.sh for full verification"
+    ],
+    "passes": true
+  },
+  {
+    "category": "feature",
+    "description": "Implement budget service CRUD operations",
+    "steps": [
+      "Create internal/services/budget_service.go",
+      "Implement CreateBudget: validate category exists and belongs to user, create record",
+      "Implement GetUserBudgets: paginated list with is_active and period filters",
+      "Implement GetBudgetByID: verify user ownership",
+      "Implement UpdateBudget: update name, amount, period, end_date, is_active",
+      "Implement DeleteBudget: soft-delete",
+      "Run go build ./... to confirm compilation"
+    ],
+    "passes": true
+  },
+  {
+    "category": "feature",
+    "description": "Implement GetBudgetProgress for period-based spending calculation",
+    "steps": [
+      "Add GetBudgetProgress method to BudgetService",
+      "Determine current period window: monthly (1st to last day) or yearly (Jan 1 to Dec 31)",
+      "Query SUM(amount) from transactions WHERE category_id matches, user_id matches, date in period, type='expense'",
+      "Return BudgetProgress struct with BudgetID, Budgeted, Spent, Remaining, Percentage",
+      "Handle edge case: zero budget amount (avoid divide by zero in percentage)",
+      "Run go build ./... to confirm compilation"
+    ],
+    "passes": true
+  },
+  {
+    "category": "feature",
+    "description": "Create budget handler and register routes",
+    "steps": [
+      "Create internal/handlers/budget_handler.go",
+      "Create CreateBudgetRequest and UpdateBudgetRequest DTOs with validation tags",
+      "Implement handler methods: CreateBudget, GetBudgets, GetBudget, UpdateBudget, DeleteBudget, GetBudgetProgress",
+      "Register routes: POST/GET /budgets, GET/PUT/DELETE /budgets/:id, GET /budgets/:id/progress",
+      "Run go build ./... to confirm compilation",
+      "Run ./scripts/check.sh for full verification"
+    ],
+    "passes": true
+  },
+  {
+    "category": "feature",
+    "description": "Implement investment account creation",
+    "steps": [
+      "Create internal/services/investment_service.go",
+      "Implement CreateInvestmentAccount: creates Account with Type=AccountTypeInvestment, sets Broker and AccountNumber",
+      "Add to AccountHandler or create separate handler method",
+      "Register POST /api/v1/accounts/investment route",
+      "Run go build ./... to confirm compilation"
+    ],
+    "passes": true
+  },
+  {
+    "category": "feature",
+    "description": "Implement AddInvestment and GetAccountInvestments",
+    "steps": [
+      "Implement AddInvestment: verify account exists, belongs to user, is investment type",
+      "Create Investment record with initial CostBasis = int64(quantity * float64(purchasePrice))",
+      "Create corresponding InvestmentTransaction (type=buy)",
+      "Handle extra fields based on asset type (exchange, maturity_date, network, etc.)",
+      "Implement GetAccountInvestments: paginated list of holdings for an account",
+      "Implement GetInvestmentByID: verify parent account belongs to user",
+      "Run go build ./... to confirm compilation"
+    ],
+    "passes": true
+  },
+  {
+    "category": "feature",
+    "description": "Implement RecordBuy and RecordSell with cost basis tracking",
+    "steps": [
+      "Implement RecordBuy: within DB tx, create InvestmentTransaction, update Quantity += quantity, CostBasis += (quantity * pricePerUnit) + fee",
+      "Implement RecordSell: verify quantity <= investment.Quantity (return ErrInsufficientShares)",
+      "RecordSell cost basis: costBasisReduction = investment.CostBasis * (quantity / investment.Quantity)",
+      "RecordSell: within DB tx, create InvestmentTransaction, Quantity -= quantity, CostBasis -= costBasisReduction",
+      "Run go build ./... to confirm compilation"
+    ],
+    "passes": true
+  },
+  {
+    "category": "feature",
+    "description": "Implement RecordDividend and RecordSplit",
+    "steps": [
+      "Implement RecordDividend: create InvestmentTransaction (type=dividend), TotalAmount=amount, no quantity/cost basis change",
+      "Implement RecordSplit: create InvestmentTransaction (type=split, SplitRatio=splitRatio), update Quantity *= splitRatio, cost basis unchanged",
+      "Implement UpdateInvestmentPrice: update CurrentPrice and LastUpdated",
+      "Run go build ./... to confirm compilation"
+    ],
+    "passes": true
+  },
+  {
+    "category": "feature",
+    "description": "Implement GetPortfolio summary aggregation",
+    "steps": [
+      "Implement GetPortfolio: query all investments across all investment accounts for user",
+      "Calculate total value: SUM(quantity * current_price)",
+      "Calculate total cost basis, total gain/loss, gain/loss percentage",
+      "Group by asset type into HoldingsByType map",
+      "Return PortfolioSummary struct",
+      "Run go build ./... to confirm compilation"
+    ],
+    "passes": true
+  },
+  {
+    "category": "feature",
+    "description": "Create investment handler and register all investment routes",
+    "steps": [
+      "Create internal/handlers/investment_handler.go",
+      "Create all request DTOs: CreateInvestmentAccountRequest, AddInvestmentRequest, UpdatePriceRequest, RecordInvestmentTransactionRequest",
+      "Add validation tags including asset_type, iso4217, required_unless for conditional fields",
+      "Implement all handler methods",
+      "Register routes: GET /investments, GET /investments/portfolio (before /:id), GET /investments/:id, PUT /investments/:id/price, POST/GET /investments/:id/transactions",
+      "Run go build ./... to confirm compilation",
+      "Run ./scripts/check.sh for full verification"
+    ],
+    "passes": true
+  },
+  {
+    "category": "testing",
+    "description": "Create test infrastructure (testutil: database, fixtures, assertions)",
+    "steps": [
+      "Add gorm.io/driver/sqlite dependency",
+      "Create internal/testutil/database.go: SetupTestDB creates in-memory SQLite with all models migrated",
+      "Create internal/testutil/fixtures.go: factory functions for User, Account, Category, Transaction, Budget, Investment",
+      "Create internal/testutil/assertions.go: AssertAppError checks error code, AssertNoError fails on non-nil error",
+      "Run go build ./... to confirm compilation",
+      "Run go test ./internal/testutil/... to verify test helpers work"
+    ],
+    "passes": true
+  },
+  {
+    "category": "testing",
+    "description": "Write user service tests",
+    "steps": [
+      "Create internal/services/user_service_test.go",
+      "Test CreateUser: valid, duplicate email, empty email, empty password, email normalized to lowercase",
+      "Test GetUserByEmail: found, not found, inactive user",
+      "Test GetUserByID: found, not found",
+      "Test VerifyPassword: correct, incorrect",
+      "Test AttemptLogin: success resets attempts, wrong password increments, lockout after 5, locked account returns ErrAccountLocked",
+      "Run go test ./internal/services/ -run TestUser -v"
+    ],
+    "passes": true
+  },
+  {
+    "category": "testing",
+    "description": "Write account service tests",
+    "steps": [
+      "Create internal/services/account_service_test.go",
+      "Test CreateCashAccount: valid, with initial balance (atomic), empty name, default currency USD",
+      "Test GetUserAccounts: returns user's accounts only, excludes inactive",
+      "Test GetAccountByID: found, not found, wrong user",
+      "Test UpdateCashAccount: valid update, not-cash-account error",
+      "Test UpdateAccountBalance: income adds, expense subtracts",
+      "Run go test ./internal/services/ -run TestAccount -v"
+    ],
+    "passes": true
+  },
+  {
+    "category": "testing",
+    "description": "Write category service tests",
+    "steps": [
+      "Create internal/services/category_service_test.go",
+      "Test CreateCategory: valid, duplicate name, with parent, invalid parent",
+      "Test GetUserCategories: returns user's only, GetByType filters correctly",
+      "Test UpdateCategory: valid, self-parent error",
+      "Test DeleteCategory: valid soft-delete, has-children error, allows deletion when transactions reference category",
+      "Run go test ./internal/services/ -run TestCategory -v"
+    ],
+    "passes": true
+  },
+  {
+    "category": "testing",
+    "description": "Write transaction service tests including transfers",
+    "steps": [
+      "Create internal/services/transaction_service_test.go",
+      "Test CreateTransaction: income increases balance, expense decreases, zero amount error, invalid account error, atomicity",
+      "Test CreateTransfer: valid updates both accounts, same-account error, insufficient balance error",
+      "Test DeleteTransaction: income reversal, expense reversal, transfer reversal, not-found error, wrong-user error",
+      "Run go test ./internal/services/ -run TestTransaction -v"
+    ],
+    "passes": true
+  },
+  {
+    "category": "testing",
+    "description": "Write budget service tests",
+    "steps": [
+      "Create internal/services/budget_service_test.go",
+      "Test CreateBudget: valid, invalid category error",
+      "Test GetBudgetProgress: no spending (0 spent), partial spending, over budget (negative remaining, >100%)",
+      "Test DeleteBudget: soft-delete works",
+      "Run go test ./internal/services/ -run TestBudget -v"
+    ],
+    "passes": true
+  },
+  {
+    "category": "testing",
+    "description": "Write investment service tests",
+    "steps": [
+      "Create internal/services/investment_service_test.go",
+      "Test CreateInvestmentAccount: valid with type=investment",
+      "Test AddInvestment: creates holding + initial buy transaction",
+      "Test UpdatePrice: updates price and last_updated",
+      "Test RecordBuy: quantity and cost basis increase",
+      "Test RecordSell: quantity and cost basis decrease proportionally, insufficient shares error",
+      "Test RecordDividend: transaction created, no quantity change",
+      "Test RecordSplit: quantity multiplied, cost basis unchanged",
+      "Test GetPortfolio: values aggregated correctly across accounts",
+      "Run go test ./internal/services/ -run TestInvestment -v"
+    ],
+    "passes": true
+  },
+  {
+    "category": "testing",
+    "description": "Write handler tests for auth, account, category, transaction",
+    "steps": [
+      "Create internal/handlers/auth_handler_test.go with mock UserServicer",
+      "Create internal/handlers/account_handler_test.go with mock AccountServicer",
+      "Create internal/handlers/category_handler_test.go with mock CategoryServicer",
+      "Create internal/handlers/transaction_handler_test.go with mock TransactionServicer",
+      "Test success cases (correct status codes, response bodies)",
+      "Test validation failures (400 on bad input)",
+      "Test auth failures (401 without token)",
+      "Use httptest.NewRequest and httptest.NewRecorder pattern",
+      "Run go test ./internal/handlers/ -v"
+    ],
+    "passes": true
+  },
+  {
+    "category": "testing",
+    "description": "Write handler tests for budget and investment",
+    "steps": [
+      "Create internal/handlers/budget_handler_test.go with mock BudgetServicer",
+      "Create internal/handlers/investment_handler_test.go with mock InvestmentServicer",
+      "Test CRUD success and failure cases for each",
+      "Test budget progress endpoint",
+      "Test investment transaction recording (buy, sell, dividend, split)",
+      "Run go test ./internal/handlers/ -v"
+    ],
+    "passes": true
+  },
+  {
+    "category": "testing",
+    "description": "Write integration tests for auth, account, and transfer flows",
+    "steps": [
+      "Create tests/integration/ directory",
+      "Create tests/integration/auth_test.go: register -> login -> profile -> refresh -> profile with new token; duplicate email; lockout flow",
+      "Create tests/integration/account_flow_test.go: create with initial balance -> verify initial tx -> income -> expense -> verify final balance",
+      "Create tests/integration/transfer_flow_test.go: create 2 accounts -> transfer A->B -> verify balances -> delete transfer -> verify restored",
+      "Run go test ./tests/integration/ -v"
+    ],
+    "passes": true
+  },
+  {
+    "category": "testing",
+    "description": "Write integration tests for budget and investment flows",
+    "steps": [
+      "Create tests/integration/budget_flow_test.go: create category -> create budget -> add expense transactions -> check progress matches",
+      "Create tests/integration/investment_flow_test.go: create investment account -> add holding -> buy -> update price -> sell -> verify quantities and cost basis -> portfolio summary",
+      "Run go test ./tests/integration/ -v",
+      "Run go test ./... -coverprofile=coverage.out to verify >= 80% overall coverage",
+      "Run ./scripts/check.sh for full verification"
+    ],
+    "passes": true
+  },
+  {
+    "category": "infrastructure",
+    "description": "Implement graceful shutdown in cmd/api/main.go",
+    "steps": [
+      "Replace router.Run() with http.Server and ListenAndServe in goroutine",
+      "Listen for SIGINT/SIGTERM signals",
+      "On signal: log shutdown, call srv.Shutdown with 5s timeout context",
+      "Close database connections after server shutdown",
+      "Log clean exit",
+      "Run go build ./cmd/api to confirm compilation"
+    ],
+    "passes": true
+  },
+  {
+    "category": "infrastructure",
+    "description": "Add environment-based config with validation",
+    "steps": [
+      "Add Env field (Environment type) to Config struct with development/staging/production constants",
+      "Load from ENV env var, default to development",
+      "Set gin.SetMode(gin.ReleaseMode) for production, gin.DebugMode for development",
+      "Run go build ./... to confirm compilation"
+    ],
+    "passes": true
+  },
+  {
+    "category": "infrastructure",
+    "description": "Update category soft delete to allow deletion when transactions reference it",
+    "steps": [
+      "Update internal/services/category_service.go DeleteCategory method",
+      "Remove the check that blocks deletion when transactions reference the category",
+      "Keep the child category check (cannot delete category with non-deleted children)",
+      "Soft-deleted categories remain as references for existing transactions",
+      "Run go build ./... to confirm compilation"
+    ],
+    "passes": true
+  },
+  {
+    "category": "infrastructure",
+    "description": "Regenerate Swagger docs for all endpoints",
+    "steps": [
+      "Add Swagger annotations to all new endpoints (budget, investment, transfer, refresh)",
+      "Include summary, description, request/response schemas, security requirements, example values",
+      "Run swag init -g cmd/api/main.go -d . --output internal/docs",
+      "Verify docs generate without errors"
+    ],
+    "passes": true
+  },
+  {
+    "category": "infrastructure",
+    "description": "Final verification: full check.sh pass, coverage check, no remaining issues",
+    "steps": [
+      "Run ./scripts/check.sh (build + vet + lint + test + race)",
+      "Run go test ./... -coverprofile=coverage.out and verify >= 80% overall",
+      "Verify no fmt.Printf, log.Println, or log.Fatalf calls remain",
+      "Verify no float64 monetary values remain in models",
+      "Verify no errors.New() in services (all use AppError)",
+      "Verify no err.Error() exposed to clients in handlers",
+      "Verify no duplicate model definitions or empty directories",
+      "Verify all exported functions have godoc comments",
+      "Verify all endpoints have Swagger annotations"
+    ],
+    "passes": true
+  }
+]

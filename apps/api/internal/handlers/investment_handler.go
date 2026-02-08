@@ -1,0 +1,533 @@
+package handlers
+
+import (
+	"net/http"
+	"time"
+
+	"github.com/gin-gonic/gin"
+
+	apperrors "kuberan/internal/errors"
+	"kuberan/internal/models"
+	"kuberan/internal/pagination"
+	"kuberan/internal/services"
+)
+
+// InvestmentHandler handles investment-related requests.
+type InvestmentHandler struct {
+	investmentService services.InvestmentServicer
+	auditService      services.AuditServicer
+}
+
+// NewInvestmentHandler creates a new InvestmentHandler.
+func NewInvestmentHandler(investmentService services.InvestmentServicer, auditService services.AuditServicer) *InvestmentHandler {
+	return &InvestmentHandler{investmentService: investmentService, auditService: auditService}
+}
+
+// AddInvestmentRequest represents the request payload for adding an investment.
+type AddInvestmentRequest struct {
+	AccountID     uint             `json:"account_id" binding:"required"`
+	Symbol        string           `json:"symbol" binding:"required,min=1,max=20"`
+	Name          string           `json:"name" binding:"required,min=1,max=200"`
+	AssetType     models.AssetType `json:"asset_type" binding:"required,asset_type"`
+	Quantity      float64          `json:"quantity" binding:"required,gt=0"`
+	PurchasePrice int64            `json:"purchase_price" binding:"required,gt=0"`
+	Currency      string           `json:"currency" binding:"omitempty,iso4217"`
+	// Asset-type-specific optional fields
+	Exchange        string     `json:"exchange,omitempty"`
+	MaturityDate    *time.Time `json:"maturity_date,omitempty"`
+	YieldToMaturity float64    `json:"yield_to_maturity,omitempty"`
+	CouponRate      float64    `json:"coupon_rate,omitempty"`
+	Network         string     `json:"network,omitempty"`
+	WalletAddress   string     `json:"wallet_address,omitempty"`
+	PropertyType    string     `json:"property_type,omitempty"`
+}
+
+// UpdatePriceRequest represents the request payload for updating an investment price.
+type UpdatePriceRequest struct {
+	CurrentPrice int64 `json:"current_price" binding:"required,gt=0"`
+}
+
+// RecordBuyRequest represents the request payload for recording a buy transaction.
+type RecordBuyRequest struct {
+	Date         time.Time `json:"date" binding:"required"`
+	Quantity     float64   `json:"quantity" binding:"required,gt=0"`
+	PricePerUnit int64     `json:"price_per_unit" binding:"required,gt=0"`
+	Fee          int64     `json:"fee" binding:"gte=0"`
+	Notes        string    `json:"notes" binding:"max=500"`
+}
+
+// RecordSellRequest represents the request payload for recording a sell transaction.
+type RecordSellRequest struct {
+	Date         time.Time `json:"date" binding:"required"`
+	Quantity     float64   `json:"quantity" binding:"required,gt=0"`
+	PricePerUnit int64     `json:"price_per_unit" binding:"required,gt=0"`
+	Fee          int64     `json:"fee" binding:"gte=0"`
+	Notes        string    `json:"notes" binding:"max=500"`
+}
+
+// RecordDividendRequest represents the request payload for recording a dividend.
+type RecordDividendRequest struct {
+	Date         time.Time `json:"date" binding:"required"`
+	Amount       int64     `json:"amount" binding:"required,gt=0"`
+	DividendType string    `json:"dividend_type" binding:"max=50"`
+	Notes        string    `json:"notes" binding:"max=500"`
+}
+
+// RecordSplitRequest represents the request payload for recording a stock split.
+type RecordSplitRequest struct {
+	Date       time.Time `json:"date" binding:"required"`
+	SplitRatio float64   `json:"split_ratio" binding:"required,gt=0"`
+	Notes      string    `json:"notes" binding:"max=500"`
+}
+
+// AddInvestment handles adding a new investment holding.
+// @Summary     Add investment
+// @Description Add a new investment holding to an investment account
+// @Tags        investments
+// @Accept      json
+// @Produce     json
+// @Security    BearerAuth
+// @Param       request body AddInvestmentRequest true "Investment details"
+// @Success     201 {object} models.Investment "Investment created"
+// @Failure     400 {object} ErrorResponse "Invalid input"
+// @Failure     401 {object} ErrorResponse "Unauthorized"
+// @Failure     404 {object} ErrorResponse "Account not found"
+// @Failure     500 {object} ErrorResponse "Server error"
+// @Router      /investments [post]
+func (h *InvestmentHandler) AddInvestment(c *gin.Context) {
+	userID, err := getUserID(c)
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	var req AddInvestmentRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, err.Error()))
+		return
+	}
+
+	extraFields := buildExtraFields(req)
+
+	investment, err := h.investmentService.AddInvestment(
+		userID, req.AccountID, req.Symbol, req.Name, req.AssetType,
+		req.Quantity, req.PurchasePrice, req.Currency, extraFields,
+	)
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	h.auditService.Log(userID, "CREATE_INVESTMENT", "investment", investment.ID, c.ClientIP(),
+		map[string]interface{}{"symbol": req.Symbol, "asset_type": string(req.AssetType), "quantity": req.Quantity})
+
+	c.JSON(http.StatusCreated, gin.H{"investment": investment})
+}
+
+// GetAccountInvestments handles listing investments for an account.
+// @Summary     Get account investments
+// @Description Get a paginated list of investments for an account
+// @Tags        investments
+// @Accept      json
+// @Produce     json
+// @Security    BearerAuth
+// @Param       id        path  int false "Account ID"
+// @Param       page      query int false "Page number (default 1)"
+// @Param       page_size query int false "Items per page (default 20, max 100)"
+// @Success     200 {object} pagination.PageResponse[models.Investment] "Paginated investments"
+// @Failure     400 {object} ErrorResponse "Invalid input"
+// @Failure     401 {object} ErrorResponse "Unauthorized"
+// @Failure     404 {object} ErrorResponse "Account not found"
+// @Failure     500 {object} ErrorResponse "Server error"
+// @Router      /accounts/{id}/investments [get]
+func (h *InvestmentHandler) GetAccountInvestments(c *gin.Context) {
+	userID, err := getUserID(c)
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	accountID, err := parsePathID(c, "id")
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	var page pagination.PageRequest
+	if err := c.ShouldBindQuery(&page); err != nil {
+		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, err.Error()))
+		return
+	}
+
+	result, err := h.investmentService.GetAccountInvestments(userID, accountID, page)
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, result)
+}
+
+// GetInvestment handles retrieving a specific investment.
+// @Summary     Get investment by ID
+// @Description Get a specific investment by ID
+// @Tags        investments
+// @Accept      json
+// @Produce     json
+// @Security    BearerAuth
+// @Param       id path int true "Investment ID"
+// @Success     200 {object} models.Investment "Investment details"
+// @Failure     400 {object} ErrorResponse "Invalid investment ID"
+// @Failure     401 {object} ErrorResponse "Unauthorized"
+// @Failure     404 {object} ErrorResponse "Investment not found"
+// @Failure     500 {object} ErrorResponse "Server error"
+// @Router      /investments/{id} [get]
+func (h *InvestmentHandler) GetInvestment(c *gin.Context) {
+	userID, err := getUserID(c)
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	investmentID, err := parsePathID(c, "id")
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	investment, err := h.investmentService.GetInvestmentByID(userID, investmentID)
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"investment": investment})
+}
+
+// UpdatePrice handles updating the market price of an investment.
+// @Summary     Update investment price
+// @Description Update the current market price of an investment
+// @Tags        investments
+// @Accept      json
+// @Produce     json
+// @Security    BearerAuth
+// @Param       id      path int                true "Investment ID"
+// @Param       request body UpdatePriceRequest  true "Price update"
+// @Success     200 {object} models.Investment "Updated investment"
+// @Failure     400 {object} ErrorResponse "Invalid input"
+// @Failure     401 {object} ErrorResponse "Unauthorized"
+// @Failure     404 {object} ErrorResponse "Investment not found"
+// @Failure     500 {object} ErrorResponse "Server error"
+// @Router      /investments/{id}/price [put]
+func (h *InvestmentHandler) UpdatePrice(c *gin.Context) {
+	userID, err := getUserID(c)
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	investmentID, err := parsePathID(c, "id")
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	var req UpdatePriceRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, err.Error()))
+		return
+	}
+
+	investment, err := h.investmentService.UpdateInvestmentPrice(userID, investmentID, req.CurrentPrice)
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	h.auditService.Log(userID, "UPDATE_INVESTMENT_PRICE", "investment", investmentID, c.ClientIP(),
+		map[string]interface{}{"current_price": req.CurrentPrice})
+
+	c.JSON(http.StatusOK, gin.H{"investment": investment})
+}
+
+// GetPortfolio handles retrieving the aggregated portfolio summary.
+// @Summary     Get portfolio summary
+// @Description Get an aggregated portfolio summary across all investment accounts
+// @Tags        investments
+// @Accept      json
+// @Produce     json
+// @Security    BearerAuth
+// @Success     200 {object} services.PortfolioSummary "Portfolio summary"
+// @Failure     401 {object} ErrorResponse "Unauthorized"
+// @Failure     500 {object} ErrorResponse "Server error"
+// @Router      /investments/portfolio [get]
+func (h *InvestmentHandler) GetPortfolio(c *gin.Context) {
+	userID, err := getUserID(c)
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	summary, err := h.investmentService.GetPortfolio(userID)
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"portfolio": summary})
+}
+
+// RecordBuy handles recording a buy transaction for an investment.
+// @Summary     Record buy transaction
+// @Description Record a buy transaction for an investment holding
+// @Tags        investments
+// @Accept      json
+// @Produce     json
+// @Security    BearerAuth
+// @Param       id      path int              true "Investment ID"
+// @Param       request body RecordBuyRequest  true "Buy details"
+// @Success     201 {object} models.InvestmentTransaction "Transaction created"
+// @Failure     400 {object} ErrorResponse "Invalid input"
+// @Failure     401 {object} ErrorResponse "Unauthorized"
+// @Failure     404 {object} ErrorResponse "Investment not found"
+// @Failure     500 {object} ErrorResponse "Server error"
+// @Router      /investments/{id}/buy [post]
+func (h *InvestmentHandler) RecordBuy(c *gin.Context) {
+	userID, err := getUserID(c)
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	investmentID, err := parsePathID(c, "id")
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	var req RecordBuyRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, err.Error()))
+		return
+	}
+
+	invTx, err := h.investmentService.RecordBuy(userID, investmentID, req.Date, req.Quantity, req.PricePerUnit, req.Fee, req.Notes)
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	h.auditService.Log(userID, "INVESTMENT_BUY", "investment", investmentID, c.ClientIP(),
+		map[string]interface{}{"quantity": req.Quantity, "price_per_unit": req.PricePerUnit})
+
+	c.JSON(http.StatusCreated, gin.H{"transaction": invTx})
+}
+
+// RecordSell handles recording a sell transaction for an investment.
+// @Summary     Record sell transaction
+// @Description Record a sell transaction for an investment holding
+// @Tags        investments
+// @Accept      json
+// @Produce     json
+// @Security    BearerAuth
+// @Param       id      path int               true "Investment ID"
+// @Param       request body RecordSellRequest  true "Sell details"
+// @Success     201 {object} models.InvestmentTransaction "Transaction created"
+// @Failure     400 {object} ErrorResponse "Invalid input or insufficient shares"
+// @Failure     401 {object} ErrorResponse "Unauthorized"
+// @Failure     404 {object} ErrorResponse "Investment not found"
+// @Failure     500 {object} ErrorResponse "Server error"
+// @Router      /investments/{id}/sell [post]
+func (h *InvestmentHandler) RecordSell(c *gin.Context) {
+	userID, err := getUserID(c)
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	investmentID, err := parsePathID(c, "id")
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	var req RecordSellRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, err.Error()))
+		return
+	}
+
+	invTx, err := h.investmentService.RecordSell(userID, investmentID, req.Date, req.Quantity, req.PricePerUnit, req.Fee, req.Notes)
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	h.auditService.Log(userID, "INVESTMENT_SELL", "investment", investmentID, c.ClientIP(),
+		map[string]interface{}{"quantity": req.Quantity, "price_per_unit": req.PricePerUnit})
+
+	c.JSON(http.StatusCreated, gin.H{"transaction": invTx})
+}
+
+// RecordDividend handles recording a dividend for an investment.
+// @Summary     Record dividend
+// @Description Record a dividend payment for an investment holding
+// @Tags        investments
+// @Accept      json
+// @Produce     json
+// @Security    BearerAuth
+// @Param       id      path int                    true "Investment ID"
+// @Param       request body RecordDividendRequest   true "Dividend details"
+// @Success     201 {object} models.InvestmentTransaction "Transaction created"
+// @Failure     400 {object} ErrorResponse "Invalid input"
+// @Failure     401 {object} ErrorResponse "Unauthorized"
+// @Failure     404 {object} ErrorResponse "Investment not found"
+// @Failure     500 {object} ErrorResponse "Server error"
+// @Router      /investments/{id}/dividend [post]
+func (h *InvestmentHandler) RecordDividend(c *gin.Context) {
+	userID, err := getUserID(c)
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	investmentID, err := parsePathID(c, "id")
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	var req RecordDividendRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, err.Error()))
+		return
+	}
+
+	invTx, err := h.investmentService.RecordDividend(userID, investmentID, req.Date, req.Amount, req.DividendType, req.Notes)
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	h.auditService.Log(userID, "INVESTMENT_DIVIDEND", "investment", investmentID, c.ClientIP(),
+		map[string]interface{}{"amount": req.Amount, "dividend_type": req.DividendType})
+
+	c.JSON(http.StatusCreated, gin.H{"transaction": invTx})
+}
+
+// RecordSplit handles recording a stock split for an investment.
+// @Summary     Record stock split
+// @Description Record a stock split for an investment holding
+// @Tags        investments
+// @Accept      json
+// @Produce     json
+// @Security    BearerAuth
+// @Param       id      path int                 true "Investment ID"
+// @Param       request body RecordSplitRequest   true "Split details"
+// @Success     201 {object} models.InvestmentTransaction "Transaction created"
+// @Failure     400 {object} ErrorResponse "Invalid input"
+// @Failure     401 {object} ErrorResponse "Unauthorized"
+// @Failure     404 {object} ErrorResponse "Investment not found"
+// @Failure     500 {object} ErrorResponse "Server error"
+// @Router      /investments/{id}/split [post]
+func (h *InvestmentHandler) RecordSplit(c *gin.Context) {
+	userID, err := getUserID(c)
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	investmentID, err := parsePathID(c, "id")
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	var req RecordSplitRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, err.Error()))
+		return
+	}
+
+	invTx, err := h.investmentService.RecordSplit(userID, investmentID, req.Date, req.SplitRatio, req.Notes)
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	h.auditService.Log(userID, "INVESTMENT_SPLIT", "investment", investmentID, c.ClientIP(),
+		map[string]interface{}{"split_ratio": req.SplitRatio})
+
+	c.JSON(http.StatusCreated, gin.H{"transaction": invTx})
+}
+
+// GetInvestmentTransactions handles listing transactions for an investment.
+// @Summary     Get investment transactions
+// @Description Get a paginated list of transactions for an investment
+// @Tags        investments
+// @Accept      json
+// @Produce     json
+// @Security    BearerAuth
+// @Param       id        path  int true "Investment ID"
+// @Param       page      query int false "Page number (default 1)"
+// @Param       page_size query int false "Items per page (default 20, max 100)"
+// @Success     200 {object} pagination.PageResponse[models.InvestmentTransaction] "Paginated transactions"
+// @Failure     400 {object} ErrorResponse "Invalid input"
+// @Failure     401 {object} ErrorResponse "Unauthorized"
+// @Failure     404 {object} ErrorResponse "Investment not found"
+// @Failure     500 {object} ErrorResponse "Server error"
+// @Router      /investments/{id}/transactions [get]
+func (h *InvestmentHandler) GetInvestmentTransactions(c *gin.Context) {
+	userID, err := getUserID(c)
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	investmentID, err := parsePathID(c, "id")
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	var page pagination.PageRequest
+	if err := c.ShouldBindQuery(&page); err != nil {
+		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, err.Error()))
+		return
+	}
+
+	result, err := h.investmentService.GetInvestmentTransactions(userID, investmentID, page)
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, result)
+}
+
+// buildExtraFields extracts asset-type-specific fields from the request into a map.
+func buildExtraFields(req AddInvestmentRequest) map[string]interface{} {
+	fields := make(map[string]interface{})
+	if req.Exchange != "" {
+		fields["exchange"] = req.Exchange
+	}
+	if req.MaturityDate != nil {
+		fields["maturity_date"] = req.MaturityDate
+	}
+	if req.YieldToMaturity != 0 {
+		fields["yield_to_maturity"] = req.YieldToMaturity
+	}
+	if req.CouponRate != 0 {
+		fields["coupon_rate"] = req.CouponRate
+	}
+	if req.Network != "" {
+		fields["network"] = req.Network
+	}
+	if req.WalletAddress != "" {
+		fields["wallet_address"] = req.WalletAddress
+	}
+	if req.PropertyType != "" {
+		fields["property_type"] = req.PropertyType
+	}
+	return fields
+}

@@ -1,6 +1,8 @@
 package middleware
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"net/http"
 	"strings"
@@ -13,6 +15,11 @@ import (
 	"kuberan/internal/models"
 )
 
+const (
+	accessTokenExpiry  = 15 * time.Minute
+	refreshTokenExpiry = 7 * 24 * time.Hour
+)
+
 // getJWTKey returns the JWT key from configuration
 func getJWTKey() []byte {
 	return []byte(config.Get().JWTSecret)
@@ -20,24 +27,20 @@ func getJWTKey() []byte {
 
 // JWTClaims represents the claims in the JWT
 type JWTClaims struct {
-	UserID uint   `json:"user_id"`
-	Email  string `json:"email"`
+	UserID    uint   `json:"user_id"`
+	Email     string `json:"email"`
+	TokenType string `json:"token_type"`
 	jwt.RegisteredClaims
 }
 
-// GenerateToken generates a JWT token for a user
-func GenerateToken(user *models.User) (string, error) {
-	// Get configuration
-	cfg := config.Get()
-	
-	// Set expiration time
-	expirationTime := time.Now().Add(cfg.JWTExpirationDur)
-	
+// GenerateAccessToken generates a short-lived JWT access token for a user.
+func GenerateAccessToken(user *models.User) (string, error) {
 	claims := &JWTClaims{
-		UserID: user.ID,
-		Email:  user.Email,
+		UserID:    user.ID,
+		Email:     user.Email,
+		TokenType: "access",
 		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(expirationTime),
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(accessTokenExpiry)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 			NotBefore: jwt.NewNumericDate(time.Now()),
 			Issuer:    "kuberan-api",
@@ -46,12 +49,55 @@ func GenerateToken(user *models.User) (string, error) {
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	tokenString, err := token.SignedString(getJWTKey())
-	if err != nil {
-		return "", err
+	return token.SignedString(getJWTKey())
+}
+
+// GenerateRefreshToken generates a long-lived JWT refresh token for a user.
+func GenerateRefreshToken(user *models.User) (string, error) {
+	claims := &JWTClaims{
+		UserID:    user.ID,
+		Email:     user.Email,
+		TokenType: "refresh",
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(refreshTokenExpiry)),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			NotBefore: jwt.NewNumericDate(time.Now()),
+			Issuer:    "kuberan-api",
+			Subject:   fmt.Sprintf("%d", user.ID),
+		},
 	}
 
-	return tokenString, nil
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString(getJWTKey())
+}
+
+// ValidateRefreshToken parses and validates a refresh token JWT.
+// Returns the claims if valid, or an error if the token is invalid,
+// expired, or not a refresh token.
+func ValidateRefreshToken(tokenString string) (*JWTClaims, error) {
+	claims := &JWTClaims{}
+	token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+		}
+		return getJWTKey(), nil
+	})
+
+	if err != nil || !token.Valid {
+		return nil, fmt.Errorf("invalid refresh token")
+	}
+
+	if claims.TokenType != "refresh" {
+		return nil, fmt.Errorf("token is not a refresh token")
+	}
+
+	return claims, nil
+}
+
+// HashToken returns the SHA-256 hex digest of a token string.
+func HashToken(token string) string {
+	h := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(h[:])
 }
 
 // AuthMiddleware verifies the JWT token and sets the user in the context
@@ -89,9 +135,16 @@ func AuthMiddleware() gin.HandlerFunc {
 			return
 		}
 
+		// Reject refresh tokens used as access tokens
+		if claims.TokenType == "refresh" {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid or expired token"})
+			c.Abort()
+			return
+		}
+
 		// Set user ID and email in the context
 		c.Set("userID", claims.UserID)
 		c.Set("email", claims.Email)
 		c.Next()
 	}
-} 
+}

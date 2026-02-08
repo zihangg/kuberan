@@ -6,24 +6,26 @@ import (
 
 	"gorm.io/gorm"
 
+	apperrors "kuberan/internal/errors"
 	"kuberan/internal/models"
+	"kuberan/internal/pagination"
 )
 
-// AccountService handles account-related business logic
-type AccountService struct {
+// accountService handles account-related business logic.
+type accountService struct {
 	db *gorm.DB
 }
 
-// NewAccountService creates a new AccountService
-func NewAccountService(db *gorm.DB) *AccountService {
-	return &AccountService{db: db}
+// NewAccountService creates a new AccountServicer.
+func NewAccountService(db *gorm.DB) AccountServicer {
+	return &accountService{db: db}
 }
 
 // CreateCashAccount creates a new cash account for a user
-func (s *AccountService) CreateCashAccount(userID uint, name, description, currency string, initialBalance float64) (*models.Account, error) {
+func (s *accountService) CreateCashAccount(userID uint, name, description, currency string, initialBalance int64) (*models.Account, error) {
 	// Validate input
 	if name == "" {
-		return nil, errors.New("account name is required")
+		return nil, apperrors.WithMessage(apperrors.ErrInvalidInput, "account name is required")
 	}
 
 	if currency == "" {
@@ -41,54 +43,95 @@ func (s *AccountService) CreateCashAccount(userID uint, name, description, curre
 		IsActive:    true,
 	}
 
-	if err := s.db.Create(account).Error; err != nil {
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(account).Error; err != nil {
+			return apperrors.Wrap(apperrors.ErrInternalServer, err)
+		}
+
+		if initialBalance > 0 {
+			transaction := &models.Transaction{
+				UserID:      userID,
+				AccountID:   account.ID,
+				Type:        models.TransactionTypeIncome,
+				Amount:      initialBalance,
+				Description: "Initial balance",
+				Date:        time.Now(),
+			}
+			if err := tx.Create(transaction).Error; err != nil {
+				return apperrors.Wrap(apperrors.ErrInternalServer, err)
+			}
+		}
+
+		return nil
+	})
+	if err != nil {
 		return nil, err
-	}
-
-	// If there's an initial balance, create an initial deposit transaction
-	if initialBalance > 0 {
-		transaction := &models.Transaction{
-			UserID:      userID,
-			AccountID:   account.ID,
-			Type:        models.TransactionTypeIncome,
-			Amount:      initialBalance,
-			Description: "Initial balance",
-			Date:        time.Now(),
-		}
-
-		if err := s.db.Create(transaction).Error; err != nil {
-			// If transaction creation fails, don't fail the account creation
-			// but log the error in a real application
-			return account, nil
-		}
 	}
 
 	return account, nil
 }
 
-// GetUserAccounts retrieves all accounts for a user
-func (s *AccountService) GetUserAccounts(userID uint) ([]models.Account, error) {
-	var accounts []models.Account
-	if err := s.db.Where("user_id = ? AND is_active = ?", userID, true).Find(&accounts).Error; err != nil {
-		return nil, err
+// CreateInvestmentAccount creates a new investment account for a user.
+func (s *accountService) CreateInvestmentAccount(userID uint, name, description, currency, broker, accountNumber string) (*models.Account, error) {
+	if name == "" {
+		return nil, apperrors.WithMessage(apperrors.ErrInvalidInput, "account name is required")
 	}
-	return accounts, nil
+
+	if currency == "" {
+		currency = "USD"
+	}
+
+	account := &models.Account{
+		UserID:        userID,
+		Name:          name,
+		Type:          models.AccountTypeInvestment,
+		Description:   description,
+		Currency:      currency,
+		Broker:        broker,
+		AccountNumber: accountNumber,
+		IsActive:      true,
+	}
+
+	if err := s.db.Create(account).Error; err != nil {
+		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
+	}
+
+	return account, nil
+}
+
+// GetUserAccounts retrieves a paginated list of accounts for a user.
+func (s *accountService) GetUserAccounts(userID uint, page pagination.PageRequest) (*pagination.PageResponse[models.Account], error) {
+	page.Defaults()
+
+	var totalItems int64
+	base := s.db.Model(&models.Account{}).Where("user_id = ? AND is_active = ?", userID, true)
+	if err := base.Count(&totalItems).Error; err != nil {
+		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
+	}
+
+	var accounts []models.Account
+	if err := base.Scopes(pagination.Paginate(page)).Find(&accounts).Error; err != nil {
+		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
+	}
+
+	result := pagination.NewPageResponse(accounts, page.Page, page.PageSize, totalItems)
+	return &result, nil
 }
 
 // GetAccountByID retrieves an account by ID for a specific user
-func (s *AccountService) GetAccountByID(userID, accountID uint) (*models.Account, error) {
+func (s *accountService) GetAccountByID(userID, accountID uint) (*models.Account, error) {
 	var account models.Account
 	if err := s.db.Where("id = ? AND user_id = ? AND is_active = ?", accountID, userID, true).First(&account).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New("account not found")
+			return nil, apperrors.ErrAccountNotFound
 		}
-		return nil, err
+		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
 	return &account, nil
 }
 
 // UpdateCashAccount updates an existing cash account
-func (s *AccountService) UpdateCashAccount(userID, accountID uint, name, description string) (*models.Account, error) {
+func (s *accountService) UpdateCashAccount(userID, accountID uint, name, description string) (*models.Account, error) {
 	// Get the account
 	account, err := s.GetAccountByID(userID, accountID)
 	if err != nil {
@@ -97,7 +140,7 @@ func (s *AccountService) UpdateCashAccount(userID, accountID uint, name, descrip
 
 	// Ensure it's a cash account
 	if account.Type != models.AccountTypeCash {
-		return nil, errors.New("not a cash account")
+		return nil, apperrors.ErrNotCashAccount
 	}
 
 	// Update fields if provided
@@ -112,7 +155,7 @@ func (s *AccountService) UpdateCashAccount(userID, accountID uint, name, descrip
 	// Apply updates if any
 	if len(updates) > 0 {
 		if err := s.db.Model(account).Updates(updates).Error; err != nil {
-			return nil, err
+			return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
 		}
 	}
 
@@ -120,7 +163,7 @@ func (s *AccountService) UpdateCashAccount(userID, accountID uint, name, descrip
 }
 
 // UpdateAccountBalance updates the balance of an account based on transaction
-func (s *AccountService) UpdateAccountBalance(tx *gorm.DB, account *models.Account, transactionType models.TransactionType, amount float64) error {
+func (s *accountService) UpdateAccountBalance(tx *gorm.DB, account *models.Account, transactionType models.TransactionType, amount int64) error {
 	// Update the balance based on transaction type
 	switch transactionType {
 	case models.TransactionTypeIncome:
@@ -130,5 +173,8 @@ func (s *AccountService) UpdateAccountBalance(tx *gorm.DB, account *models.Accou
 	}
 
 	// Save the updated balance
-	return tx.Model(account).Update("balance", account.Balance).Error
-} 
+	if err := tx.Model(account).Update("balance", account.Balance).Error; err != nil {
+		return apperrors.Wrap(apperrors.ErrInternalServer, err)
+	}
+	return nil
+}

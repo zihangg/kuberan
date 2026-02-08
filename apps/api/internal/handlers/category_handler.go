@@ -2,40 +2,42 @@ package handlers
 
 import (
 	"net/http"
-	"strconv"
 
 	"github.com/gin-gonic/gin"
 
+	apperrors "kuberan/internal/errors"
 	"kuberan/internal/models"
+	"kuberan/internal/pagination"
 	"kuberan/internal/services"
 )
 
-// CategoryHandler handles category-related requests
+// CategoryHandler handles category-related requests.
 type CategoryHandler struct {
-	categoryService *services.CategoryService
+	categoryService services.CategoryServicer
+	auditService    services.AuditServicer
 }
 
-// NewCategoryHandler creates a new CategoryHandler
-func NewCategoryHandler(categoryService *services.CategoryService) *CategoryHandler {
-	return &CategoryHandler{categoryService: categoryService}
+// NewCategoryHandler creates a new CategoryHandler.
+func NewCategoryHandler(categoryService services.CategoryServicer, auditService services.AuditServicer) *CategoryHandler {
+	return &CategoryHandler{categoryService: categoryService, auditService: auditService}
 }
 
 // CreateCategoryRequest represents the request payload for creating a category
 type CreateCategoryRequest struct {
-	Name        string              `json:"name" binding:"required"`
-	Type        models.CategoryType `json:"type" binding:"required"`
-	Description string              `json:"description"`
-	Icon        string              `json:"icon"`
-	Color       string              `json:"color"`
+	Name        string              `json:"name" binding:"required,min=1,max=100"`
+	Type        models.CategoryType `json:"type" binding:"required,category_type"`
+	Description string              `json:"description" binding:"max=500"`
+	Icon        string              `json:"icon" binding:"max=50"`
+	Color       string              `json:"color" binding:"omitempty,hex_color"`
 	ParentID    *uint               `json:"parent_id"`
 }
 
 // UpdateCategoryRequest represents the request payload for updating a category
 type UpdateCategoryRequest struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Icon        string `json:"icon"`
-	Color       string `json:"color"`
+	Name        string `json:"name" binding:"omitempty,min=1,max=100"`
+	Description string `json:"description" binding:"max=500"`
+	Icon        string `json:"icon" binding:"max=50"`
+	Color       string `json:"color" binding:"omitempty,hex_color"`
 	ParentID    *uint  `json:"parent_id"`
 }
 
@@ -65,21 +67,20 @@ type CategoryResponse struct {
 // @Failure     500 {object} ErrorResponse "Server error"
 // @Router      /categories [post]
 func (h *CategoryHandler) CreateCategory(c *gin.Context) {
-	// Get user ID from context
-	userID, exists := c.Get("userID")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+	userID, err := getUserID(c)
+	if err != nil {
+		respondWithError(c, err)
 		return
 	}
 
 	var req CreateCategoryRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, err.Error()))
 		return
 	}
 
 	category, err := h.categoryService.CreateCategory(
-		userID.(uint),
+		userID,
 		req.Name,
 		req.Type,
 		req.Description,
@@ -88,50 +89,64 @@ func (h *CategoryHandler) CreateCategory(c *gin.Context) {
 		req.ParentID,
 	)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondWithError(c, err)
 		return
 	}
+
+	h.auditService.Log(userID, "CREATE_CATEGORY", "category", category.ID, c.ClientIP(),
+		map[string]interface{}{"name": req.Name, "type": req.Type})
 
 	c.JSON(http.StatusCreated, gin.H{"category": category})
 }
 
-// GetUserCategories handles the retrieval of all categories for a user
-// @Summary     Get all categories
-// @Description Get all transaction categories for the authenticated user
+// GetUserCategories handles the retrieval of categories for a user
+// @Summary     Get categories
+// @Description Get a paginated list of transaction categories for the authenticated user
 // @Tags        categories
 // @Accept      json
 // @Produce     json
 // @Security    BearerAuth
-// @Param       type query string false "Filter by category type (income/expense)"
-// @Success     200 {array} CategoryResponse "List of categories"
+// @Param       type      query string false "Filter by category type (income/expense)"
+// @Param       page      query int    false "Page number (default 1)"
+// @Param       page_size query int    false "Items per page (default 20, max 100)"
+// @Success     200 {object} pagination.PageResponse[models.Category] "Paginated categories"
+// @Failure     400 {object} ErrorResponse "Invalid input"
 // @Failure     401 {object} ErrorResponse "Unauthorized"
 // @Failure     500 {object} ErrorResponse "Server error"
 // @Router      /categories [get]
 func (h *CategoryHandler) GetUserCategories(c *gin.Context) {
-	// Get user ID from context
-	userID, exists := c.Get("userID")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+	userID, err := getUserID(c)
+	if err != nil {
+		respondWithError(c, err)
 		return
 	}
 
-	// Check if type filter is provided
 	categoryType := c.Query("type")
-	var categories []models.Category
-	var err error
+	if categoryType != "" && categoryType != "income" && categoryType != "expense" {
+		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, "Invalid category type: must be 'income' or 'expense'"))
+		return
+	}
+
+	var page pagination.PageRequest
+	if err := c.ShouldBindQuery(&page); err != nil {
+		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, err.Error()))
+		return
+	}
+
+	var result *pagination.PageResponse[models.Category]
 
 	if categoryType != "" {
-		categories, err = h.categoryService.GetUserCategoriesByType(userID.(uint), models.CategoryType(categoryType))
+		result, err = h.categoryService.GetUserCategoriesByType(userID, models.CategoryType(categoryType), page)
 	} else {
-		categories, err = h.categoryService.GetUserCategories(userID.(uint))
+		result, err = h.categoryService.GetUserCategories(userID, page)
 	}
 
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve categories"})
+		respondWithError(c, err)
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"categories": categories})
+	c.JSON(http.StatusOK, result)
 }
 
 // GetCategoryByID handles the retrieval of a specific category
@@ -149,23 +164,21 @@ func (h *CategoryHandler) GetUserCategories(c *gin.Context) {
 // @Failure     500 {object} ErrorResponse "Server error"
 // @Router      /categories/{id} [get]
 func (h *CategoryHandler) GetCategoryByID(c *gin.Context) {
-	// Get user ID from context
-	userID, exists := c.Get("userID")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+	userID, err := getUserID(c)
+	if err != nil {
+		respondWithError(c, err)
 		return
 	}
 
-	// Get category ID from URL
-	categoryID, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	categoryID, err := parsePathID(c, "id")
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid category ID"})
+		respondWithError(c, err)
 		return
 	}
 
-	category, err := h.categoryService.GetCategoryByID(userID.(uint), uint(categoryID))
+	category, err := h.categoryService.GetCategoryByID(userID, categoryID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		respondWithError(c, err)
 		return
 	}
 
@@ -188,29 +201,27 @@ func (h *CategoryHandler) GetCategoryByID(c *gin.Context) {
 // @Failure     500 {object} ErrorResponse "Server error"
 // @Router      /categories/{id} [put]
 func (h *CategoryHandler) UpdateCategory(c *gin.Context) {
-	// Get user ID from context
-	userID, exists := c.Get("userID")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+	userID, err := getUserID(c)
+	if err != nil {
+		respondWithError(c, err)
 		return
 	}
 
-	// Get category ID from URL
-	categoryID, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	categoryID, err := parsePathID(c, "id")
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid category ID"})
+		respondWithError(c, err)
 		return
 	}
 
 	var req UpdateCategoryRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, err.Error()))
 		return
 	}
 
 	category, err := h.categoryService.UpdateCategory(
-		userID.(uint),
-		uint(categoryID),
+		userID,
+		categoryID,
 		req.Name,
 		req.Description,
 		req.Icon,
@@ -218,9 +229,12 @@ func (h *CategoryHandler) UpdateCategory(c *gin.Context) {
 		req.ParentID,
 	)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondWithError(c, err)
 		return
 	}
+
+	h.auditService.Log(userID, "UPDATE_CATEGORY", "category", categoryID, c.ClientIP(),
+		map[string]interface{}{"name": req.Name})
 
 	c.JSON(http.StatusOK, gin.H{"category": category})
 }
@@ -240,24 +254,24 @@ func (h *CategoryHandler) UpdateCategory(c *gin.Context) {
 // @Failure     500 {object} ErrorResponse "Server error"
 // @Router      /categories/{id} [delete]
 func (h *CategoryHandler) DeleteCategory(c *gin.Context) {
-	// Get user ID from context
-	userID, exists := c.Get("userID")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
-		return
-	}
-
-	// Get category ID from URL
-	categoryID, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	userID, err := getUserID(c)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid category ID"})
+		respondWithError(c, err)
 		return
 	}
 
-	if err := h.categoryService.DeleteCategory(userID.(uint), uint(categoryID)); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	categoryID, err := parsePathID(c, "id")
+	if err != nil {
+		respondWithError(c, err)
 		return
 	}
+
+	if err := h.categoryService.DeleteCategory(userID, categoryID); err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	h.auditService.Log(userID, "DELETE_CATEGORY", "category", categoryID, c.ClientIP(), nil)
 
 	c.JSON(http.StatusOK, gin.H{"message": "Category deleted successfully"})
-} 
+}

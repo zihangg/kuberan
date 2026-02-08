@@ -1,15 +1,30 @@
 package config
 
 import (
-	"log"
+	"fmt"
 	"os"
 	"time"
+
+	"kuberan/internal/logger"
 
 	"github.com/joho/godotenv"
 )
 
-// Config holds application configuration
+// Environment represents the application environment.
+type Environment string
+
+// Environment constants.
+const (
+	Development Environment = "development"
+	Staging     Environment = "staging"
+	Production  Environment = "production"
+)
+
+// Config holds application configuration.
 type Config struct {
+	// Environment
+	Env Environment
+
 	// Server
 	Port string
 
@@ -32,11 +47,14 @@ var appConfig *Config
 func Load() (*Config, error) {
 	// Load .env file if not already loaded
 	if err := godotenv.Load(); err != nil {
-		log.Println("Warning: .env file not found")
+		logger.Get().Warn(".env file not found")
 	}
 
 	// Get values from environment variables with defaults
 	config := &Config{
+		// Environment
+		Env: Environment(getEnv("ENV", string(Development))),
+
 		// Server
 		Port: getEnv("PORT", "8080"),
 
@@ -56,10 +74,17 @@ func Load() (*Config, error) {
 	expStr := getEnv("JWT_EXPIRES_IN", "24h")
 	expDur, err := time.ParseDuration(expStr)
 	if err != nil {
-		log.Printf("Warning: invalid JWT_EXPIRES_IN value '%s', falling back to 24h\n", expStr)
+		logger.Get().Warnf("Invalid JWT_EXPIRES_IN value '%s', falling back to 24h", expStr)
 		expDur = 24 * time.Hour
 	}
 	config.JWTExpirationDur = expDur
+
+	// Validate production configuration
+	if config.Env == Production {
+		if err := config.validateProduction(); err != nil {
+			return nil, err
+		}
+	}
 
 	appConfig = config
 	return config, nil
@@ -71,10 +96,24 @@ func Get() *Config {
 		var err error
 		appConfig, err = Load()
 		if err != nil {
-			log.Fatalf("Failed to load configuration: %v", err)
+			logger.Get().Fatalf("Failed to load configuration: %v", err)
 		}
 	}
 	return appConfig
+}
+
+// validateProduction checks that production-unsafe defaults are not used.
+func (c *Config) validateProduction() error {
+	unsafeSecrets := []string{"", "fallback-secret-key-for-dev-only", "your-super-secret-key-change-in-production"}
+	for _, s := range unsafeSecrets {
+		if c.JWTSecret == s {
+			return fmt.Errorf("JWT_SECRET must be explicitly set in production")
+		}
+	}
+	if c.DBPassword == "kuberan" {
+		return fmt.Errorf("DB_PASSWORD must not be the default in production")
+	}
+	return nil
 }
 
 // getEnv retrieves an environment variable or returns a default value
@@ -83,4 +122,4 @@ func getEnv(key, defaultValue string) string {
 		return value
 	}
 	return defaultValue
-} 
+}
