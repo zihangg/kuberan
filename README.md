@@ -1,19 +1,142 @@
 # Kuberan
 
-A personal finance application built with Go 1.24 backend and Next.js frontend, organized in a monorepo structure.
+A self-hosted, privacy-first personal finance application. Named after the Hindu god of wealth (Kubera).
 
-## Overview
+Built with a Go backend and Next.js frontend, organized as a monorepo.
 
-Kuberan is a comprehensive personal finance management solution that helps you track expenses, create budgets, and make better financial decisions.
+## Features
+
+- **Account Management** -- Cash and investment accounts with multi-currency support
+- **Transaction Tracking** -- Income, expenses, and account-to-account transfers
+- **Budgets** -- Monthly/yearly budgets with spending progress tracking
+- **Investment Portfolio** -- Track stocks, ETFs, bonds, crypto, and REITs with buy/sell/dividend/split transactions
+- **Categories** -- Hierarchical income/expense categories with icons and colors
+- **Audit Logging** -- All sensitive operations are logged for accountability
+
+## Tech Stack
+
+| Layer        | Technology                                        |
+|--------------|---------------------------------------------------|
+| Backend      | Go 1.24, Gin, GORM, PostgreSQL 16                |
+| Frontend     | Next.js 15 (App Router), React 19, Tailwind CSS v4 |
+| Auth         | JWT (access + refresh tokens), bcrypt             |
+| Logging      | Zap (structured)                                  |
+| Migrations   | golang-migrate (SQL-based)                        |
+| API Docs     | Swagger/OpenAPI via swaggo                        |
+| Dev Env      | Docker Compose, Air (hot reload), Turbopack       |
 
 ## Project Structure
 
 ```
 /
 ├── apps/
-│   ├── api/              # Go 1.24 backend
-│   └── web/         # Next.js frontend
+│   ├── api/              # Go backend (Gin + GORM + PostgreSQL)
+│   └── web/              # Next.js frontend (React 19 + Tailwind CSS v4)
 ├── packages/             # Shared code between apps
+├── plans/                # Architecture and upgrade plans
 ├── scripts/              # Utility scripts
+├── tools/                # Development tools
 └── docker-compose.yml    # Development environment setup
 ```
+
+## Getting Started
+
+### Prerequisites
+
+- Docker and Docker Compose
+- Go 1.24+ (for local backend development)
+- Node.js 20+ (for local frontend development)
+
+### Development (Docker)
+
+```bash
+# Start all services (API + frontend + PostgreSQL)
+npm run dev
+```
+
+This starts:
+- **API** at http://localhost:8080
+- **Frontend** at http://localhost:3000
+- **PostgreSQL** on port 5433 (host) / 5432 (container)
+- **Swagger UI** at http://localhost:8080/swagger/index.html
+
+### Development (Local)
+
+```bash
+# Backend only (requires PostgreSQL running)
+cd apps/api && air
+
+# Frontend only
+cd apps/web && npm run dev
+```
+
+### Common Commands
+
+```bash
+# Run backend tests
+cd apps/api && go test ./... -v
+
+# Run tests with coverage
+cd apps/api && go test ./... -coverprofile=coverage.out && go tool cover -html=coverage.out
+
+# Run full verification (build + vet + lint + test + race detection)
+cd apps/api && ./scripts/check.sh
+
+# Quick check (build + vet + lint, no tests)
+cd apps/api && make check-fast
+
+# Run migrations
+cd apps/api && go run cmd/migrate/main.go up
+cd apps/api && go run cmd/migrate/main.go down 1
+
+# Build backend
+cd apps/api && go build -o bin/api ./cmd/api
+
+# Generate Swagger docs
+cd apps/api && swag init -g cmd/api/main.go -d . --output internal/docs
+
+# Lint
+cd apps/api && golangci-lint run ./...
+```
+
+## API Overview
+
+All endpoints are prefixed with `/api/v1/`. Authentication uses Bearer JWT tokens.
+
+**Public:** Register, login, token refresh, health check, Swagger docs.
+
+**Protected:** CRUD for accounts, transactions, categories, budgets, and investments. Includes transfer support, budget progress tracking, and portfolio summary.
+
+See the [Swagger UI](http://localhost:8080/swagger/index.html) for full API documentation or refer to `CLAUDE.md` for the complete endpoint listing.
+
+## Architecture
+
+The backend follows a 3-layer architecture:
+
+```
+Handlers (HTTP) → Services (Business Logic) → Models (Database)
+```
+
+Key patterns:
+- Interface-based services for testability
+- All monetary values stored as **int64 cents** (not floats)
+- Custom `AppError` types with error codes and HTTP status mapping
+- Soft deletes on all models
+- User-scoped queries for data isolation
+- Audit logging on sensitive operations
+
+## Environment Variables
+
+See `apps/api/.env` for backend configuration. Key variables:
+
+| Variable      | Description                          | Default       |
+|---------------|--------------------------------------|---------------|
+| `ENV`         | Environment (development/production) | `development` |
+| `PORT`        | Server port                          | `8080`        |
+| `DB_HOST`     | PostgreSQL host                      | `localhost`   |
+| `DB_PORT`     | PostgreSQL port                      | `5433`        |
+| `JWT_SECRET`  | JWT signing key (required in prod)   | dev default   |
+
+## License
+
+Private project. All rights reserved.

@@ -37,6 +37,9 @@ Monorepo with two main applications:
 - **Language**: TypeScript (strict mode, never use `any`)
 - **React**: 19
 - **Styling**: Tailwind CSS v4
+- **Status**: Scaffolded via `create-next-app`, no custom UI implemented yet
+
+Planned (not yet installed/implemented):
 - **Data Fetching**: @tanstack/react-query
 - **Components**: ShadCN UI, atomic design (atoms/molecules/organisms/templates/pages)
 - **API Layer**: Service files (e.g., `auth.service.ts`) called from hooks in `src/hooks/`
@@ -54,6 +57,9 @@ apps/api/
 │   ├── api/main.go           # Application entrypoint
 │   └── migrate/main.go       # Migration CLI tool
 ├── migrations/               # SQL migration files (golang-migrate)
+├── scripts/
+│   └── check.sh              # Full verification (build+vet+lint+test+race)
+├── Makefile                  # Dev targets (build, test, lint, migrate, etc.)
 ├── internal/
 │   ├── config/               # Environment-based configuration
 │   ├── database/             # DB connection, pooling, config
@@ -185,21 +191,22 @@ GET  /swagger/*                # Swagger UI
 ### Protected (require Bearer token)
 ```
 # User
-GET  /api/v1/profile
+GET    /api/v1/profile
 
 # Accounts
-POST /api/v1/accounts/cash
-POST /api/v1/accounts/investment
-GET  /api/v1/accounts
-GET  /api/v1/accounts/:id
-PUT  /api/v1/accounts/:id
+POST   /api/v1/accounts/cash
+POST   /api/v1/accounts/investment
+GET    /api/v1/accounts
+GET    /api/v1/accounts/:id
+PUT    /api/v1/accounts/:id
+GET    /api/v1/accounts/:id/transactions
+GET    /api/v1/accounts/:id/investments
 
 # Transactions
 POST   /api/v1/transactions
 POST   /api/v1/transactions/transfer
 GET    /api/v1/transactions/:id
 DELETE /api/v1/transactions/:id
-GET    /api/v1/accounts/:id/transactions
 
 # Categories
 POST   /api/v1/categories
@@ -217,11 +224,14 @@ DELETE /api/v1/budgets/:id
 GET    /api/v1/budgets/:id/progress
 
 # Investments
-GET    /api/v1/investments
+POST   /api/v1/investments
 GET    /api/v1/investments/portfolio
 GET    /api/v1/investments/:id
 PUT    /api/v1/investments/:id/price
-POST   /api/v1/investments/:id/transactions
+POST   /api/v1/investments/:id/buy
+POST   /api/v1/investments/:id/sell
+POST   /api/v1/investments/:id/dividend
+POST   /api/v1/investments/:id/split
 GET    /api/v1/investments/:id/transactions
 ```
 

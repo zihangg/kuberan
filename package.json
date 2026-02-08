@@ -8,10 +8,10 @@
   ],
   "scripts": {
     "dev": "docker-compose up --build",
-    "dev:backend": "cd apps/backend && air",
-    "dev:frontend": "cd apps/frontend && npm run dev",
-    "build": "npm run build:backend && npm run build:frontend",
-    "build:backend": "cd apps/api && go build -o ../../bin/api ./cmd/api",
-    "build:frontend": "cd apps/frontend && npm run build"
+    "dev:api": "cd apps/api && air",
+    "dev:web": "cd apps/web && npm run dev",
+    "build": "npm run build:api && npm run build:web",
+    "build:api": "cd apps/api && go build -o ../../bin/api ./cmd/api",
+    "build:web": "cd apps/web && npm run build"
   }
 }
