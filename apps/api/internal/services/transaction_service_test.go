@@ -1263,6 +1263,70 @@ func TestGetSpendingByCategory(t *testing.T) {
 		}
 	})
 
+	t.Run("generates_fallback_color_for_colorless_categories", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		acctSvc := NewAccountService(db)
+		txSvc := NewTransactionService(db, acctSvc)
+		user := testutil.CreateTestUser(t, db)
+		account := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 100000)
+
+		// CreateTestCategory creates categories without a color set
+		cat := testutil.CreateTestCategory(t, db, user.ID, models.CategoryTypeExpense)
+
+		_, err := txSvc.CreateTransaction(user.ID, account.ID, &cat.ID, models.TransactionTypeExpense, 1000, "", from.Add(time.Hour))
+		testutil.AssertNoError(t, err)
+
+		result, err := txSvc.GetSpendingByCategory(user.ID, from, to)
+		testutil.AssertNoError(t, err)
+
+		if len(result.Items) != 1 {
+			t.Fatalf("expected 1 item, got %d", len(result.Items))
+		}
+		// Color should not be empty — should be a palette fallback
+		if result.Items[0].CategoryColor == "" {
+			t.Error("expected non-empty fallback color for colorless category")
+		}
+		// Should be a valid hex color from the palette
+		expectedColor := categoryColorPalette[cat.ID%uint(len(categoryColorPalette))]
+		if result.Items[0].CategoryColor != expectedColor {
+			t.Errorf("expected fallback color %q, got %q", expectedColor, result.Items[0].CategoryColor)
+		}
+	})
+
+	t.Run("uses_category_color_when_set", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		acctSvc := NewAccountService(db)
+		txSvc := NewTransactionService(db, acctSvc)
+		user := testutil.CreateTestUser(t, db)
+		account := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 100000)
+
+		// Create a category with an explicit color
+		cat := &models.Category{
+			UserID: user.ID,
+			Name:   "Colored Category",
+			Type:   models.CategoryTypeExpense,
+			Color:  "#FF00FF",
+		}
+		if err := db.Create(cat).Error; err != nil {
+			t.Fatalf("failed to create category: %v", err)
+		}
+
+		_, err := txSvc.CreateTransaction(user.ID, account.ID, &cat.ID, models.TransactionTypeExpense, 1000, "", from.Add(time.Hour))
+		testutil.AssertNoError(t, err)
+
+		result, err := txSvc.GetSpendingByCategory(user.ID, from, to)
+		testutil.AssertNoError(t, err)
+
+		if len(result.Items) != 1 {
+			t.Fatalf("expected 1 item, got %d", len(result.Items))
+		}
+		if result.Items[0].CategoryColor != "#FF00FF" {
+			t.Errorf("expected color '#FF00FF', got %q", result.Items[0].CategoryColor)
+		}
+	})
+
 	t.Run("sorts_by_total_descending", func(t *testing.T) {
 		db := testutil.SetupTestDB(t)
 		defer testutil.TeardownTestDB(t, db)
@@ -1396,6 +1460,34 @@ func TestGetMonthlySummary(t *testing.T) {
 		}
 		if result[0].Expenses != 0 {
 			t.Errorf("expected expenses 0, got %d", result[0].Expenses)
+		}
+	})
+
+	t.Run("excludes_initial_balance_from_income", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		acctSvc := NewAccountService(db)
+		txSvc := NewTransactionService(db, acctSvc)
+		user := testutil.CreateTestUser(t, db)
+
+		// CreateCashAccount with initial balance creates an income transaction with description "Initial balance"
+		account, err := acctSvc.CreateCashAccount(user.ID, "Savings", "", "USD", 50000)
+		testutil.AssertNoError(t, err)
+
+		// Add a regular income transaction in the current month
+		curMonth := time.Date(now.Year(), now.Month(), 10, 12, 0, 0, 0, time.UTC)
+		_, err = txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeIncome, 7000, "Salary", curMonth)
+		testutil.AssertNoError(t, err)
+
+		result, err := txSvc.GetMonthlySummary(user.ID, 1)
+		testutil.AssertNoError(t, err)
+
+		if len(result) != 1 {
+			t.Fatalf("expected 1 item, got %d", len(result))
+		}
+		// Income should only include the 7000 salary, not the 50000 initial balance
+		if result[0].Income != 7000 {
+			t.Errorf("expected income 7000 (excluding initial balance), got %d", result[0].Income)
 		}
 	})
 

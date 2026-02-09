@@ -420,8 +420,8 @@ func (s *transactionService) GetMonthlySummary(userID uint, months int) ([]Month
 		var income int64
 		if err := s.db.Model(&models.Transaction{}).
 			Select("COALESCE(SUM(amount), 0)").
-			Where("user_id = ? AND type = ? AND deleted_at IS NULL AND date BETWEEN ? AND ?",
-				userID, models.TransactionTypeIncome, monthStart, monthEnd).
+			Where("user_id = ? AND type = ? AND deleted_at IS NULL AND date BETWEEN ? AND ? AND description != ?",
+				userID, models.TransactionTypeIncome, monthStart, monthEnd, "Initial balance").
 			Scan(&income).Error; err != nil {
 			return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
 		}
@@ -483,6 +483,21 @@ func (s *transactionService) GetDailySpending(userID uint, from, to time.Time) (
 	return items, nil
 }
 
+// categoryColorPalette provides fallback colors for categories that don't have a color set.
+// These are visually distinct and work well on both light and dark backgrounds.
+var categoryColorPalette = []string{
+	"#22C55E", // green
+	"#3B82F6", // blue
+	"#F59E0B", // amber
+	"#EF4444", // red
+	"#8B5CF6", // violet
+	"#EC4899", // pink
+	"#06B6D4", // cyan
+	"#F97316", // orange
+	"#14B8A6", // teal
+	"#A855F7", // purple
+}
+
 // GetSpendingByCategory returns expense totals grouped by category for a date range.
 func (s *transactionService) GetSpendingByCategory(userID uint, from, to time.Time) (*SpendingByCategory, error) {
 	type categorySpend struct {
@@ -519,6 +534,10 @@ func (s *transactionService) GetSpendingByCategory(userID uint, from, to time.Ti
 				item.CategoryName = category.Name
 				item.CategoryColor = category.Color
 				item.CategoryIcon = category.Icon
+				// Generate a deterministic fallback color if the category has no color set
+				if item.CategoryColor == "" {
+					item.CategoryColor = categoryColorPalette[*r.CategoryID%uint(len(categoryColorPalette))]
+				}
 			}
 		} else {
 			item.CategoryName = "Uncategorized"

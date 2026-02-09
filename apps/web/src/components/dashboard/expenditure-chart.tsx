@@ -38,27 +38,49 @@ export function ExpenditureChart() {
 
   const { data, isLoading } = useSpendingByCategory(fromDate, toDate);
 
-  const chartConfig = useMemo(() => {
-    if (!data?.items) return {} as ChartConfig;
+  const TOP_N = 3;
+  const OTHERS_COLOR = "#6B7280";
+
+  const { displayItems, chartConfig, chartData } = useMemo(() => {
+    if (!data?.items)
+      return { displayItems: [], chartConfig: {} as ChartConfig, chartData: [] };
+
+    const sorted = [...data.items];
+    const top = sorted.slice(0, TOP_N);
+    const rest = sorted.slice(TOP_N);
+
+    // Build display items: top N + optional "Others" bucket
+    const items = [...top];
+    if (rest.length > 0) {
+      const othersTotal = rest.reduce((sum, item) => sum + item.total, 0);
+      items.push({
+        category_id: null,
+        category_name: "Others",
+        category_color: OTHERS_COLOR,
+        category_icon: "",
+        total: othersTotal,
+      });
+    }
+
+    // Build chart config from display items
     const config: ChartConfig = {};
-    for (const item of data.items) {
+    for (const item of items) {
       const key = item.category_name
         .toLowerCase()
         .replace(/\s+/g, "-")
         .replace(/[^a-z0-9-]/g, "");
       config[key] = { label: item.category_name, color: item.category_color };
     }
-    return config;
-  }, [data]);
 
-  const chartData = useMemo(() => {
-    if (!data?.items) return [];
-    return data.items.map((item) => ({
+    // Build chart data from display items
+    const cData = items.map((item) => ({
       name: item.category_name,
       value: item.total,
       fill: item.category_color,
       icon: item.category_icon,
     }));
+
+    return { displayItems: items, chartConfig: config, chartData: cData };
   }, [data]);
 
   if (isLoading) {
@@ -148,22 +170,24 @@ export function ExpenditureChart() {
             </Pie>
           </PieChart>
         </ChartContainer>
-        <div className="mt-4 flex flex-wrap gap-3">
-          {data.items.map((item) => {
+        <div className="mt-4 space-y-2">
+          {displayItems.map((item) => {
             const pct =
               data.total_spent > 0
                 ? ((item.total / data.total_spent) * 100).toFixed(1)
                 : "0";
             return (
-              <div key={item.category_name} className="flex items-center gap-2 text-sm">
-                <div
-                  className="h-3 w-3 rounded-full shrink-0"
-                  style={{ backgroundColor: item.category_color }}
-                />
-                <span>
-                  {item.category_icon && `${item.category_icon} `}
-                  {item.category_name}
-                </span>
+              <div key={item.category_name} className="flex items-center justify-between text-sm">
+                <div className="flex items-center gap-2">
+                  <div
+                    className="h-3 w-3 rounded-full shrink-0"
+                    style={{ backgroundColor: item.category_color }}
+                  />
+                  <span>
+                    {item.category_icon && `${item.category_icon} `}
+                    {item.category_name}
+                  </span>
+                </div>
                 <span className="text-muted-foreground">
                   {formatCurrency(item.total)} ({pct}%)
                 </span>
