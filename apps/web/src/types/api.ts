@@ -1,5 +1,8 @@
 import type {
   Account,
+  Budget,
+  BudgetPeriod,
+  BudgetProgress,
   Category,
   Transaction,
   User,
@@ -143,4 +146,36 @@ export interface UpdateCategoryRequest {
   icon?: string;
   color?: string;
   parent_id?: number;
+}
+
+// Budget responses
+export interface BudgetResponse {
+  budget: Budget;
+}
+
+export interface BudgetProgressResponse {
+  progress: BudgetProgress;
+}
+
+// Budget requests
+export interface CreateBudgetRequest {
+  category_id: number;
+  name: string;
+  amount: number; // cents, > 0
+  period: BudgetPeriod;
+  start_date: string; // ISO 8601
+  end_date?: string; // ISO 8601
+}
+
+export interface UpdateBudgetRequest {
+  name?: string;
+  amount?: number; // cents, > 0
+  period?: BudgetPeriod;
+  end_date?: string; // ISO 8601
+}
+
+// Budget filters
+export interface BudgetFilters extends PaginationParams {
+  is_active?: boolean;
+  period?: BudgetPeriod;
 }
