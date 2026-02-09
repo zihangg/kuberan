@@ -73,7 +73,7 @@ export function useCreateTransaction() {
       return res.transaction;
     },
     onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({ queryKey: transactionKeys.lists() });
+      queryClient.invalidateQueries({ queryKey: transactionKeys.all });
       queryClient.invalidateQueries({
         queryKey: accountKeys.detail(variables.account_id),
       });
@@ -93,7 +93,7 @@ export function useCreateTransfer() {
       return res.transaction;
     },
     onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({ queryKey: transactionKeys.lists() });
+      queryClient.invalidateQueries({ queryKey: transactionKeys.all });
       queryClient.invalidateQueries({
         queryKey: accountKeys.detail(variables.from_account_id),
       });
@@ -112,7 +112,7 @@ export function useDeleteTransaction() {
       await apiClient.del<DeleteResponse>(`/api/v1/transactions/${id}`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: transactionKeys.lists() });
+      queryClient.invalidateQueries({ queryKey: transactionKeys.all });
       queryClient.invalidateQueries({ queryKey: accountKeys.all });
     },
   });
