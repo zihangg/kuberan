@@ -597,6 +597,65 @@ func (h *TransactionHandler) GetMonthlySummary(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": result})
 }
 
+// GetDailySpending handles the retrieval of daily expense totals
+// @Summary     Get daily spending
+// @Description Get daily expense totals for a date range
+// @Tags        transactions
+// @Accept      json
+// @Produce     json
+// @Security    BearerAuth
+// @Param       from_date query string true "Start date (RFC3339 or YYYY-MM-DD)"
+// @Param       to_date   query string true "End date (RFC3339 or YYYY-MM-DD)"
+// @Success     200 {object} map[string]interface{} "Daily spending data"
+// @Failure     400 {object} ErrorResponse "Invalid input"
+// @Failure     401 {object} ErrorResponse "Unauthorized"
+// @Failure     500 {object} ErrorResponse "Server error"
+// @Router      /transactions/daily-spending [get]
+func (h *TransactionHandler) GetDailySpending(c *gin.Context) {
+	userID, err := getUserID(c)
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	fromStr := c.Query("from_date")
+	if fromStr == "" {
+		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, "from_date is required"))
+		return
+	}
+
+	toStr := c.Query("to_date")
+	if toStr == "" {
+		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, "to_date is required"))
+		return
+	}
+
+	fromTime, parseErr := parseFlexibleTime(fromStr)
+	if parseErr != nil {
+		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, parseErr.Error()))
+		return
+	}
+
+	toTime, parseErr := parseFlexibleTime(toStr)
+	if parseErr != nil {
+		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, parseErr.Error()))
+		return
+	}
+
+	if toTime.Sub(fromTime).Hours() > 366*24 {
+		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, "date range cannot exceed 366 days"))
+		return
+	}
+
+	result, err := h.transactionService.GetDailySpending(userID, fromTime, toTime)
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": result})
+}
+
 // MessageResponse represents a simple message response
 type MessageResponse struct {
 	Message string `json:"message"`

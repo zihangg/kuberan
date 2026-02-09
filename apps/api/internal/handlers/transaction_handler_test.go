@@ -25,6 +25,7 @@ type mockTransactionService struct {
 	deleteTransactionFn      func(userID, transactionID uint) error
 	getSpendingByCategoryFn  func(userID uint, from, to time.Time) (*services.SpendingByCategory, error)
 	getMonthlySummaryFn      func(userID uint, months int) ([]services.MonthlySummaryItem, error)
+	getDailySpendingFn       func(userID uint, from, to time.Time) ([]services.DailySpendingItem, error)
 }
 
 func (m *mockTransactionService) CreateTransaction(userID, accountID uint, categoryID *uint, transactionType models.TransactionType, amount int64, description string, date time.Time) (*models.Transaction, error) {
@@ -92,6 +93,13 @@ func (m *mockTransactionService) GetMonthlySummary(userID uint, months int) ([]s
 	return []services.MonthlySummaryItem{}, nil
 }
 
+func (m *mockTransactionService) GetDailySpending(userID uint, from, to time.Time) ([]services.DailySpendingItem, error) {
+	if m.getDailySpendingFn != nil {
+		return m.getDailySpendingFn(userID, from, to)
+	}
+	return []services.DailySpendingItem{}, nil
+}
+
 var _ services.TransactionServicer = (*mockTransactionService)(nil)
 
 func setupTransactionRouter(handler *TransactionHandler) *gin.Engine {
@@ -102,6 +110,7 @@ func setupTransactionRouter(handler *TransactionHandler) *gin.Engine {
 	auth.POST("/transactions/transfer", handler.CreateTransfer)
 	auth.GET("/transactions/spending-by-category", handler.GetSpendingByCategory)
 	auth.GET("/transactions/monthly-summary", handler.GetMonthlySummary)
+	auth.GET("/transactions/daily-spending", handler.GetDailySpending)
 	auth.GET("/accounts/:id/transactions", handler.GetAccountTransactions)
 	auth.GET("/transactions/:id", handler.GetTransactionByID)
 	auth.PUT("/transactions/:id", handler.UpdateTransaction)
@@ -824,6 +833,66 @@ func TestTransactionHandler_GetMonthlySummary(t *testing.T) {
 		data := result["data"].([]interface{})
 		if len(data) != 0 {
 			t.Errorf("expected 0 items, got %d", len(data))
+		}
+	})
+}
+
+func TestTransactionHandler_GetDailySpending(t *testing.T) {
+	t.Run("returns_200_with_data", func(t *testing.T) {
+		txSvc := &mockTransactionService{
+			getDailySpendingFn: func(_ uint, _, _ time.Time) ([]services.DailySpendingItem, error) {
+				return []services.DailySpendingItem{
+					{Date: "2026-02-01", Total: 5000},
+					{Date: "2026-02-02", Total: 0},
+					{Date: "2026-02-03", Total: 1500},
+				}, nil
+			},
+		}
+		handler := NewTransactionHandler(txSvc, &mockAuditService{})
+		r := setupTransactionRouter(handler)
+
+		rec := doRequest(r, "GET", "/transactions/daily-spending?from_date=2026-02-01&to_date=2026-02-03", "")
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		result := parseJSON(t, rec)
+		data := result["data"].([]interface{})
+		if len(data) != 3 {
+			t.Errorf("expected 3 items, got %d", len(data))
+		}
+	})
+
+	t.Run("returns_400_missing_from_date", func(t *testing.T) {
+		handler := NewTransactionHandler(&mockTransactionService{}, &mockAuditService{})
+		r := setupTransactionRouter(handler)
+
+		rec := doRequest(r, "GET", "/transactions/daily-spending?to_date=2026-02-03", "")
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+		}
+	})
+
+	t.Run("returns_400_missing_to_date", func(t *testing.T) {
+		handler := NewTransactionHandler(&mockTransactionService{}, &mockAuditService{})
+		r := setupTransactionRouter(handler)
+
+		rec := doRequest(r, "GET", "/transactions/daily-spending?from_date=2026-02-01", "")
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+		}
+	})
+
+	t.Run("returns_400_for_excessive_range", func(t *testing.T) {
+		handler := NewTransactionHandler(&mockTransactionService{}, &mockAuditService{})
+		r := setupTransactionRouter(handler)
+
+		rec := doRequest(r, "GET", "/transactions/daily-spending?from_date=2024-01-01&to_date=2026-02-03", "")
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
 		}
 	})
 }

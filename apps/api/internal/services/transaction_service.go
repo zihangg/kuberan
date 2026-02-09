@@ -447,6 +447,42 @@ func (s *transactionService) GetMonthlySummary(userID uint, months int) ([]Month
 	return items, nil
 }
 
+// GetDailySpending returns daily expense totals for a date range.
+func (s *transactionService) GetDailySpending(userID uint, from, to time.Time) ([]DailySpendingItem, error) {
+	// Normalize to start/end of day
+	current := time.Date(from.Year(), from.Month(), from.Day(), 0, 0, 0, 0, time.UTC)
+	end := time.Date(to.Year(), to.Month(), to.Day(), 0, 0, 0, 0, time.UTC)
+
+	var items []DailySpendingItem
+
+	for !current.After(end) {
+		dayStart := current
+		dayEnd := current.Add(24*time.Hour - time.Nanosecond)
+
+		var total int64
+		if err := s.db.Model(&models.Transaction{}).
+			Select("COALESCE(SUM(amount), 0)").
+			Where("user_id = ? AND type = ? AND deleted_at IS NULL AND date BETWEEN ? AND ?",
+				userID, models.TransactionTypeExpense, dayStart, dayEnd).
+			Scan(&total).Error; err != nil {
+			return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
+		}
+
+		items = append(items, DailySpendingItem{
+			Date:  dayStart.Format("2006-01-02"),
+			Total: total,
+		})
+
+		current = current.AddDate(0, 0, 1)
+	}
+
+	if items == nil {
+		items = []DailySpendingItem{}
+	}
+
+	return items, nil
+}
+
 // GetSpendingByCategory returns expense totals grouped by category for a date range.
 func (s *transactionService) GetSpendingByCategory(userID uint, from, to time.Time) (*SpendingByCategory, error) {
 	type categorySpend struct {

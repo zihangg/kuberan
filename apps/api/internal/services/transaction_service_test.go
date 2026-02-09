@@ -1427,3 +1427,149 @@ func TestGetMonthlySummary(t *testing.T) {
 		}
 	})
 }
+
+func TestGetDailySpending(t *testing.T) {
+	from := time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)
+	to := time.Date(2026, 2, 3, 23, 59, 59, 0, time.UTC)
+
+	t.Run("returns_daily_totals", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		acctSvc := NewAccountService(db)
+		txSvc := NewTransactionService(db, acctSvc)
+		user := testutil.CreateTestUser(t, db)
+		account := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 100000)
+
+		// Day 1: two expenses (3000 + 2000 = 5000)
+		_, err := txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeExpense, 3000, "", time.Date(2026, 2, 1, 10, 0, 0, 0, time.UTC))
+		testutil.AssertNoError(t, err)
+		_, err = txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeExpense, 2000, "", time.Date(2026, 2, 1, 14, 0, 0, 0, time.UTC))
+		testutil.AssertNoError(t, err)
+
+		// Day 3: one expense (1500)
+		_, err = txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeExpense, 1500, "", time.Date(2026, 2, 3, 12, 0, 0, 0, time.UTC))
+		testutil.AssertNoError(t, err)
+
+		result, err := txSvc.GetDailySpending(user.ID, from, to)
+		testutil.AssertNoError(t, err)
+
+		if len(result) != 3 {
+			t.Fatalf("expected 3 items, got %d", len(result))
+		}
+		if result[0].Date != "2026-02-01" || result[0].Total != 5000 {
+			t.Errorf("day 1: expected date=2026-02-01 total=5000, got date=%s total=%d", result[0].Date, result[0].Total)
+		}
+		if result[1].Date != "2026-02-02" || result[1].Total != 0 {
+			t.Errorf("day 2: expected date=2026-02-02 total=0, got date=%s total=%d", result[1].Date, result[1].Total)
+		}
+		if result[2].Date != "2026-02-03" || result[2].Total != 1500 {
+			t.Errorf("day 3: expected date=2026-02-03 total=1500, got date=%s total=%d", result[2].Date, result[2].Total)
+		}
+	})
+
+	t.Run("includes_zero_days", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		acctSvc := NewAccountService(db)
+		txSvc := NewTransactionService(db, acctSvc)
+		user := testutil.CreateTestUser(t, db)
+		account := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 100000)
+
+		fiveDay := time.Date(2026, 2, 5, 23, 59, 59, 0, time.UTC)
+
+		_, err := txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeExpense, 1000, "", time.Date(2026, 2, 1, 12, 0, 0, 0, time.UTC))
+		testutil.AssertNoError(t, err)
+
+		result, err := txSvc.GetDailySpending(user.ID, from, fiveDay)
+		testutil.AssertNoError(t, err)
+
+		if len(result) != 5 {
+			t.Fatalf("expected 5 items, got %d", len(result))
+		}
+		for i := 1; i < 5; i++ {
+			if result[i].Total != 0 {
+				t.Errorf("day %d: expected total 0, got %d", i+1, result[i].Total)
+			}
+		}
+	})
+
+	t.Run("excludes_non_expense_types", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		acctSvc := NewAccountService(db)
+		txSvc := NewTransactionService(db, acctSvc)
+		user := testutil.CreateTestUser(t, db)
+		account := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 100000)
+		account2 := testutil.CreateTestCashAccount(t, db, user.ID)
+
+		day1 := time.Date(2026, 2, 1, 12, 0, 0, 0, time.UTC)
+
+		// Income
+		_, err := txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeIncome, 5000, "", day1)
+		testutil.AssertNoError(t, err)
+
+		// Transfer
+		_, err = txSvc.CreateTransfer(user.ID, account.ID, account2.ID, 1000, "", day1)
+		testutil.AssertNoError(t, err)
+
+		result, err := txSvc.GetDailySpending(user.ID, from, to)
+		testutil.AssertNoError(t, err)
+
+		for _, item := range result {
+			if item.Total != 0 {
+				t.Errorf("date %s: expected total 0, got %d", item.Date, item.Total)
+			}
+		}
+	})
+
+	t.Run("filters_by_date_range", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		acctSvc := NewAccountService(db)
+		txSvc := NewTransactionService(db, acctSvc)
+		user := testutil.CreateTestUser(t, db)
+		account := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 100000)
+
+		// Expense before range
+		_, err := txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeExpense, 1000, "", time.Date(2026, 1, 31, 12, 0, 0, 0, time.UTC))
+		testutil.AssertNoError(t, err)
+
+		// Expense after range
+		_, err = txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeExpense, 2000, "", time.Date(2026, 2, 4, 12, 0, 0, 0, time.UTC))
+		testutil.AssertNoError(t, err)
+
+		result, err := txSvc.GetDailySpending(user.ID, from, to)
+		testutil.AssertNoError(t, err)
+
+		for _, item := range result {
+			if item.Total != 0 {
+				t.Errorf("date %s: expected total 0 (out-of-range expenses only), got %d", item.Date, item.Total)
+			}
+		}
+	})
+
+	t.Run("user_isolation", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		acctSvc := NewAccountService(db)
+		txSvc := NewTransactionService(db, acctSvc)
+		userA := testutil.CreateTestUser(t, db)
+		userB := testutil.CreateTestUser(t, db)
+		accountA := testutil.CreateTestCashAccountWithBalance(t, db, userA.ID, 100000)
+		accountB := testutil.CreateTestCashAccountWithBalance(t, db, userB.ID, 100000)
+
+		day1 := time.Date(2026, 2, 1, 12, 0, 0, 0, time.UTC)
+
+		_, err := txSvc.CreateTransaction(userA.ID, accountA.ID, nil, models.TransactionTypeExpense, 3000, "", day1)
+		testutil.AssertNoError(t, err)
+		_, err = txSvc.CreateTransaction(userB.ID, accountB.ID, nil, models.TransactionTypeExpense, 7000, "", day1)
+		testutil.AssertNoError(t, err)
+
+		result, err := txSvc.GetDailySpending(userA.ID, from, to)
+		testutil.AssertNoError(t, err)
+
+		if result[0].Total != 3000 {
+			t.Errorf("expected day 1 total 3000 for userA, got %d", result[0].Total)
+		}
+	})
+}
