@@ -123,6 +123,10 @@ export interface TransactionFilters extends PaginationParams {
   max_amount?: number;
 }
 
+export interface UserTransactionFilters extends TransactionFilters {
+  account_id?: number;
+}
+
 // Category requests
 export interface CreateCategoryRequest {
   name: string;

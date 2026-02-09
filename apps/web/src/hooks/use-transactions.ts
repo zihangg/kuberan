@@ -6,6 +6,7 @@ import type {
   TransactionResponse,
   DeleteResponse,
   TransactionFilters,
+  UserTransactionFilters,
   CreateTransactionRequest,
   CreateTransferRequest,
 } from "@/types/api";
@@ -16,6 +17,9 @@ export const transactionKeys = {
   lists: () => [...transactionKeys.all, "list"] as const,
   listByAccount: (accountId: number, filters?: TransactionFilters) =>
     [...transactionKeys.lists(), "account", accountId, filters] as const,
+  userLists: () => [...transactionKeys.all, "userList"] as const,
+  userList: (filters?: UserTransactionFilters) =>
+    [...transactionKeys.userLists(), filters] as const,
   details: () => [...transactionKeys.all, "detail"] as const,
   detail: (id: number) => [...transactionKeys.details(), id] as const,
 };
@@ -32,6 +36,16 @@ export function useAccountTransactions(
         { ...filters }
       ),
     enabled: accountId > 0,
+  });
+}
+
+export function useTransactions(filters?: UserTransactionFilters) {
+  return useQuery({
+    queryKey: transactionKeys.userList(filters),
+    queryFn: () =>
+      apiClient.get<PageResponse<Transaction>>("/api/v1/transactions", {
+        ...filters,
+      }),
   });
 }
 
