@@ -29,6 +29,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { CreateTransactionDialog } from "@/components/transactions/create-transaction-dialog";
+import { EditTransactionDialog } from "@/components/transactions/edit-transaction-dialog";
 import type { Account, Budget, Transaction, TransactionType } from "@/types/models";
 
 const ACCOUNT_TYPE_LABELS: Record<string, string> = {
@@ -249,9 +250,11 @@ function BudgetOverview({ budgets }: { budgets: Budget[] }) {
 function TransactionRow({
   transaction,
   accountName,
+  onClick,
 }: {
   transaction: Transaction;
   accountName?: string;
+  onClick?: () => void;
 }) {
   const config = TRANSACTION_TYPE_CONFIG[transaction.type];
   const Icon = config.icon;
@@ -259,7 +262,10 @@ function TransactionRow({
     transaction.type === "expense" || transaction.type === "transfer";
 
   return (
-    <div className="flex items-center justify-between py-3">
+    <div
+      className={`flex items-center justify-between py-3${onClick ? " cursor-pointer hover:bg-accent/50 rounded-md px-2 -mx-2" : ""}`}
+      onClick={onClick}
+    >
       <div className="flex items-center gap-3">
         <div className="flex h-8 w-8 items-center justify-center rounded-full bg-muted">
           <Icon className={`h-4 w-4 ${config.color}`} />
@@ -285,6 +291,8 @@ function TransactionRow({
 export default function DashboardPage() {
   const { user } = useAuth();
   const [txDialogOpen, setTxDialogOpen] = useState(false);
+  const [editTxOpen, setEditTxOpen] = useState(false);
+  const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
   const { data: accountsData, isLoading: accountsLoading } = useAccounts();
 
   const accounts = accountsData?.data ?? [];
@@ -399,6 +407,10 @@ export default function DashboardPage() {
                       key={tx.id}
                       transaction={tx}
                       accountName={accountNameMap.get(tx.account_id)}
+                      onClick={() => {
+                        setSelectedTransaction(tx);
+                        setEditTxOpen(true);
+                      }}
                     />
                   ))}
                 </div>
@@ -411,6 +423,11 @@ export default function DashboardPage() {
       <CreateTransactionDialog
         open={txDialogOpen}
         onOpenChange={setTxDialogOpen}
+      />
+      <EditTransactionDialog
+        open={editTxOpen}
+        onOpenChange={setEditTxOpen}
+        transaction={selectedTransaction}
       />
     </div>
   );

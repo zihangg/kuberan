@@ -132,6 +132,15 @@ export interface CreateTransferRequest {
   date?: string; // ISO 8601
 }
 
+export interface UpdateTransactionRequest {
+  account_id?: number;
+  category_id?: number | null;
+  type?: TransactionType;
+  amount?: number; // cents, > 0
+  description?: string;
+  date?: string; // ISO 8601
+}
+
 export interface TransactionFilters extends PaginationParams {
   from_date?: string;
   to_date?: string;

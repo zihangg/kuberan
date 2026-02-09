@@ -36,6 +36,7 @@ import {
 } from "@/components/ui/table";
 import { CreateTransactionDialog } from "@/components/transactions/create-transaction-dialog";
 import { CreateTransferDialog } from "@/components/transactions/create-transfer-dialog";
+import { EditTransactionDialog } from "@/components/transactions/edit-transaction-dialog";
 import type { Transaction, TransactionType } from "@/types/models";
 import type { UserTransactionFilters } from "@/types/api";
 
@@ -73,9 +74,11 @@ function TransactionsTableSkeleton() {
 function TransactionRow({
   transaction,
   accountName,
+  onClick,
 }: {
   transaction: Transaction;
   accountName: string;
+  onClick?: () => void;
 }) {
   const config = TRANSACTION_TYPE_CONFIG[transaction.type];
   const Icon = config.icon;
@@ -83,7 +86,7 @@ function TransactionRow({
     transaction.type === "expense" || transaction.type === "transfer";
 
   return (
-    <TableRow>
+    <TableRow className={onClick ? "cursor-pointer" : ""} onClick={onClick}>
       <TableCell className="text-muted-foreground">
         {formatDate(transaction.date)}
       </TableCell>
@@ -123,6 +126,8 @@ export default function TransactionsPage() {
   const [toDate, setToDate] = useState("");
   const [txDialogOpen, setTxDialogOpen] = useState(false);
   const [transferDialogOpen, setTransferDialogOpen] = useState(false);
+  const [editTxOpen, setEditTxOpen] = useState(false);
+  const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
 
   const filters: UserTransactionFilters = {
     page,
@@ -315,6 +320,10 @@ export default function TransactionsPage() {
                   accountName={
                     accountNameMap.get(tx.account_id) ?? `Account #${tx.account_id}`
                   }
+                  onClick={() => {
+                    setSelectedTransaction(tx);
+                    setEditTxOpen(true);
+                  }}
                 />
               ))}
             </TableBody>
@@ -357,6 +366,11 @@ export default function TransactionsPage() {
       <CreateTransferDialog
         open={transferDialogOpen}
         onOpenChange={setTransferDialogOpen}
+      />
+      <EditTransactionDialog
+        open={editTxOpen}
+        onOpenChange={setEditTxOpen}
+        transaction={selectedTransaction}
       />
     </div>
   );

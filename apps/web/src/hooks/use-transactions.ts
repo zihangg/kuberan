@@ -9,6 +9,7 @@ import type {
   UserTransactionFilters,
   CreateTransactionRequest,
   CreateTransferRequest,
+  UpdateTransactionRequest,
 } from "@/types/api";
 import { accountKeys } from "./use-accounts";
 
@@ -101,6 +102,23 @@ export function useCreateTransfer() {
         queryKey: accountKeys.detail(variables.to_account_id),
       });
       queryClient.invalidateQueries({ queryKey: accountKeys.lists() });
+    },
+  });
+}
+
+export function useUpdateTransaction(id: number) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: UpdateTransactionRequest) => {
+      const res = await apiClient.put<TransactionResponse>(
+        `/api/v1/transactions/${id}`,
+        data
+      );
+      return res.transaction;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: transactionKeys.all });
+      queryClient.invalidateQueries({ queryKey: accountKeys.all });
     },
   });
 }

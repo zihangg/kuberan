@@ -48,6 +48,7 @@ import {
 import { CreateTransactionDialog } from "@/components/transactions/create-transaction-dialog";
 import { CreateTransferDialog } from "@/components/transactions/create-transfer-dialog";
 import { EditAccountDialog } from "@/components/accounts/edit-account-dialog";
+import { EditTransactionDialog } from "@/components/transactions/edit-transaction-dialog";
 import type { Transaction, TransactionType } from "@/types/models";
 import type { TransactionFilters } from "@/types/api";
 
@@ -97,14 +98,20 @@ function AccountDetailSkeleton() {
   );
 }
 
-function TransactionsTableRow({ transaction }: { transaction: Transaction }) {
+function TransactionsTableRow({
+  transaction,
+  onClick,
+}: {
+  transaction: Transaction;
+  onClick?: () => void;
+}) {
   const config = TRANSACTION_TYPE_CONFIG[transaction.type];
   const Icon = config.icon;
   const isNegative =
     transaction.type === "expense" || transaction.type === "transfer";
 
   return (
-    <TableRow>
+    <TableRow className={onClick ? "cursor-pointer" : ""} onClick={onClick}>
       <TableCell className="text-muted-foreground">
         {formatDate(transaction.date)}
       </TableCell>
@@ -144,6 +151,8 @@ export default function AccountDetailPage() {
   const [txDialogOpen, setTxDialogOpen] = useState(false);
   const [transferDialogOpen, setTransferDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [editTxOpen, setEditTxOpen] = useState(false);
+  const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
 
   const { data: account, isLoading: accountLoading } = useAccount(accountId);
   const { data: transactionsData, isLoading: transactionsLoading } =
@@ -377,7 +386,14 @@ export default function AccountDetailPage() {
                 </TableHeader>
                 <TableBody>
                   {transactions.map((tx) => (
-                    <TransactionsTableRow key={tx.id} transaction={tx} />
+                    <TransactionsTableRow
+                      key={tx.id}
+                      transaction={tx}
+                      onClick={() => {
+                        setSelectedTransaction(tx);
+                        setEditTxOpen(true);
+                      }}
+                    />
                   ))}
                 </TableBody>
               </Table>
@@ -443,6 +459,11 @@ export default function AccountDetailPage() {
         open={editDialogOpen}
         onOpenChange={setEditDialogOpen}
         account={account}
+      />
+      <EditTransactionDialog
+        open={editTxOpen}
+        onOpenChange={setEditTxOpen}
+        transaction={selectedTransaction}
       />
     </div>
   );
