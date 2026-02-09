@@ -1,0 +1,126 @@
+# Frontend Expansion Progress
+
+## Phase 1: Backend — Cross-Account Transactions Endpoint (COMPLETE)
+- Tasks 1.1–1.6 all done
+- Added AccountID *uint to TransactionFilter for optional account filtering
+- Added GetUserTransactions to TransactionServicer interface + service implementation
+  - Base query: WHERE user_id = ? (no account_id required), Preload("Category"), date DESC
+  - Reuses applyTransactionFilters with new AccountID support
+- Added GetUserTransactions handler with full Swagger annotations
+  - Parses account_id query param separately from parseTransactionFilter
+- Registered GET /api/v1/transactions route in main.go
+- 9 service subtests: cross-account listing, type/date/category/amount/account_id filters, pagination, user isolation, ordering
+- 6 handler subtests: 200 with data, 200 empty, filter passthrough, 400 invalid date/type, 401 no auth
+- Full check.sh passes (build, vet, lint, test, test -race)
+- Files changed:
+  - apps/api/internal/services/interfaces.go (AccountID field + GetUserTransactions method)
+  - apps/api/internal/services/transaction_service.go (AccountID filter + GetUserTransactions impl)
+  - apps/api/internal/handlers/transaction_handler.go (GetUserTransactions handler + Swagger)
+  - apps/api/cmd/api/main.go (GET /transactions route)
+  - apps/api/internal/services/transaction_service_test.go (9 subtests)
+  - apps/api/internal/handlers/transaction_handler_test.go (mock method + route + 6 subtests)
+
+## Phase 2: Frontend — Categories Page (COMPLETE)
+- Tasks 2.1–2.7 all done
+- Extended use-categories.ts: added categoryKeys.details/detail, useCategory, useCreateCategory, useUpdateCategory, useDeleteCategory hooks following use-accounts.ts patterns
+- Created color-palette.tsx: 16 preset Tailwind colors as clickable circles, ring indicator for selection, click-to-toggle
+- Created categories/page.tsx: table with type tabs (All/Income/Expense), client-side tree ordering (parents then indented children), pagination, skeleton loading, empty state, edit/delete action buttons per row
+- Created create-category-dialog.tsx: name, type select, description, icon, color palette, parent select (filtered same type, top-level only). Error maps: duplicate name detection
+- Created edit-category-dialog.tsx: pre-populated from category prop via useEffect, type shown as read-only badge, parent excludes self, sends only changed fields. Error maps: SELF_PARENT_CATEGORY, CATEGORY_NOT_FOUND
+- Created delete-category-dialog.tsx: confirmation dialog with CATEGORY_HAS_CHILDREN error mapping
+- All dialogs wired into page via useState, build + lint pass
+- Files changed:
+  - apps/web/src/hooks/use-categories.ts (CRUD hooks + detail keys)
+  - apps/web/src/components/ui/color-palette.tsx (NEW)
+  - apps/web/src/app/(dashboard)/categories/page.tsx (NEW)
+  - apps/web/src/components/categories/create-category-dialog.tsx (NEW)
+  - apps/web/src/components/categories/edit-category-dialog.tsx (NEW)
+  - apps/web/src/components/categories/delete-category-dialog.tsx (NEW)
+
+## Phase 3: Frontend — Transactions Page (COMPLETE)
+- Tasks 3.1–3.3 all done
+- Added UserTransactionFilters type (extends TransactionFilters with account_id) to types/api.ts
+- Added userLists/userList keys + useTransactions(filters?) hook to use-transactions.ts, calls GET /api/v1/transactions
+- Created transactions/page.tsx: full-featured transactions list page
+  - Header with "Add Transaction" + "Transfer" buttons
+  - 5-column filter bar: Account, Type, Category, From Date, To Date
+  - Table: Date, Description, Account name, Type badge (colored), Category, Amount (signed+colored)
+  - Pagination with Previous/Next
+  - Loading skeletons (8 rows), empty state (filter-aware message)
+  - Reuses existing CreateTransactionDialog and CreateTransferDialog
+  - Account name lookup via Map from useAccounts data
+- Build + lint pass
+- Files changed:
+  - apps/web/src/types/api.ts (added UserTransactionFilters)
+  - apps/web/src/hooks/use-transactions.ts (added userList keys + useTransactions hook)
+  - apps/web/src/app/(dashboard)/transactions/page.tsx (NEW)
+
+## Phase 4: Frontend — Budgets Page (COMPLETE)
+- Tasks 4.1–4.7 all done
+- Added budget API types to types/api.ts: BudgetResponse, BudgetProgressResponse, CreateBudgetRequest, UpdateBudgetRequest, BudgetFilters
+- Created use-budgets.ts: budgetKeys factory (all/lists/list/details/detail/progress), useBudgets, useBudget, useBudgetProgress, useCreateBudget, useUpdateBudget, useDeleteBudget — follows use-accounts.ts patterns
+- Created budgets/page.tsx: card-based layout (not table) with progress bars
+  - Status filter tabs (All/Active/Inactive via is_active), period dropdown (All/Monthly/Yearly)
+  - Responsive grid (1/2/3 cols), each card: name, category badge, period badge, amount, BudgetProgressBar
+  - BudgetProgressBar sub-component: fetches progress per budget, color-coded bar (green<75%, yellow 75-90%, red>90%), spent/budgeted text + remaining
+  - Pagination, skeleton grid, empty state
+  - Edit/Delete icon buttons per card
+- Created create-budget-dialog.tsx: name, category select (with type badges), CurrencyInput, period select, start/end date inputs. Error maps: CATEGORY_NOT_FOUND
+- Created edit-budget-dialog.tsx: pre-populated via useEffect, category + start_date read-only, sends only changed fields. Error maps: BUDGET_NOT_FOUND
+- Created delete-budget-dialog.tsx: confirmation dialog with BUDGET_NOT_FOUND error mapping
+- All dialogs wired into page, build + lint pass (zero warnings)
+- Files changed:
+  - apps/web/src/types/api.ts (added budget types)
+  - apps/web/src/hooks/use-budgets.ts (NEW)
+  - apps/web/src/app/(dashboard)/budgets/page.tsx (NEW)
+  - apps/web/src/components/budgets/create-budget-dialog.tsx (NEW)
+  - apps/web/src/components/budgets/edit-budget-dialog.tsx (NEW)
+  - apps/web/src/components/budgets/delete-budget-dialog.tsx (NEW)
+
+## Phase 5: Frontend — Polish & Improvements (IN PROGRESS)
+
+### Task 5.1: Dark Mode (COMPLETE)
+- next-themes already installed (v0.4.6), dark CSS variables already in globals.css from ShadCN init
+- Created theme-provider.tsx: wraps NextThemesProvider with attribute="class", defaultTheme="system", enableSystem, disableTransitionOnChange
+- Updated layout.tsx: ThemeProvider as outermost wrapper, added suppressHydrationWarning on <html>
+- Updated app-header.tsx: added theme toggle dropdown before user menu with Sun/Moon/Monitor icons for Light/Dark/System selection. Sun/Moon icons animate with CSS transitions (rotate+scale) based on dark class
+- Build + lint pass (zero warnings)
+- Files changed:
+  - apps/web/src/providers/theme-provider.tsx (NEW)
+  - apps/web/src/app/layout.tsx (MODIFIED: ThemeProvider wrapper + suppressHydrationWarning)
+  - apps/web/src/components/layout/app-header.tsx (MODIFIED: theme toggle dropdown)
+
+### Task 5.2: Edit Account Dialog (COMPLETE)
+- Created edit-account-dialog.tsx: controlled dialog with account prop, pre-populated name+description via useEffect
+- Type + currency shown as read-only Badge + text (not editable)
+- Uses useUpdateAccount(id) mutation, sends only changed fields
+- Error mapping: duplicate name detection, generic fallback via ApiClientError
+- Loading state on submit, client-side validation (name required, max 100, desc max 500)
+- Wired into account detail page: added Pencil edit button in account header next to badges, renders EditAccountDialog
+- Build + lint pass (zero warnings)
+- Files changed:
+  - apps/web/src/components/accounts/edit-account-dialog.tsx (NEW)
+  - apps/web/src/app/(dashboard)/accounts/[id]/page.tsx (MODIFIED: Pencil import, editDialogOpen state, edit button, EditAccountDialog render)
+
+### Task 5.3: Dashboard Improvements (COMPLETE)
+- Replaced single TotalBalanceCard with SummaryCards row: Total Balance + Cash + Investments (3-column grid with icons)
+  - All computed from existing useAccounts() data, no new API calls
+- Added BudgetOverview section between accounts grid and recent transactions
+  - Uses useBudgets({ is_active: true, page_size: 4 }) to fetch up to 4 active budgets
+  - BudgetMiniProgress sub-component: compact h-2 progress bar, color-coded (green/yellow/red), spent/budgeted text
+  - Section hidden entirely when no budgets exist
+  - "View all" link to /budgets
+- Replaced useAccountTransactions(firstAccountId) with useTransactions({ page_size: 5 }) for cross-account recent transactions
+  - TransactionRow now accepts optional accountName prop, shows "date · account" format
+  - Account name lookup via Map from useAccounts data
+  - "View all" link now points to /transactions instead of single account
+- Removed unused useAccountTransactions import
+- Lint + build pass (zero warnings), backend check.sh passes
+- Files changed:
+  - apps/web/src/app/(dashboard)/page.tsx (MODIFIED: summary cards, budget overview, cross-account transactions)
+
+### Task 5.4: Final Verification (COMPLETE)
+- npm run lint: zero warnings/errors
+- npm run build: all 9 routes compile, no TS errors
+- Backend check.sh: all 5 steps pass (build, vet, lint, test, test -race)
+- All pages build successfully: categories, transactions, budgets, accounts, dashboard

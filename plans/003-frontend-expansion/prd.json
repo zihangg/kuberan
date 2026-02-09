@@ -1,0 +1,526 @@
+[
+  {
+    "id": "1.1",
+    "category": "backend",
+    "passes": true,
+    "description": "Add GetUserTransactions to transaction service interface and implementation",
+    "steps": [
+      "Open apps/api/internal/services/interfaces.go",
+      "Add 'AccountID *uint' field to the TransactionFilter struct",
+      "Add 'GetUserTransactions(userID uint, page pagination.PageRequest, filter TransactionFilter) (*pagination.PageResponse[models.Transaction], error)' to TransactionServicer interface",
+      "Open apps/api/internal/services/transaction_service.go",
+      "Add AccountID filter to the applyTransactionFilters function: if f.AccountID != nil { q = q.Where(\"account_id = ?\", *f.AccountID) }",
+      "Add GetUserTransactions method implementation following GetAccountTransactions pattern",
+      "Base query: s.db.Model(&models.Transaction{}).Where(\"user_id = ?\", userID) — no account_id in base query",
+      "Add .Preload(\"Category\") to the query chain so category data is included in response",
+      "Apply applyTransactionFilters(base, filter) for all optional filters",
+      "Count total items, then fetch paginated slice ordered by date DESC",
+      "Return pagination.NewPageResponse(transactions, page.Page, page.PageSize, totalItems)",
+      "Run go build ./... from apps/api/ to verify compilation"
+    ]
+  },
+  {
+    "id": "1.2",
+    "category": "backend",
+    "passes": true,
+    "description": "Add GetUserTransactions handler with Swagger annotations",
+    "steps": [
+      "Open apps/api/internal/handlers/transaction_handler.go",
+      "Add GetUserTransactions handler method on TransactionHandler",
+      "Add full Swagger annotations: @Summary 'Get user transactions', @Description 'Get a paginated list of all transactions for the authenticated user with optional filters', @Tags transactions, @Security BearerAuth",
+      "Add Swagger @Param annotations for all query params: page, page_size, account_id, from_date, to_date, type, category_id, min_amount, max_amount",
+      "Handler body: getUserID(c) to extract user ID from JWT context",
+      "Bind pagination from query: var page pagination.PageRequest; c.ShouldBindQuery(&page)",
+      "Reuse parseTransactionFilter(c) for filter params (from_date, to_date, type, category_id, min_amount, max_amount)",
+      "Add account_id query param parsing: if v := c.Query(\"account_id\"); v != \"\" { parse uint, set filter.AccountID }",
+      "Call h.transactionService.GetUserTransactions(userID, page, filter)",
+      "Return c.JSON(http.StatusOK, result)",
+      "Handle errors: return via error middleware (same pattern as other handlers)",
+      "Run go build ./... from apps/api/ to verify compilation"
+    ]
+  },
+  {
+    "id": "1.3",
+    "category": "backend",
+    "passes": true,
+    "description": "Register GET /transactions route in main.go",
+    "steps": [
+      "Open apps/api/cmd/api/main.go",
+      "Find the transactions route group: transactions := protected.Group(\"/transactions\")",
+      "Add transactions.GET(\"\", transactionHandler.GetUserTransactions) as the first route in the group (before POST and GET /:id)",
+      "Run go build ./... from apps/api/ to verify compilation",
+      "Run go vet ./... from apps/api/ to check for issues"
+    ]
+  },
+  {
+    "id": "1.4",
+    "category": "backend",
+    "passes": true,
+    "description": "Add service tests for GetUserTransactions",
+    "steps": [
+      "Open apps/api/internal/services/transaction_service_test.go",
+      "Add TestGetUserTransactions function with nested t.Run subtests",
+      "Subtest 'lists_all_transactions_across_accounts': create user, two accounts, transactions in each, call GetUserTransactions, verify all transactions returned across both accounts",
+      "Subtest 'filters_by_type': create income and expense transactions, filter by type=expense, verify only expense transactions returned",
+      "Subtest 'filters_by_date_range': create transactions on different dates, filter by from_date/to_date, verify only matching transactions returned",
+      "Subtest 'filters_by_category': create transactions with different categories, filter by category_id, verify only matching returned",
+      "Subtest 'filters_by_amount_range': create transactions with different amounts, filter by min_amount/max_amount, verify range filtering works",
+      "Subtest 'filters_by_account_id': create transactions across accounts, filter by account_id, verify only that account's transactions returned",
+      "Subtest 'paginates_correctly': create enough transactions, request page 1 with page_size 2, verify total_items/total_pages/page correct",
+      "Subtest 'user_isolation': create transactions for two different users, verify user A's GetUserTransactions does not return user B's transactions",
+      "Subtest 'orders_by_date_desc': create transactions with different dates, verify returned in newest-first order",
+      "Each subtest: fresh SetupTestDB + defer TeardownTestDB, create fixtures via testutil helpers, use testutil.AssertNoError / testutil.AssertAppError / t.Errorf for assertions",
+      "Run go test ./internal/services/ -v -run TestGetUserTransactions from apps/api/"
+    ]
+  },
+  {
+    "id": "1.5",
+    "category": "backend",
+    "passes": true,
+    "description": "Add handler tests for GetUserTransactions",
+    "steps": [
+      "Open apps/api/internal/handlers/transaction_handler_test.go",
+      "Add getUserTransactionsFn field to mockTransactionService struct with signature matching the new interface method",
+      "Add GetUserTransactions method on mockTransactionService that delegates to getUserTransactionsFn (or returns empty PageResponse if nil)",
+      "Ensure var _ services.TransactionServicer = (*mockTransactionService)(nil) compile check still passes",
+      "Add the new GET route to setupTransactionRouter: auth.GET(\"/transactions\", handler.GetUserTransactions)",
+      "Add TestTransactionHandler_GetUserTransactions function with nested t.Run subtests",
+      "Subtest 'returns_200_with_transactions': configure mock to return PageResponse with sample transactions, verify 200 + response body",
+      "Subtest 'returns_200_empty_when_no_transactions': configure mock to return empty PageResponse, verify 200 + empty data array",
+      "Subtest 'passes_filters_to_service': capture filter args via closure, make request with ?type=income&account_id=5, verify captured filter has correct Type and AccountID",
+      "Subtest 'returns_400_for_invalid_date': send ?from_date=not-a-date, verify 400 response with INVALID_INPUT error code",
+      "Subtest 'returns_400_for_invalid_type': send ?type=invalid, verify 400 response",
+      "Subtest 'returns_401_without_auth': register route without injectUserID middleware, verify 401",
+      "Run go test ./internal/handlers/ -v -run TestTransactionHandler_GetUserTransactions from apps/api/"
+    ]
+  },
+  {
+    "id": "1.6",
+    "category": "backend",
+    "passes": true,
+    "description": "Full backend verification via check script",
+    "steps": [
+      "Run ./scripts/check.sh from apps/api/",
+      "This runs in order: go build, go vet, golangci-lint, go test, go test -race",
+      "All 5 steps must pass with zero errors",
+      "If any step fails, fix the issues and re-run",
+      "Verify the new endpoint is accessible: the route should be registered at GET /api/v1/transactions"
+    ]
+  },
+  {
+    "id": "2.1",
+    "category": "frontend-categories",
+    "passes": true,
+    "description": "Extend category React Query hooks with CRUD mutations",
+    "steps": [
+      "Open apps/web/src/hooks/use-categories.ts",
+      "Add 'details' and 'detail' entries to categoryKeys factory for single-category cache keys",
+      "Add useCategory(id: number) hook: GET /api/v1/categories/:id, unwrap CategoryResponse.category, enabled only when id > 0",
+      "Add useCreateCategory() mutation: POST /api/v1/categories, unwrap CategoryResponse.category, invalidate categoryKeys.lists() on success",
+      "Add useUpdateCategory(id: number) mutation: PUT /api/v1/categories/:id, unwrap CategoryResponse.category, invalidate categoryKeys.lists() and categoryKeys.detail(id) on success",
+      "Add useDeleteCategory() mutation: DELETE /api/v1/categories/:id, invalidate categoryKeys.lists() on success",
+      "Import required types: CreateCategoryRequest, UpdateCategoryRequest, CategoryResponse, DeleteResponse from types/api",
+      "Follow exact patterns from use-accounts.ts (mutation structure, queryClient.invalidateQueries, onSuccess callbacks)",
+      "Run npm run build in apps/web/ to verify no errors"
+    ]
+  },
+  {
+    "id": "2.2",
+    "category": "frontend-categories",
+    "passes": true,
+    "description": "Create color palette component with predefined colors",
+    "steps": [
+      "Create apps/web/src/components/ui/color-palette.tsx",
+      "Define PRESET_COLORS array with ~16 hex colors from Tailwind palette: red (#EF4444), orange (#F97316), amber (#F59E0B), yellow (#EAB308), lime (#84CC16), green (#22C55E), emerald (#10B981), teal (#14B8A6), cyan (#06B6D4), blue (#3B82F6), indigo (#6366F1), violet (#8B5CF6), purple (#A855F7), pink (#EC4899), rose (#F43F5E), gray (#6B7280)",
+      "Create ColorPalette component with props: value (string), onChange (color: string) => void, disabled? (boolean)",
+      "Render as a flex-wrap grid of small circles (w-6 h-6 or w-7 h-7 rounded-full)",
+      "Selected color gets a ring-2 ring-offset-2 indicator",
+      "Clicking a selected color deselects it (calls onChange with empty string)",
+      "Apply cursor-not-allowed and reduced opacity when disabled",
+      "Export ColorPalette and PRESET_COLORS",
+      "Run npm run build in apps/web/ to verify no errors"
+    ]
+  },
+  {
+    "id": "2.3",
+    "category": "frontend-categories",
+    "passes": true,
+    "description": "Create categories list page with table, type tabs, and tree ordering",
+    "steps": [
+      "Create apps/web/src/app/(dashboard)/categories/page.tsx as 'use client' component",
+      "Add page header: h1 'Categories' title + 'Create Category' button with Plus icon (same pattern as accounts page header)",
+      "Add ShadCN Tabs for type filtering: 'All' | 'Income' | 'Expense' tabs",
+      "Use useState for active tab, pass type filter param to useCategories() hook (undefined for 'All', 'income'/'expense' for others)",
+      "Implement client-side tree ordering function: take flat category array, sort so parent categories come first, then their children immediately after each parent (indented). Categories whose parent_id doesn't match any category in the list render at top level.",
+      "Build ShadCN Table with columns: Name (with pl-8 indentation for child categories), Type (Badge - green for income, red for expense), Color (small colored circle div with inline backgroundColor), Icon (text/emoji display), Description (truncated max-w-[200px]), Actions (Edit pencil + Delete trash2 icon buttons)",
+      "Add pagination controls: Previous/Next buttons + 'Page X of Y' when total_pages > 1 (same pattern as accounts page)",
+      "Add loading state: CategoriesTableSkeleton component with 5 skeleton rows (same pattern as AccountsTableSkeleton)",
+      "Add empty state: dashed border Card with 'No categories yet. Create your first category to organize your transactions.' message + CTA button",
+      "Add useState booleans for dialog open states: createOpen, editOpen (with selectedCategory), deleteOpen (with selectedCategory)",
+      "Wire Edit and Delete action buttons to set selectedCategory and open respective dialogs",
+      "Run npm run build in apps/web/ to verify no errors"
+    ]
+  },
+  {
+    "id": "2.4",
+    "category": "frontend-categories",
+    "passes": true,
+    "description": "Create category dialog for adding new categories",
+    "steps": [
+      "Create apps/web/src/components/categories/create-category-dialog.tsx as 'use client' component",
+      "Follow CreateAccountDialog pattern: controlled Dialog with open/onOpenChange props",
+      "Add form state: name (string), type (CategoryType | ''), description (string), icon (string), color (string), parentId (string for Select value)",
+      "Add Name field: Input, required, maxLength 100, placeholder 'e.g. Groceries'",
+      "Add Type field: Select with 'Income' and 'Expense' options",
+      "Add Description field: Input, optional, maxLength 500, placeholder 'Optional description'",
+      "Add Icon field: Input, optional, maxLength 50, placeholder 'e.g. 🛒 or food'",
+      "Add Color field: ColorPalette component from ui/color-palette.tsx",
+      "Add Parent Category field: Select dropdown with 'None' as default option",
+      "Load parent options via useCategories({ type: selectedType, page_size: 100 }) — only when type is selected",
+      "Filter parent dropdown to only show categories matching selected type (frontend enforcement of same-type hierarchy)",
+      "Reset parent selection to 'None' when type changes",
+      "Add client-side validation: name required + trimmed + max 100, description max 500, icon max 50",
+      "On submit: call useCreateCategory() mutation with CreateCategoryRequest (convert parentId from string to number, send undefined for empty optional fields)",
+      "On success: toast 'Category \"name\" created', close dialog, reset form",
+      "On error: inline destructive banner, map INVALID_INPUT containing 'already exists' or 'duplicate' to 'A category with this name already exists', generic fallback via getErrorMessage",
+      "Add loading state: submit button disabled + 'Creating...' text while mutation is pending",
+      "Reset all form fields when dialog closes",
+      "Run npm run build in apps/web/ to verify no errors"
+    ]
+  },
+  {
+    "id": "2.5",
+    "category": "frontend-categories",
+    "passes": true,
+    "description": "Create edit category dialog with pre-populated fields",
+    "steps": [
+      "Create apps/web/src/components/categories/edit-category-dialog.tsx as 'use client' component",
+      "Controlled Dialog with props: open, onOpenChange, category (Category object to edit)",
+      "Initialize form state from category prop using useEffect (sync when category changes): name, description, icon, color, parentId",
+      "Add Name field: Input, same as create dialog",
+      "Add Type field: read-only Badge showing category.type (green for income, red for expense) — NOT editable",
+      "Add Description, Icon, Color, Parent Category fields: same as create dialog",
+      "Parent Category dropdown: exclude the category being edited from options (prevent self-parenting), filter to same type as category.type",
+      "Load parent options via useCategories({ type: category.type, page_size: 100 })",
+      "Add same client-side validation as create dialog",
+      "On submit: call useUpdateCategory(category.id) mutation with UpdateCategoryRequest — send only fields that changed (compare to original category), convert parentId appropriately",
+      "On success: toast 'Category \"name\" updated', close dialog",
+      "On error: inline destructive banner, map SELF_PARENT_CATEGORY to 'A category cannot be its own parent', map CATEGORY_NOT_FOUND to 'Category not found', generic fallback",
+      "Add loading state on submit button",
+      "Run npm run build in apps/web/ to verify no errors"
+    ]
+  },
+  {
+    "id": "2.6",
+    "category": "frontend-categories",
+    "passes": true,
+    "description": "Create delete category confirmation dialog",
+    "steps": [
+      "Create apps/web/src/components/categories/delete-category-dialog.tsx as 'use client' component",
+      "Controlled Dialog with props: open, onOpenChange, category (Category object to delete)",
+      "Dialog content: title 'Delete Category', description 'Are you sure you want to delete \"{category.name}\"? Existing transactions will keep their category reference for historical records.'",
+      "Two buttons in DialogFooter: 'Cancel' (outline variant, calls onOpenChange(false)) and 'Delete' (destructive variant)",
+      "On delete click: call useDeleteCategory() mutation with category.id",
+      "On success: toast 'Category \"name\" deleted', close dialog",
+      "On error: inline destructive banner above buttons, map CATEGORY_HAS_CHILDREN to 'This category has child categories. Delete them first before deleting this category.', generic fallback",
+      "Add loading state: Delete button disabled + 'Deleting...' text while mutation is pending",
+      "Run npm run build in apps/web/ to verify no errors"
+    ]
+  },
+  {
+    "id": "2.7",
+    "category": "frontend-categories",
+    "passes": true,
+    "description": "Wire all category dialogs into categories page and verify",
+    "steps": [
+      "Open apps/web/src/app/(dashboard)/categories/page.tsx",
+      "Import CreateCategoryDialog, EditCategoryDialog, DeleteCategoryDialog",
+      "Ensure 'Create Category' button in page header opens CreateCategoryDialog",
+      "Ensure 'Create Category' button in empty state also opens CreateCategoryDialog",
+      "Ensure Edit action button per row opens EditCategoryDialog with the corresponding category",
+      "Ensure Delete action button per row opens DeleteCategoryDialog with the corresponding category",
+      "Render all three dialogs at bottom of component with appropriate props",
+      "Verify that after creating/editing/deleting a category, the table refreshes via React Query cache invalidation",
+      "Run npm run build in apps/web/ to verify no errors"
+    ]
+  },
+  {
+    "id": "3.1",
+    "category": "frontend-transactions",
+    "passes": true,
+    "description": "Add transaction list types and useTransactions hook for cross-account listing",
+    "steps": [
+      "Open apps/web/src/types/api.ts",
+      "Add UserTransactionFilters interface extending PaginationParams with fields: account_id?, from_date?, to_date?, type? (TransactionType), category_id?, min_amount?, max_amount?",
+      "Open apps/web/src/hooks/use-transactions.ts",
+      "Add 'userLists' and 'userList' entries to transactionKeys factory for user-level transaction queries",
+      "Add useTransactions(filters?: UserTransactionFilters) hook: GET /api/v1/transactions with query params spread from filters, returns PageResponse<Transaction>",
+      "Ensure the hook is enabled by default (no conditional enabling needed)",
+      "Import UserTransactionFilters from types/api",
+      "Run npm run build in apps/web/ to verify no errors"
+    ]
+  },
+  {
+    "id": "3.2",
+    "category": "frontend-transactions",
+    "passes": true,
+    "description": "Create transactions list page with filters and pagination",
+    "steps": [
+      "Create apps/web/src/app/(dashboard)/transactions/page.tsx as 'use client' component",
+      "Add page header: h1 'Transactions' title + 'Add Transaction' button (Plus icon) + 'Transfer' button (ArrowLeftRight icon)",
+      "Add filter bar section with responsive grid layout (4 columns on desktop, stacked on mobile):",
+      "  - Account dropdown: Select with 'All Accounts' default, loads from useAccounts(), shows account name + type",
+      "  - Type dropdown: Select with 'All Types' default, options: Income, Expense, Transfer, Investment",
+      "  - Category dropdown: Select with 'All Categories' default, loads from useCategories()",
+      "  - Date range: two date inputs (From / To) with type='date'",
+      "Use useState for all filter values, build UserTransactionFilters object from state, pass to useTransactions(filters)",
+      "Build ShadCN Table with columns: Date (formatted), Description, Account (account name from preloaded data or account_id), Type (colored Badge), Category (category name from preloaded data), Amount (signed, colored: green for income, red for expense, blue for transfer)",
+      "Add pagination controls: Previous/Next buttons + 'Page X of Y' (same pattern as other pages)",
+      "Add loading state: TransactionsTableSkeleton with 8 skeleton rows",
+      "Add empty state: 'No transactions found.' with different message when filters are active vs no transactions at all",
+      "Wire 'Add Transaction' button to open existing CreateTransactionDialog (no defaultAccountId)",
+      "Wire 'Transfer' button to open existing CreateTransferDialog",
+      "Add useState for dialog open states, render both dialogs",
+      "Invalidate transaction queries after successful creation (already handled by existing mutation hooks)",
+      "Run npm run build in apps/web/ to verify no errors"
+    ]
+  },
+  {
+    "id": "3.3",
+    "category": "frontend-transactions",
+    "passes": true,
+    "description": "Verify transactions page build",
+    "steps": [
+      "Run npm run build in apps/web/ to verify full build passes",
+      "Verify all imports resolve correctly",
+      "Verify no TypeScript errors in strict mode",
+      "Verify transactions page is accessible via sidebar navigation (no more 404)"
+    ]
+  },
+  {
+    "id": "4.1",
+    "category": "frontend-budgets",
+    "passes": true,
+    "description": "Add budget API types to frontend type definitions",
+    "steps": [
+      "Open apps/web/src/types/api.ts",
+      "Add BudgetResponse interface: { budget: Budget }",
+      "Add BudgetProgressResponse interface: { progress: BudgetProgress }",
+      "Add CreateBudgetRequest interface: { category_id: number, name: string, amount: number (cents), period: BudgetPeriod, start_date: string (ISO 8601), end_date?: string }",
+      "Add UpdateBudgetRequest interface: { name?: string, amount?: number (cents), period?: BudgetPeriod, end_date?: string } — note category_id and start_date are NOT updatable",
+      "Add BudgetFilters interface extending PaginationParams: { is_active?: boolean, period?: BudgetPeriod }",
+      "Import Budget, BudgetProgress, BudgetPeriod from models.ts",
+      "Run npm run build in apps/web/ to verify no errors"
+    ]
+  },
+  {
+    "id": "4.2",
+    "category": "frontend-budgets",
+    "passes": true,
+    "description": "Create budget React Query hooks for CRUD and progress",
+    "steps": [
+      "Create apps/web/src/hooks/use-budgets.ts",
+      "Define budgetKeys factory: all, lists(), list(filters?), details(), detail(id), progress(id)",
+      "Add useBudgets(filters?: BudgetFilters) hook: GET /api/v1/budgets with optional is_active and period query params, returns PageResponse<Budget>",
+      "Add useBudget(id: number) hook: GET /api/v1/budgets/:id, unwrap BudgetResponse.budget, enabled when id > 0",
+      "Add useBudgetProgress(id: number) hook: GET /api/v1/budgets/:id/progress, unwrap BudgetProgressResponse.progress, enabled when id > 0",
+      "Add useCreateBudget() mutation: POST /api/v1/budgets, unwrap BudgetResponse.budget, invalidate budgetKeys.lists() on success",
+      "Add useUpdateBudget(id: number) mutation: PUT /api/v1/budgets/:id, unwrap BudgetResponse.budget, invalidate budgetKeys.lists() and budgetKeys.detail(id) on success",
+      "Add useDeleteBudget() mutation: DELETE /api/v1/budgets/:id, invalidate budgetKeys.lists() on success",
+      "Import all needed types from types/api and types/models",
+      "Follow exact patterns from use-accounts.ts and use-categories.ts",
+      "Run npm run build in apps/web/ to verify no errors"
+    ]
+  },
+  {
+    "id": "4.3",
+    "category": "frontend-budgets",
+    "passes": true,
+    "description": "Create budgets list page with progress bars and filters",
+    "steps": [
+      "Create apps/web/src/app/(dashboard)/budgets/page.tsx as 'use client' component",
+      "Add page header: h1 'Budgets' title + 'Create Budget' button with Plus icon",
+      "Add filter controls: ShadCN Tabs or Select for status filter (All / Active / Inactive via is_active param), Select for period filter (All / Monthly / Yearly via period param)",
+      "Use useBudgets(filters) hook with filter state",
+      "Display budgets as cards in a responsive grid (sm:1, md:2, lg:3 columns) — cards work better than table for budget visualization",
+      "Each budget card shows: budget name (CardTitle), category name as Badge, period badge (Monthly/Yearly), budgeted amount formatted",
+      "Create BudgetProgressBar sub-component that takes a budget id, calls useBudgetProgress(id), and renders:",
+      "  - A progress bar (div with background + colored fill div) showing spent/budgeted",
+      "  - Color coding: green (bg-emerald-500) when percentage < 75, yellow (bg-amber-500) when 75-90, red (bg-red-500) when > 90",
+      "  - Text showing: '$spent / $budgeted (XX%)' and '$remaining remaining'",
+      "  - Skeleton while progress is loading",
+      "Add Edit (Pencil) and Delete (Trash2) icon buttons in each card's header area",
+      "Add pagination controls when total_pages > 1",
+      "Add loading state: grid of skeleton cards",
+      "Add empty state: dashed border card with 'No budgets yet. Create a budget to start tracking your spending.' + CTA button",
+      "Add useState for dialog states: createOpen, editOpen (with selectedBudget), deleteOpen (with selectedBudget)",
+      "Run npm run build in apps/web/ to verify no errors"
+    ]
+  },
+  {
+    "id": "4.4",
+    "category": "frontend-budgets",
+    "passes": true,
+    "description": "Create budget dialog for adding new budgets",
+    "steps": [
+      "Create apps/web/src/components/budgets/create-budget-dialog.tsx as 'use client' component",
+      "Follow CreateAccountDialog pattern: controlled Dialog with open/onOpenChange props",
+      "Add form state: name (string), categoryId (string for Select), amount (number in cents), period (BudgetPeriod | ''), startDate (string), endDate (string)",
+      "Add Name field: Input, required, maxLength 100, placeholder 'e.g. Monthly Groceries'",
+      "Add Category field: Select, required, loads from useCategories({ page_size: 100 }), shows category name + type badge",
+      "Add Amount field: CurrencyInput component, required, must be > 0",
+      "Add Period field: Select with 'Monthly' and 'Yearly' options, required",
+      "Add Start Date field: Input type='date', required",
+      "Add End Date field: Input type='date', optional, must be after start date if set",
+      "Add client-side validation: name required + trimmed + max 100, category required, amount > 0, period required, start date required, end date after start date",
+      "On submit: call useCreateBudget() mutation with CreateBudgetRequest (convert categoryId to number, format dates as ISO strings, amount in cents)",
+      "On success: toast 'Budget \"name\" created', close dialog, reset form",
+      "On error: inline destructive banner, map CATEGORY_NOT_FOUND to 'Selected category not found', generic fallback",
+      "Add loading state on submit button",
+      "Reset all form fields when dialog closes",
+      "Run npm run build in apps/web/ to verify no errors"
+    ]
+  },
+  {
+    "id": "4.5",
+    "category": "frontend-budgets",
+    "passes": true,
+    "description": "Create edit budget dialog with pre-populated fields",
+    "steps": [
+      "Create apps/web/src/components/budgets/edit-budget-dialog.tsx as 'use client' component",
+      "Controlled Dialog with props: open, onOpenChange, budget (Budget object to edit)",
+      "Initialize form state from budget prop using useEffect: name, amount, period, endDate",
+      "Add Name field: Input, same as create",
+      "Add Category field: read-only display showing budget.category?.name as Badge — NOT editable (backend does not allow changing category_id)",
+      "Add Start Date field: read-only display showing formatted budget.start_date — NOT editable (backend does not allow changing start_date)",
+      "Add Amount field: CurrencyInput, same as create, pre-populated with budget.amount",
+      "Add Period field: Select, same as create, pre-populated with budget.period",
+      "Add End Date field: Input type='date', optional, pre-populated with budget.end_date if set",
+      "Add same client-side validation as create (for editable fields only)",
+      "On submit: call useUpdateBudget(budget.id) mutation with UpdateBudgetRequest — send only changed fields",
+      "On success: toast 'Budget \"name\" updated', close dialog",
+      "On error: inline destructive banner, generic error mapping",
+      "Add loading state on submit button",
+      "Run npm run build in apps/web/ to verify no errors"
+    ]
+  },
+  {
+    "id": "4.6",
+    "category": "frontend-budgets",
+    "passes": true,
+    "description": "Create delete budget confirmation dialog",
+    "steps": [
+      "Create apps/web/src/components/budgets/delete-budget-dialog.tsx as 'use client' component",
+      "Controlled Dialog with props: open, onOpenChange, budget (Budget object to delete)",
+      "Dialog content: title 'Delete Budget', description 'Are you sure you want to delete the budget \"{budget.name}\"? This action cannot be undone.'",
+      "Two buttons in DialogFooter: 'Cancel' (outline variant) and 'Delete' (destructive variant)",
+      "On delete click: call useDeleteBudget() mutation with budget.id",
+      "On success: toast 'Budget \"name\" deleted', close dialog",
+      "On error: inline destructive banner, map BUDGET_NOT_FOUND to 'Budget not found', generic fallback",
+      "Add loading state: Delete button disabled + 'Deleting...' text",
+      "Run npm run build in apps/web/ to verify no errors"
+    ]
+  },
+  {
+    "id": "4.7",
+    "category": "frontend-budgets",
+    "passes": true,
+    "description": "Wire all budget dialogs into budgets page and verify",
+    "steps": [
+      "Open apps/web/src/app/(dashboard)/budgets/page.tsx",
+      "Import CreateBudgetDialog, EditBudgetDialog, DeleteBudgetDialog",
+      "Ensure 'Create Budget' button in page header opens CreateBudgetDialog",
+      "Ensure 'Create Budget' button in empty state also opens CreateBudgetDialog",
+      "Ensure Edit action button per card opens EditBudgetDialog with the corresponding budget",
+      "Ensure Delete action button per card opens DeleteBudgetDialog with the corresponding budget",
+      "Render all three dialogs at bottom of component with appropriate props",
+      "Verify cache invalidation refreshes the budget list after create/edit/delete",
+      "Run npm run build in apps/web/ to verify no errors"
+    ]
+  },
+  {
+    "id": "5.1",
+    "category": "frontend-polish",
+    "passes": true,
+    "description": "Add dark mode support with theme provider and toggle",
+    "steps": [
+      "Run npm install next-themes in apps/web/ (check if already installed — sonner may have brought it in as dependency)",
+      "Create apps/web/src/providers/theme-provider.tsx as 'use client' component",
+      "Import ThemeProvider as NextThemesProvider from 'next-themes'",
+      "Create ThemeProvider component that wraps children with NextThemesProvider using attribute='class', defaultTheme='system', enableSystem=true, disableTransitionOnChange=true",
+      "Open apps/web/src/app/layout.tsx",
+      "Import ThemeProvider, wrap it as the outermost provider around QueryProvider > AuthProvider > children",
+      "Open apps/web/src/components/layout/app-header.tsx",
+      "Import Sun, Moon, Monitor icons from lucide-react and useTheme from next-themes",
+      "Add theme toggle button in the header (before the user dropdown): a button that cycles through light → dark → system, showing Sun/Moon/Monitor icon based on current theme",
+      "Use a DropdownMenu for theme selection: Light (Sun icon), Dark (Moon icon), System (Monitor icon) — or a simple cycle button",
+      "Open apps/web/src/app/globals.css",
+      "Verify ShadCN dark mode CSS variables exist under .dark selector (they should be from ShadCN init). If missing, add the standard ShadCN dark theme variables.",
+      "Run npm run build in apps/web/ to verify no errors"
+    ]
+  },
+  {
+    "id": "5.2",
+    "category": "frontend-polish",
+    "passes": true,
+    "description": "Create edit account dialog and wire into account detail page",
+    "steps": [
+      "Create apps/web/src/components/accounts/edit-account-dialog.tsx as 'use client' component",
+      "Controlled Dialog with props: open, onOpenChange, account (Account object to edit)",
+      "Fields: Name (Input, required, max 100, pre-populated), Description (Input, optional, max 500, pre-populated)",
+      "Show account type and currency as read-only display (Badge + text)",
+      "Initialize form state from account prop using useEffect",
+      "On submit: call useUpdateAccount(account.id) mutation with UpdateAccountRequest — only send changed fields",
+      "On success: toast 'Account \"name\" updated', close dialog",
+      "On error: inline destructive banner with getErrorMessage",
+      "Add loading state on submit button",
+      "Open apps/web/src/app/(dashboard)/accounts/[id]/page.tsx",
+      "Import EditAccountDialog",
+      "Add useState for editOpen dialog state",
+      "Wire the existing Edit button in account header to open EditAccountDialog with the account data",
+      "Render EditAccountDialog at bottom of component",
+      "Run npm run build in apps/web/ to verify no errors"
+    ]
+  },
+  {
+    "id": "5.3",
+    "category": "frontend-polish",
+    "passes": true,
+    "description": "Improve dashboard with budget summary, net totals, and cross-account transactions",
+    "steps": [
+      "Open apps/web/src/app/(dashboard)/page.tsx",
+      "Import useBudgets, useBudgetProgress from hooks/use-budgets, useTransactions from hooks/use-transactions",
+      "Replace the single 'Total Balance' card with a summary cards row (responsive grid):",
+      "  - Total Balance card: sum of all account balances (existing logic)",
+      "  - Cash Total card: sum of balances where account.type === 'cash'",
+      "  - Investment Total card: sum of balances where account.type === 'investment'",
+      "  - All computed from existing useAccounts() data, no additional API calls",
+      "Replace 'Recent Transactions' section: instead of useAccountTransactions(firstAccountId), use useTransactions({ page_size: 5 }) to show 5 most recent transactions across ALL accounts",
+      "Update transaction display to show account name alongside description (since transactions now come from multiple accounts)",
+      "Add 'Budget Overview' section (after account cards, before recent transactions):",
+      "  - Fetch active budgets via useBudgets({ is_active: true, page_size: 4 })",
+      "  - Show up to 4 budget mini-cards in a grid, each with: budget name, category name, mini progress bar with color coding (green/yellow/red based on percentage)",
+      "  - Create BudgetMiniCard sub-component that accepts budget, fetches progress via useBudgetProgress(budget.id), renders compact progress view",
+      "  - 'View all' link to /budgets if more than 4 budgets",
+      "  - Skip section entirely if no budgets exist (don't show empty state for this optional section)",
+      "Run npm run build in apps/web/ to verify no errors"
+    ]
+  },
+  {
+    "id": "5.4",
+    "category": "frontend-polish",
+    "passes": true,
+    "description": "Final verification: full lint and build pass",
+    "steps": [
+      "Run npm run lint in apps/web/ to verify no ESLint issues",
+      "Run npm run build in apps/web/ to verify full TypeScript + Next.js build passes",
+      "Verify all new files are properly imported and exported",
+      "Verify categories page is accessible via sidebar navigation (no more 404)",
+      "Verify transactions page is accessible via sidebar navigation (no more 404)",
+      "Verify budgets page is accessible via sidebar navigation (no more 404)",
+      "Verify dark mode toggle works (light/dark/system)",
+      "Verify edit account dialog opens from account detail page",
+      "Verify dashboard shows budget overview section and cross-account recent transactions"
+    ]
+  }
+]
