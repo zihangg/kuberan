@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { Plus } from "lucide-react";
 import { useAccounts } from "@/hooks/use-accounts";
@@ -15,6 +16,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { CreateAccountDialog } from "@/components/accounts/create-account-dialog";
 import type { Account, AccountType } from "@/types/models";
 
 const ACCOUNT_TYPE_LABELS: Record<AccountType, string> = {
@@ -67,6 +69,7 @@ function AccountRow({ account }: { account: Account }) {
 }
 
 export default function AccountsPage() {
+  const [dialogOpen, setDialogOpen] = useState(false);
   const { data, isLoading } = useAccounts();
 
   const accounts = data?.data ?? [];
@@ -77,7 +80,7 @@ export default function AccountsPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Accounts</h1>
-        <Button size="sm">
+        <Button size="sm" onClick={() => setDialogOpen(true)}>
           <Plus className="mr-2 h-4 w-4" />
           Create Account
         </Button>
@@ -91,7 +94,7 @@ export default function AccountsPage() {
           <p className="mt-1 text-sm text-muted-foreground">
             Create your first account to get started.
           </p>
-          <Button className="mt-4" size="sm">
+          <Button className="mt-4" size="sm" onClick={() => setDialogOpen(true)}>
             <Plus className="mr-2 h-4 w-4" />
             Create Account
           </Button>
@@ -125,6 +128,8 @@ export default function AccountsPage() {
           )}
         </>
       )}
+
+      <CreateAccountDialog open={dialogOpen} onOpenChange={setDialogOpen} />
     </div>
   );
 }
