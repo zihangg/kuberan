@@ -13,6 +13,7 @@ const (
 	AccountTypeCash       AccountType = "cash"
 	AccountTypeInvestment AccountType = "investment"
 	AccountTypeDebt       AccountType = "debt"
+	AccountTypeCreditCard AccountType = "credit_card"
 )
 
 // Account represents a financial account in the system
@@ -31,9 +32,10 @@ type Account struct {
 	AccountNumber string       `json:"account_number,omitempty"`
 	Investments   []Investment `gorm:"foreignKey:AccountID" json:"investments,omitempty"`
 
-	// For debt accounts
+	// For debt and credit card accounts
 	InterestRate float64   `json:"interest_rate,omitempty"`
 	DueDate      time.Time `json:"due_date,omitempty"`
+	CreditLimit  int64     `gorm:"type:bigint;default:0" json:"credit_limit,omitempty"`
 
 	// Relationships
 	Transactions []Transaction `gorm:"foreignKey:AccountID" json:"transactions,omitempty"`
@@ -49,6 +51,9 @@ func (a *Account) BeforeCreate(tx *gorm.DB) error {
 	case AccountTypeInvestment:
 		a.InterestRate = 0
 	case AccountTypeDebt:
+		a.Broker = ""
+		a.AccountNumber = ""
+	case AccountTypeCreditCard:
 		a.Broker = ""
 		a.AccountNumber = ""
 	}

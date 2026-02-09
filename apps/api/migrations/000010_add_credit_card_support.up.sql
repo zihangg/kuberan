@@ -1,0 +1,1 @@
+ALTER TABLE accounts ADD COLUMN credit_limit BIGINT DEFAULT 0;

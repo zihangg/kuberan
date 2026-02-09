@@ -2,6 +2,7 @@ package services
 
 import (
 	"testing"
+	"time"
 
 	"kuberan/internal/models"
 	"kuberan/internal/pagination"
@@ -300,6 +301,121 @@ func TestCreateInvestmentAccount(t *testing.T) {
 
 		if account.Currency != "USD" {
 			t.Errorf("expected default currency USD, got %s", account.Currency)
+		}
+	})
+}
+
+func TestCreateCreditCardAccount(t *testing.T) {
+	t.Run("creates_credit_card_account", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		svc := NewAccountService(db)
+		user := testutil.CreateTestUser(t, db)
+
+		dueDate := time.Date(2026, 3, 15, 0, 0, 0, 0, time.UTC)
+		account, err := svc.CreateCreditCardAccount(user.ID, "Visa", "My credit card", "USD", 500000, 19.99, &dueDate)
+		testutil.AssertNoError(t, err)
+
+		if account.ID == 0 {
+			t.Fatal("expected non-zero account ID")
+		}
+		if account.Type != models.AccountTypeCreditCard {
+			t.Errorf("expected type credit_card, got %s", account.Type)
+		}
+		if account.Balance != 0 {
+			t.Errorf("expected balance 0, got %d", account.Balance)
+		}
+		if account.CreditLimit != 500000 {
+			t.Errorf("expected credit limit 500000, got %d", account.CreditLimit)
+		}
+		if account.InterestRate != 19.99 {
+			t.Errorf("expected interest rate 19.99, got %f", account.InterestRate)
+		}
+		if !account.IsActive {
+			t.Error("expected account to be active")
+		}
+	})
+
+	t.Run("defaults_currency_to_usd", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		svc := NewAccountService(db)
+		user := testutil.CreateTestUser(t, db)
+
+		account, err := svc.CreateCreditCardAccount(user.ID, "Amex", "", "", 0, 0, nil)
+		testutil.AssertNoError(t, err)
+
+		if account.Currency != "USD" {
+			t.Errorf("expected default currency USD, got %s", account.Currency)
+		}
+	})
+
+	t.Run("returns_error_for_empty_name", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		svc := NewAccountService(db)
+		user := testutil.CreateTestUser(t, db)
+
+		_, err := svc.CreateCreditCardAccount(user.ID, "", "", "USD", 0, 0, nil)
+		testutil.AssertAppError(t, err, "INVALID_INPUT")
+	})
+}
+
+func TestUpdateAccountBalance_CreditCard(t *testing.T) {
+	t.Run("expense_increases_credit_card_balance", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		svc := NewAccountService(db)
+		user := testutil.CreateTestUser(t, db)
+		account := testutil.CreateTestCreditCardAccount(t, db, user.ID, 0)
+
+		err := svc.UpdateAccountBalance(db, account, models.TransactionTypeExpense, 5000)
+		testutil.AssertNoError(t, err)
+
+		if account.Balance != 5000 {
+			t.Errorf("expected balance 5000 after expense, got %d", account.Balance)
+		}
+
+		var dbAccount models.Account
+		db.First(&dbAccount, account.ID)
+		if dbAccount.Balance != 5000 {
+			t.Errorf("expected DB balance 5000, got %d", dbAccount.Balance)
+		}
+	})
+
+	t.Run("income_decreases_credit_card_balance", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		svc := NewAccountService(db)
+		user := testutil.CreateTestUser(t, db)
+		account := testutil.CreateTestCreditCardAccount(t, db, user.ID, 5000)
+
+		err := svc.UpdateAccountBalance(db, account, models.TransactionTypeIncome, 3000)
+		testutil.AssertNoError(t, err)
+
+		if account.Balance != 2000 {
+			t.Errorf("expected balance 2000 after payment, got %d", account.Balance)
+		}
+
+		var dbAccount models.Account
+		db.First(&dbAccount, account.ID)
+		if dbAccount.Balance != 2000 {
+			t.Errorf("expected DB balance 2000, got %d", dbAccount.Balance)
+		}
+	})
+
+	t.Run("cash_account_unchanged_behavior", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		svc := NewAccountService(db)
+		user := testutil.CreateTestUser(t, db)
+		account := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 1000)
+
+		err := svc.UpdateAccountBalance(db, account, models.TransactionTypeIncome, 500)
+		testutil.AssertNoError(t, err)
+
+		if account.Balance != 1500 {
+			t.Errorf("expected balance 1500, got %d", account.Balance)
 		}
 	})
 }

@@ -129,7 +129,7 @@ func (s *transactionService) CreateTransfer(
 		return nil, err
 	}
 
-	if fromAccount.Balance < amount {
+	if fromAccount.Type != models.AccountTypeCreditCard && fromAccount.Balance < amount {
 		return nil, apperrors.ErrInsufficientBalance
 	}
 

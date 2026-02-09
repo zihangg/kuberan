@@ -153,6 +153,7 @@ func run() error {
 	accounts := protected.Group("/accounts")
 	accounts.POST("/cash", accountHandler.CreateCashAccount)
 	accounts.POST("/investment", accountHandler.CreateInvestmentAccount)
+	accounts.POST("/credit-card", accountHandler.CreateCreditCardAccount)
 	accounts.GET("", accountHandler.GetUserAccounts)
 	accounts.GET("/:id", accountHandler.GetAccountByID)
 	accounts.PUT("/:id", accountHandler.UpdateCashAccount)

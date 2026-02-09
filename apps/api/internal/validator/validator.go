@@ -85,7 +85,7 @@ func validateCategoryType(fl validator.FieldLevel) bool {
 
 func validateAccountType(fl validator.FieldLevel) bool {
 	switch fl.Field().String() {
-	case "cash", "investment", "debt":
+	case "cash", "investment", "debt", "credit_card":
 		return true
 	}
 	return false

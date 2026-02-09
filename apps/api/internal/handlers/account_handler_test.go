@@ -3,6 +3,7 @@ package handlers
 import (
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -18,6 +19,7 @@ import (
 type mockAccountService struct {
 	createCashAccountFn       func(userID uint, name, description, currency string, initialBalance int64) (*models.Account, error)
 	createInvestmentAccountFn func(userID uint, name, description, currency, broker, accountNumber string) (*models.Account, error)
+	createCreditCardAccountFn func(userID uint, name, description, currency string, creditLimit int64, interestRate float64, dueDate *time.Time) (*models.Account, error)
 	getUserAccountsFn         func(userID uint, page pagination.PageRequest) (*pagination.PageResponse[models.Account], error)
 	getAccountByIDFn          func(userID, accountID uint) (*models.Account, error)
 	updateCashAccountFn       func(userID, accountID uint, name, description string) (*models.Account, error)
@@ -34,6 +36,13 @@ func (m *mockAccountService) CreateCashAccount(userID uint, name, description, c
 func (m *mockAccountService) CreateInvestmentAccount(userID uint, name, description, currency, broker, accountNumber string) (*models.Account, error) {
 	if m.createInvestmentAccountFn != nil {
 		return m.createInvestmentAccountFn(userID, name, description, currency, broker, accountNumber)
+	}
+	return &models.Account{}, nil
+}
+
+func (m *mockAccountService) CreateCreditCardAccount(userID uint, name, description, currency string, creditLimit int64, interestRate float64, dueDate *time.Time) (*models.Account, error) {
+	if m.createCreditCardAccountFn != nil {
+		return m.createCreditCardAccountFn(userID, name, description, currency, creditLimit, interestRate, dueDate)
 	}
 	return &models.Account{}, nil
 }
@@ -75,6 +84,7 @@ func setupAccountRouter(handler *AccountHandler) *gin.Engine {
 	auth := r.Group("", injectUserID(1))
 	auth.POST("/accounts/cash", handler.CreateCashAccount)
 	auth.POST("/accounts/investment", handler.CreateInvestmentAccount)
+	auth.POST("/accounts/credit-card", handler.CreateCreditCardAccount)
 	auth.GET("/accounts", handler.GetUserAccounts)
 	auth.GET("/accounts/:id", handler.GetAccountByID)
 	auth.PUT("/accounts/:id", handler.UpdateCashAccount)
@@ -335,5 +345,73 @@ func TestAccountHandler_UpdateCashAccount(t *testing.T) {
 			t.Fatalf("expected 400, got %d", rec.Code)
 		}
 		assertErrorCode(t, parseJSON(t, rec), "NOT_CASH_ACCOUNT")
+	})
+}
+
+func TestAccountHandler_CreateCreditCardAccount(t *testing.T) {
+	t.Run("returns 201 with valid request", func(t *testing.T) {
+		acctSvc := &mockAccountService{
+			createCreditCardAccountFn: func(userID uint, name, desc, currency string, creditLimit int64, interestRate float64, dueDate *time.Time) (*models.Account, error) {
+				return &models.Account{
+					Base:         models.Base{ID: 3},
+					UserID:       userID,
+					Name:         name,
+					Type:         models.AccountTypeCreditCard,
+					Currency:     "USD",
+					CreditLimit:  creditLimit,
+					InterestRate: interestRate,
+					IsActive:     true,
+				}, nil
+			},
+		}
+		handler := NewAccountHandler(acctSvc, &mockAuditService{})
+		r := setupAccountRouter(handler)
+
+		rec := doRequest(r, "POST", "/accounts/credit-card",
+			`{"name":"Visa","credit_limit":500000,"interest_rate":19.99}`)
+
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
+		}
+		result := parseJSON(t, rec)
+		acct := result["account"].(map[string]interface{})
+		if acct["name"] != "Visa" {
+			t.Errorf("expected Visa, got %v", acct["name"])
+		}
+	})
+
+	t.Run("returns 400 for missing name", func(t *testing.T) {
+		handler := NewAccountHandler(&mockAccountService{}, &mockAuditService{})
+		r := setupAccountRouter(handler)
+
+		rec := doRequest(r, "POST", "/accounts/credit-card", `{"credit_limit":500000}`)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400, got %d", rec.Code)
+		}
+		assertErrorCode(t, parseJSON(t, rec), "INVALID_INPUT")
+	})
+
+	t.Run("returns 400 for negative credit limit", func(t *testing.T) {
+		handler := NewAccountHandler(&mockAccountService{}, &mockAuditService{})
+		r := setupAccountRouter(handler)
+
+		rec := doRequest(r, "POST", "/accounts/credit-card", `{"name":"Visa","credit_limit":-1}`)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400, got %d", rec.Code)
+		}
+	})
+
+	t.Run("returns 401 without auth", func(t *testing.T) {
+		handler := NewAccountHandler(&mockAccountService{}, &mockAuditService{})
+		r := gin.New()
+		r.POST("/accounts/credit-card", handler.CreateCreditCardAccount)
+
+		rec := doRequest(r, "POST", "/accounts/credit-card", `{"name":"Visa"}`)
+
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("expected 401, got %d", rec.Code)
+		}
 	})
 }

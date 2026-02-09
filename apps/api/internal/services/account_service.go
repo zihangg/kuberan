@@ -99,6 +99,39 @@ func (s *accountService) CreateInvestmentAccount(userID uint, name, description,
 	return account, nil
 }
 
+// CreateCreditCardAccount creates a new credit card account for a user.
+func (s *accountService) CreateCreditCardAccount(userID uint, name, description, currency string, creditLimit int64, interestRate float64, dueDate *time.Time) (*models.Account, error) {
+	if name == "" {
+		return nil, apperrors.WithMessage(apperrors.ErrInvalidInput, "account name is required")
+	}
+
+	if currency == "" {
+		currency = "USD"
+	}
+
+	account := &models.Account{
+		UserID:       userID,
+		Name:         name,
+		Type:         models.AccountTypeCreditCard,
+		Description:  description,
+		Balance:      0,
+		Currency:     currency,
+		IsActive:     true,
+		CreditLimit:  creditLimit,
+		InterestRate: interestRate,
+	}
+
+	if dueDate != nil {
+		account.DueDate = *dueDate
+	}
+
+	if err := s.db.Create(account).Error; err != nil {
+		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
+	}
+
+	return account, nil
+}
+
 // GetUserAccounts retrieves a paginated list of accounts for a user.
 func (s *accountService) GetUserAccounts(userID uint, page pagination.PageRequest) (*pagination.PageResponse[models.Account], error) {
 	page.Defaults()
@@ -164,12 +197,22 @@ func (s *accountService) UpdateCashAccount(userID, accountID uint, name, descrip
 
 // UpdateAccountBalance updates the balance of an account based on transaction
 func (s *accountService) UpdateAccountBalance(tx *gorm.DB, account *models.Account, transactionType models.TransactionType, amount int64) error {
-	// Update the balance based on transaction type
+	// Update the balance based on transaction type and account type
+	// Credit cards: positive balance = amount owed (expense increases, income/payment decreases)
+	// All others: income adds, expense subtracts
 	switch transactionType {
 	case models.TransactionTypeIncome:
-		account.Balance += amount
+		if account.Type == models.AccountTypeCreditCard {
+			account.Balance -= amount
+		} else {
+			account.Balance += amount
+		}
 	case models.TransactionTypeExpense:
-		account.Balance -= amount
+		if account.Type == models.AccountTypeCreditCard {
+			account.Balance += amount
+		} else {
+			account.Balance -= amount
+		}
 	}
 
 	// Save the updated balance

@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -37,6 +38,16 @@ type CreateInvestmentAccountRequest struct {
 	Currency      string `json:"currency" binding:"omitempty,iso4217"`
 	Broker        string `json:"broker" binding:"max=100"`
 	AccountNumber string `json:"account_number" binding:"max=50"`
+}
+
+// CreateCreditCardAccountRequest represents the request payload for creating a credit card account.
+type CreateCreditCardAccountRequest struct {
+	Name         string  `json:"name" binding:"required,min=1,max=100"`
+	Description  string  `json:"description" binding:"max=500"`
+	Currency     string  `json:"currency" binding:"omitempty,iso4217"`
+	CreditLimit  int64   `json:"credit_limit" binding:"gte=0"`
+	InterestRate float64 `json:"interest_rate" binding:"gte=0,lte=100"`
+	DueDate      *string `json:"due_date"`
 }
 
 // UpdateCashAccountRequest represents the request payload for updating a cash account
@@ -142,6 +153,65 @@ func (h *AccountHandler) CreateInvestmentAccount(c *gin.Context) {
 
 	h.auditService.Log(userID, "CREATE_ACCOUNT", "account", account.ID, c.ClientIP(),
 		map[string]interface{}{"name": req.Name, "type": "investment", "broker": req.Broker})
+
+	c.JSON(http.StatusCreated, gin.H{"account": account})
+}
+
+// CreateCreditCardAccount handles the creation of a new credit card account.
+// @Summary     Create a credit card account
+// @Description Create a new credit card account for the authenticated user
+// @Tags        accounts
+// @Accept      json
+// @Produce     json
+// @Security    BearerAuth
+// @Param       request body CreateCreditCardAccountRequest true "Credit card account details"
+// @Success     201 {object} AccountResponse "Account created"
+// @Failure     400 {object} ErrorResponse "Invalid input"
+// @Failure     401 {object} ErrorResponse "Unauthorized"
+// @Failure     500 {object} ErrorResponse "Server error"
+// @Router      /accounts/credit-card [post]
+func (h *AccountHandler) CreateCreditCardAccount(c *gin.Context) {
+	userID, err := getUserID(c)
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	var req CreateCreditCardAccountRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, err.Error()))
+		return
+	}
+
+	var dueDate *time.Time
+	if req.DueDate != nil && *req.DueDate != "" {
+		parsed, parseErr := time.Parse(time.RFC3339, *req.DueDate)
+		if parseErr != nil {
+			parsed, parseErr = time.Parse("2006-01-02", *req.DueDate)
+			if parseErr != nil {
+				respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, "invalid due_date format"))
+				return
+			}
+		}
+		dueDate = &parsed
+	}
+
+	account, err := h.accountService.CreateCreditCardAccount(
+		userID,
+		req.Name,
+		req.Description,
+		req.Currency,
+		req.CreditLimit,
+		req.InterestRate,
+		dueDate,
+	)
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	h.auditService.Log(userID, "CREATE_ACCOUNT", "account", account.ID, c.ClientIP(),
+		map[string]interface{}{"name": req.Name, "type": "credit_card", "credit_limit": req.CreditLimit})
 
 	c.JSON(http.StatusCreated, gin.H{"account": account})
 }

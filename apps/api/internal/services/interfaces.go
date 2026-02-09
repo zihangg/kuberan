@@ -24,6 +24,7 @@ type UserServicer interface {
 type AccountServicer interface {
 	CreateCashAccount(userID uint, name, description, currency string, initialBalance int64) (*models.Account, error)
 	CreateInvestmentAccount(userID uint, name, description, currency, broker, accountNumber string) (*models.Account, error)
+	CreateCreditCardAccount(userID uint, name, description, currency string, creditLimit int64, interestRate float64, dueDate *time.Time) (*models.Account, error)
 	GetUserAccounts(userID uint, page pagination.PageRequest) (*pagination.PageResponse[models.Account], error)
 	GetAccountByID(userID, accountID uint) (*models.Account, error)
 	UpdateCashAccount(userID, accountID uint, name, description string) (*models.Account, error)
