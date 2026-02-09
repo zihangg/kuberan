@@ -8,6 +8,7 @@ import {
   ArrowLeftRight,
   ArrowUpRight,
   ArrowDownRight,
+  Pencil,
   Plus,
   TrendingUp,
   ChevronLeft,
@@ -46,6 +47,7 @@ import {
 } from "@/components/ui/table";
 import { CreateTransactionDialog } from "@/components/transactions/create-transaction-dialog";
 import { CreateTransferDialog } from "@/components/transactions/create-transfer-dialog";
+import { EditAccountDialog } from "@/components/accounts/edit-account-dialog";
 import type { Transaction, TransactionType } from "@/types/models";
 import type { TransactionFilters } from "@/types/api";
 
@@ -140,6 +142,7 @@ export default function AccountDetailPage() {
   const [filters, setFilters] = useState<TransactionFilters>({});
   const [txDialogOpen, setTxDialogOpen] = useState(false);
   const [transferDialogOpen, setTransferDialogOpen] = useState(false);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
 
   const { data: account, isLoading: accountLoading } = useAccount(accountId);
   const { data: transactionsData, isLoading: transactionsLoading } =
@@ -197,6 +200,15 @@ export default function AccountDetailPage() {
           <Badge variant={account.is_active ? "outline" : "secondary"}>
             {account.is_active ? "Active" : "Inactive"}
           </Badge>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8"
+            onClick={() => setEditDialogOpen(true)}
+          >
+            <Pencil className="h-4 w-4" />
+            <span className="sr-only">Edit account</span>
+          </Button>
         </div>
         <p className="mt-1 text-3xl font-semibold">
           {formatCurrency(account.balance, account.currency)}
@@ -424,6 +436,12 @@ export default function AccountDetailPage() {
         open={transferDialogOpen}
         onOpenChange={setTransferDialogOpen}
         defaultFromAccountId={accountId}
+      />
+
+      <EditAccountDialog
+        open={editDialogOpen}
+        onOpenChange={setEditDialogOpen}
+        account={account}
       />
     </div>
   );
