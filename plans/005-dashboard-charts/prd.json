@@ -1,0 +1,524 @@
+[
+  {
+    "id": "1.1",
+    "category": "backend-spending-by-category",
+    "passes": true,
+    "description": "Add SpendingByCategoryItem, SpendingByCategory structs and GetSpendingByCategory method to TransactionServicer interface",
+    "steps": [
+      "Open apps/api/internal/services/interfaces.go",
+      "Add SpendingByCategoryItem struct with fields: CategoryID *uint `json:\"category_id\"`, CategoryName string `json:\"category_name\"`, CategoryColor string `json:\"category_color\"`, CategoryIcon string `json:\"category_icon\"`, Total int64 `json:\"total\"`",
+      "Add SpendingByCategory struct with fields: Items []SpendingByCategoryItem `json:\"items\"`, TotalSpent int64 `json:\"total_spent\"`, FromDate time.Time `json:\"from_date\"`, ToDate time.Time `json:\"to_date\"`",
+      "Add to TransactionServicer interface: GetSpendingByCategory(userID uint, from, to time.Time) (*SpendingByCategory, error)",
+      "Run go build ./... from apps/api/ — this WILL fail until the service implements the method, that's expected"
+    ]
+  },
+  {
+    "id": "1.2",
+    "category": "backend-spending-by-category",
+    "passes": true,
+    "description": "Implement GetSpendingByCategory service method with SQL GROUP BY aggregation",
+    "steps": [
+      "Open apps/api/internal/services/transaction_service.go",
+      "Add GetSpendingByCategory method on transactionService",
+      "Define a local struct for scanning: type categorySpend struct { CategoryID *uint; Total int64 }",
+      "Query: s.db.Model(&models.Transaction{}).Select(\"category_id, COALESCE(SUM(amount), 0) as total\").Where(\"user_id = ? AND type = ? AND deleted_at IS NULL AND date BETWEEN ? AND ?\", userID, models.TransactionTypeExpense, from, to).Group(\"category_id\").Scan(&results)",
+      "For each result: if CategoryID is non-nil, fetch category via s.db.First(&category, *categoryID) to get name/color/icon. If category fetch fails (deleted category), use fallback name 'Unknown Category' with color '#9CA3AF'",
+      "If CategoryID is nil, create item with name 'Uncategorized', color '#9CA3AF', empty icon",
+      "Sum all totals into totalSpent",
+      "Sort items by Total descending (use sort.Slice)",
+      "Return &SpendingByCategory{Items: items, TotalSpent: totalSpent, FromDate: from, ToDate: to}",
+      "Run go build ./... from apps/api/ to verify compilation"
+    ]
+  },
+  {
+    "id": "1.3",
+    "category": "backend-spending-by-category",
+    "passes": true,
+    "description": "Add GetSpendingByCategory handler with Swagger annotations",
+    "steps": [
+      "Open apps/api/internal/handlers/transaction_handler.go",
+      "Add GetSpendingByCategory handler method on TransactionHandler",
+      "Add full Swagger annotations: @Summary 'Get spending by category', @Description 'Get expense totals grouped by category for a date range', @Tags transactions, @Security BearerAuth",
+      "Add @Param annotations for from_date and to_date query params (required, string)",
+      "Add @Success 200 {object} services.SpendingByCategory, @Failure 400/401/500",
+      "Handler body: getUserID(c) to extract user ID",
+      "Extract from_date and to_date query params: fromStr := c.Query(\"from_date\"); toStr := c.Query(\"to_date\")",
+      "Validate both are non-empty, return apperrors.ErrInvalidInput with message if missing",
+      "Parse both via parseFlexibleTime (already exists in the file) for RFC3339 and date-only support",
+      "Call h.transactionService.GetSpendingByCategory(userID, fromTime, toTime)",
+      "Return c.JSON(http.StatusOK, result)",
+      "Run go build ./... from apps/api/ to verify compilation"
+    ]
+  },
+  {
+    "id": "1.4",
+    "category": "backend-spending-by-category",
+    "passes": true,
+    "description": "Register GET /transactions/spending-by-category route in main.go",
+    "steps": [
+      "Open apps/api/cmd/api/main.go",
+      "Find the transactions route group: transactions := protected.Group(\"/transactions\")",
+      "Add transactions.GET(\"/spending-by-category\", transactionHandler.GetSpendingByCategory) — place BEFORE the /:id routes to avoid path conflicts",
+      "Recommended order: GET '' (list), POST '' (create), POST /transfer, GET /spending-by-category, GET /monthly-summary, GET /daily-spending, GET /:id, PUT /:id, DELETE /:id",
+      "Run go build ./... from apps/api/ to verify compilation",
+      "Run go vet ./... from apps/api/ to check for issues"
+    ]
+  },
+  {
+    "id": "1.5",
+    "category": "backend-spending-by-category",
+    "passes": true,
+    "description": "Add service tests for GetSpendingByCategory",
+    "steps": [
+      "Open apps/api/internal/services/transaction_service_test.go",
+      "Add TestGetSpendingByCategory function with nested t.Run subtests",
+      "Subtest 'groups_by_category': fresh SetupTestDB, create user, create 2 expense categories (cat A and cat B), create account, create 2 expenses for cat A (3000 + 2000 = 5000 total) and 1 expense for cat B (1500), call GetSpendingByCategory for the date range, verify 2 items returned, verify cat A total is 5000, cat B total is 1500, verify TotalSpent is 6500",
+      "Subtest 'handles_uncategorized': create expense with nil category_id, verify item has category_name 'Uncategorized', color '#9CA3AF', category_id nil",
+      "Subtest 'filters_by_date_range': create expenses in January and February, query for February only, verify only February expenses counted",
+      "Subtest 'excludes_non_expense_types': create income, transfer, and investment transactions, verify none appear in results and TotalSpent is 0",
+      "Subtest 'returns_empty_for_no_expenses': no transactions exist, verify Items is empty slice and TotalSpent is 0",
+      "Subtest 'user_isolation': create expenses for user A and user B, query as user A, verify only user A's expenses appear",
+      "Subtest 'sorts_by_total_descending': create expenses across 3 categories with different totals, verify items[0] has the largest total",
+      "Run go test ./internal/services/ -v -run TestGetSpendingByCategory from apps/api/"
+    ]
+  },
+  {
+    "id": "1.6",
+    "category": "backend-spending-by-category",
+    "passes": true,
+    "description": "Add handler tests for GetSpendingByCategory",
+    "steps": [
+      "Open apps/api/internal/handlers/transaction_handler_test.go",
+      "Add getSpendingByCategoryFn field to mockTransactionService struct: getSpendingByCategoryFn func(userID uint, from, to time.Time) (*services.SpendingByCategory, error)",
+      "Add GetSpendingByCategory method on mockTransactionService that delegates to getSpendingByCategoryFn, returns empty SpendingByCategory if fn is nil",
+      "Ensure var _ services.TransactionServicer = (*mockTransactionService)(nil) compile check still passes",
+      "Add the new GET route to setupTransactionRouter: auth.GET(\"/transactions/spending-by-category\", handler.GetSpendingByCategory) — BEFORE /:id routes",
+      "Add TestTransactionHandler_GetSpendingByCategory function with nested t.Run subtests",
+      "Subtest 'returns_200_with_data': configure mock to return SpendingByCategory with 2 items, make GET /transactions/spending-by-category?from_date=2026-01-01&to_date=2026-01-31, verify 200 and JSON contains items array",
+      "Subtest 'returns_400_missing_from_date': GET /transactions/spending-by-category?to_date=2026-01-31, verify 400",
+      "Subtest 'returns_400_missing_to_date': GET /transactions/spending-by-category?from_date=2026-01-01, verify 400",
+      "Subtest 'returns_200_empty_items': configure mock to return empty SpendingByCategory, verify 200 with empty items array",
+      "Run go test ./internal/handlers/ -v -run TestTransactionHandler_GetSpendingByCategory from apps/api/"
+    ]
+  },
+  {
+    "id": "1.7",
+    "category": "backend-spending-by-category",
+    "passes": true,
+    "description": "Full backend verification for spending by category feature",
+    "steps": [
+      "Run ./scripts/check.sh from apps/api/",
+      "This runs: go build, go vet, golangci-lint, go test, go test -race",
+      "All 5 steps must pass with zero errors",
+      "If any step fails, fix the issues and re-run"
+    ]
+  },
+  {
+    "id": "2.1",
+    "category": "backend-monthly-summary",
+    "passes": true,
+    "description": "Add MonthlySummaryItem struct and GetMonthlySummary method to TransactionServicer interface",
+    "steps": [
+      "Open apps/api/internal/services/interfaces.go",
+      "Add MonthlySummaryItem struct with fields: Month string `json:\"month\"`, Income int64 `json:\"income\"`, Expenses int64 `json:\"expenses\"`",
+      "Add to TransactionServicer interface: GetMonthlySummary(userID uint, months int) ([]MonthlySummaryItem, error)",
+      "Run go build ./... from apps/api/ — will fail until implementation exists"
+    ]
+  },
+  {
+    "id": "2.2",
+    "category": "backend-monthly-summary",
+    "passes": true,
+    "description": "Implement GetMonthlySummary service method using per-month SUM queries",
+    "steps": [
+      "Open apps/api/internal/services/transaction_service.go",
+      "Add GetMonthlySummary method on transactionService",
+      "Calculate startMonth: time.Now() minus (months-1) months, set to 1st of that month at 00:00:00",
+      "Iterate from startMonth to current month (inclusive):",
+      "  For each month: calculate monthStart (1st day 00:00:00) and monthEnd (last day 23:59:59.999999999)",
+      "  Query income: s.db.Model(&models.Transaction{}).Select(\"COALESCE(SUM(amount), 0)\").Where(\"user_id = ? AND type = ? AND deleted_at IS NULL AND date BETWEEN ? AND ?\", userID, models.TransactionTypeIncome, monthStart, monthEnd).Scan(&income)",
+      "  Query expenses: same query with models.TransactionTypeExpense, scan into &expenses",
+      "  Append MonthlySummaryItem{Month: monthStart.Format(\"2006-01\"), Income: income, Expenses: expenses}",
+      "Return the items slice (chronologically ordered)",
+      "This per-month approach avoids database-specific date truncation functions (strftime vs TO_CHAR), maintaining SQLite test compatibility",
+      "Run go build ./... from apps/api/ to verify compilation"
+    ]
+  },
+  {
+    "id": "2.3",
+    "category": "backend-monthly-summary",
+    "passes": true,
+    "description": "Add GetMonthlySummary handler with Swagger annotations",
+    "steps": [
+      "Open apps/api/internal/handlers/transaction_handler.go",
+      "Add GetMonthlySummary handler method on TransactionHandler",
+      "Add full Swagger annotations: @Summary 'Get monthly income and expense summary', @Description 'Get monthly income and expense totals for the last N months', @Tags transactions, @Security BearerAuth",
+      "Add @Param for months query param (optional, integer, default 6)",
+      "Handler body: getUserID(c)",
+      "Parse months param: default 6, clamp to min=1 max=24",
+      "Call h.transactionService.GetMonthlySummary(userID, months)",
+      "Return c.JSON(http.StatusOK, gin.H{\"data\": result})",
+      "Run go build ./... from apps/api/ to verify compilation"
+    ]
+  },
+  {
+    "id": "2.4",
+    "category": "backend-monthly-summary",
+    "passes": true,
+    "description": "Register GET /transactions/monthly-summary route in main.go",
+    "steps": [
+      "Open apps/api/cmd/api/main.go",
+      "Add transactions.GET(\"/monthly-summary\", transactionHandler.GetMonthlySummary) — place after /spending-by-category, before /:id routes",
+      "Run go build ./... from apps/api/ to verify compilation"
+    ]
+  },
+  {
+    "id": "2.5",
+    "category": "backend-monthly-summary",
+    "passes": true,
+    "description": "Add service tests for GetMonthlySummary",
+    "steps": [
+      "Open apps/api/internal/services/transaction_service_test.go",
+      "Add TestGetMonthlySummary function with nested t.Run subtests",
+      "Subtest 'returns_monthly_totals': create user, account, category. Create income (10000) and expense (5000) in current month, income (8000) and expense (3000) in previous month. Call GetMonthlySummary(userID, 2). Verify 2 items, previous month has income=8000/expenses=3000, current month has income=10000/expenses=5000",
+      "Subtest 'returns_zero_for_empty_months': call GetMonthlySummary with months=3, no transactions exist, verify 3 items all with income=0 and expenses=0",
+      "Subtest 'excludes_transfers_and_investments': create transfer and investment transactions, verify they don't appear in income or expenses totals",
+      "Subtest 'user_isolation': create transactions for user A and user B, query as user A with months=1, verify only user A's totals",
+      "Run go test ./internal/services/ -v -run TestGetMonthlySummary from apps/api/"
+    ]
+  },
+  {
+    "id": "2.6",
+    "category": "backend-monthly-summary",
+    "passes": true,
+    "description": "Add handler tests for GetMonthlySummary",
+    "steps": [
+      "Open apps/api/internal/handlers/transaction_handler_test.go",
+      "Add getMonthlySummaryFn field to mockTransactionService struct: getMonthlySummaryFn func(userID uint, months int) ([]services.MonthlySummaryItem, error)",
+      "Add GetMonthlySummary method on mockTransactionService that delegates to getMonthlySummaryFn",
+      "Add the new GET route to setupTransactionRouter: auth.GET(\"/transactions/monthly-summary\", handler.GetMonthlySummary) — BEFORE /:id routes",
+      "Add TestTransactionHandler_GetMonthlySummary function with nested t.Run subtests",
+      "Subtest 'returns_200_with_default_months': GET /transactions/monthly-summary (no months param), configure mock to expect months=6, return sample data, verify 200 + data array",
+      "Subtest 'returns_200_with_custom_months': GET /transactions/monthly-summary?months=3, configure mock to expect months=3, verify 200",
+      "Subtest 'returns_200_empty_data': mock returns empty slice, verify 200 with empty data array",
+      "Run go test ./internal/handlers/ -v -run TestTransactionHandler_GetMonthlySummary from apps/api/"
+    ]
+  },
+  {
+    "id": "2.7",
+    "category": "backend-monthly-summary",
+    "passes": true,
+    "description": "Full backend verification for monthly summary feature",
+    "steps": [
+      "Run ./scripts/check.sh from apps/api/",
+      "All 5 steps must pass: build, vet, lint, test, race",
+      "If any step fails, fix the issues and re-run"
+    ]
+  },
+  {
+    "id": "3.1",
+    "category": "backend-daily-spending",
+    "passes": true,
+    "description": "Add DailySpendingItem struct and GetDailySpending method to TransactionServicer interface",
+    "steps": [
+      "Open apps/api/internal/services/interfaces.go",
+      "Add DailySpendingItem struct with fields: Date string `json:\"date\"`, Total int64 `json:\"total\"`",
+      "Add to TransactionServicer interface: GetDailySpending(userID uint, from, to time.Time) ([]DailySpendingItem, error)",
+      "Run go build ./... from apps/api/ — will fail until implementation exists"
+    ]
+  },
+  {
+    "id": "3.2",
+    "category": "backend-daily-spending",
+    "passes": true,
+    "description": "Implement GetDailySpending service method using per-day SUM queries",
+    "steps": [
+      "Open apps/api/internal/services/transaction_service.go",
+      "Add GetDailySpending method on transactionService",
+      "Normalize from to start of day (00:00:00) and to to end of day (23:59:59)",
+      "Iterate day by day from from to to:",
+      "  Calculate dayStart (date at 00:00:00) and dayEnd (date at 23:59:59.999999999)",
+      "  Query: s.db.Model(&models.Transaction{}).Select(\"COALESCE(SUM(amount), 0)\").Where(\"user_id = ? AND type = ? AND deleted_at IS NULL AND date BETWEEN ? AND ?\", userID, models.TransactionTypeExpense, dayStart, dayEnd).Scan(&total)",
+      "  Append DailySpendingItem{Date: dayStart.Format(\"2006-01-02\"), Total: total}",
+      "  Advance to next day: dayStart = dayStart.AddDate(0, 0, 1)",
+      "Return items slice (chronologically ordered)",
+      "Run go build ./... from apps/api/ to verify compilation"
+    ]
+  },
+  {
+    "id": "3.3",
+    "category": "backend-daily-spending",
+    "passes": true,
+    "description": "Add GetDailySpending handler with Swagger annotations",
+    "steps": [
+      "Open apps/api/internal/handlers/transaction_handler.go",
+      "Add GetDailySpending handler method on TransactionHandler",
+      "Add full Swagger annotations: @Summary 'Get daily spending', @Description 'Get daily expense totals for a date range', @Tags transactions, @Security BearerAuth",
+      "Add @Param annotations for from_date and to_date query params (required, string)",
+      "Handler body: getUserID(c)",
+      "Extract and validate from_date and to_date (same pattern as GetSpendingByCategory)",
+      "Validate date range: if to minus from > 366 days, return 400 with message 'Date range cannot exceed 366 days'",
+      "Call h.transactionService.GetDailySpending(userID, fromTime, toTime)",
+      "Return c.JSON(http.StatusOK, gin.H{\"data\": result})",
+      "Run go build ./... from apps/api/ to verify compilation"
+    ]
+  },
+  {
+    "id": "3.4",
+    "category": "backend-daily-spending",
+    "passes": true,
+    "description": "Register GET /transactions/daily-spending route in main.go",
+    "steps": [
+      "Open apps/api/cmd/api/main.go",
+      "Add transactions.GET(\"/daily-spending\", transactionHandler.GetDailySpending) — place after /monthly-summary, before /:id routes",
+      "Run go build ./... from apps/api/ to verify compilation"
+    ]
+  },
+  {
+    "id": "3.5",
+    "category": "backend-daily-spending",
+    "passes": true,
+    "description": "Add service tests for GetDailySpending",
+    "steps": [
+      "Open apps/api/internal/services/transaction_service_test.go",
+      "Add TestGetDailySpending function with nested t.Run subtests",
+      "Subtest 'returns_daily_totals': create user, account. Create expenses on day 1 (3000), day 1 (2000), day 3 (1500). Call GetDailySpending for a 3-day range. Verify day 1 total is 5000, day 2 total is 0, day 3 total is 1500",
+      "Subtest 'includes_zero_days': create expense only on day 1 of a 5-day range. Verify all 5 days returned, days 2-5 have total=0",
+      "Subtest 'excludes_non_expense_types': create income and transfer transactions, verify all daily totals are 0",
+      "Subtest 'filters_by_date_range': create expense before range start and after range end, verify they are not counted",
+      "Subtest 'user_isolation': create expenses for user A and user B on same day, query as user A, verify only user A's total",
+      "Run go test ./internal/services/ -v -run TestGetDailySpending from apps/api/"
+    ]
+  },
+  {
+    "id": "3.6",
+    "category": "backend-daily-spending",
+    "passes": true,
+    "description": "Add handler tests for GetDailySpending",
+    "steps": [
+      "Open apps/api/internal/handlers/transaction_handler_test.go",
+      "Add getDailySpendingFn field to mockTransactionService struct: getDailySpendingFn func(userID uint, from, to time.Time) ([]services.DailySpendingItem, error)",
+      "Add GetDailySpending method on mockTransactionService that delegates to getDailySpendingFn",
+      "Add the new GET route to setupTransactionRouter: auth.GET(\"/transactions/daily-spending\", handler.GetDailySpending) — BEFORE /:id routes",
+      "Add TestTransactionHandler_GetDailySpending function with nested t.Run subtests",
+      "Subtest 'returns_200_with_data': configure mock to return 3 daily items, make GET /transactions/daily-spending?from_date=2026-02-01&to_date=2026-02-03, verify 200 + data array with 3 items",
+      "Subtest 'returns_400_missing_from_date': GET without from_date, verify 400",
+      "Subtest 'returns_400_missing_to_date': GET without to_date, verify 400",
+      "Subtest 'returns_400_for_excessive_range': from_date and to_date more than 366 days apart, verify 400",
+      "Run go test ./internal/handlers/ -v -run TestTransactionHandler_GetDailySpending from apps/api/"
+    ]
+  },
+  {
+    "id": "3.7",
+    "category": "backend-daily-spending",
+    "passes": true,
+    "description": "Full backend verification for daily spending feature",
+    "steps": [
+      "Run ./scripts/check.sh from apps/api/",
+      "All 5 steps must pass: build, vet, lint, test, race",
+      "If any step fails, fix the issues and re-run"
+    ]
+  },
+  {
+    "id": "4.1",
+    "category": "frontend-chart-setup",
+    "passes": true,
+    "description": "Install ShadCN chart component (recharts + chart.tsx)",
+    "steps": [
+      "Run npx shadcn@latest add chart from apps/web/",
+      "This installs recharts as a dependency and creates src/components/ui/chart.tsx",
+      "Verify recharts appears in package.json dependencies",
+      "Verify src/components/ui/chart.tsx exists with ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLegendContent exports",
+      "Run npm run build in apps/web/ to verify no errors"
+    ]
+  },
+  {
+    "id": "4.2",
+    "category": "frontend-chart-setup",
+    "passes": true,
+    "description": "Add API types for chart data responses",
+    "steps": [
+      "Open apps/web/src/types/api.ts",
+      "Add SpendingByCategoryItem interface: { category_id: number | null, category_name: string, category_color: string, category_icon: string, total: number }",
+      "Add SpendingByCategory interface: { items: SpendingByCategoryItem[], total_spent: number, from_date: string, to_date: string }",
+      "Add MonthlySummaryItem interface: { month: string, income: number, expenses: number }",
+      "Add DailySpendingItem interface: { date: string, total: number }",
+      "Run npm run build in apps/web/ to verify no errors"
+    ]
+  },
+  {
+    "id": "4.3",
+    "category": "frontend-chart-setup",
+    "passes": true,
+    "description": "Add React Query hooks for chart data (useSpendingByCategory, useMonthlySummary, useDailySpending)",
+    "steps": [
+      "Open apps/web/src/hooks/use-transactions.ts",
+      "Import SpendingByCategory, MonthlySummaryItem, DailySpendingItem from types/api",
+      "Add query key entries to transactionKeys object: spendingByCategory: (from: string, to: string) => [...transactionKeys.all, 'spendingByCategory', from, to] as const, monthlySummary: (months: number) => [...transactionKeys.all, 'monthlySummary', months] as const, dailySpending: (from: string, to: string) => [...transactionKeys.all, 'dailySpending', from, to] as const",
+      "Add useSpendingByCategory(from: string, to: string) hook: useQuery with queryKey transactionKeys.spendingByCategory(from, to), queryFn fetches GET /api/v1/transactions/spending-by-category with from_date and to_date params, returns SpendingByCategory",
+      "Add useMonthlySummary(months = 6) hook: useQuery with queryKey transactionKeys.monthlySummary(months), queryFn fetches GET /api/v1/transactions/monthly-summary with months param, select: (res) => res.data to unwrap the data array",
+      "Add useDailySpending(from: string, to: string) hook: useQuery with queryKey transactionKeys.dailySpending(from, to), queryFn fetches GET /api/v1/transactions/daily-spending with from_date and to_date params, select: (res) => res.data to unwrap",
+      "Run npm run build in apps/web/ to verify no errors"
+    ]
+  },
+  {
+    "id": "4.4",
+    "category": "frontend-chart-setup",
+    "passes": true,
+    "description": "Frontend verification for chart setup",
+    "steps": [
+      "Run npm run build in apps/web/ to verify full TypeScript + Next.js build passes",
+      "Verify chart.tsx component exists and exports correctly",
+      "Verify all three hooks compile cleanly"
+    ]
+  },
+  {
+    "id": "5.1",
+    "category": "frontend-expenditure-chart",
+    "passes": true,
+    "description": "Create ExpenditureChart donut chart component for spending by category",
+    "steps": [
+      "Create apps/web/src/components/dashboard/expenditure-chart.tsx as 'use client' component",
+      "Import: useMemo from react, PieChart, Pie, Cell, Label from recharts, ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig from @/components/ui/chart, Card/CardHeader/CardTitle/CardDescription/CardContent from @/components/ui/card, Skeleton from @/components/ui/skeleton, useSpendingByCategory from @/hooks/use-transactions, formatCurrency from @/lib/format",
+      "Compute current month date range using useMemo: fromDate = first day of current month as YYYY-MM-DDT00:00:00Z, toDate = last day of current month as YYYY-MM-DDT23:59:59Z",
+      "Call useSpendingByCategory(fromDate, toDate)",
+      "Build chartConfig dynamically from data.items: for each item, key is sanitized category name (lowercase, replace spaces with hyphens), value is { label: item.category_name, color: item.category_color }",
+      "Build chartData from data.items: each entry has { name: item.category_name, value: item.total, fill: item.category_color, icon: item.category_icon }",
+      "Loading state: render Card with Skeleton placeholders (circular skeleton for chart area + lines for legend)",
+      "Empty state: render Card with message 'No expenses this month' and subdued icon",
+      "Chart rendering: ChartContainer wrapping PieChart with Pie component — innerRadius={60}, outerRadius={80}, paddingAngle={2}, dataKey='value', nameKey='name'. Each Cell gets fill from chartData[index].fill",
+      "Center label: use Recharts Label with content prop rendering custom SVG — show formatCurrency(data.total_spent) as large text and 'This Month' as small subtitle",
+      "Add ChartTooltip with custom ChartTooltipContent that formats the value as currency and shows percentage",
+      "Legend section: below the chart (always below, flex-wrap), map over items showing color dot (rounded div with background-color), icon text, category name, formatCurrency(total), and percentage of total",
+      "Wrap everything in Card with CardHeader containing CardTitle 'Spending Breakdown' and CardDescription showing the month name (e.g., 'February 2026')",
+      "Run npm run build in apps/web/ to verify no errors"
+    ]
+  },
+  {
+    "id": "5.2",
+    "category": "frontend-expenditure-chart",
+    "passes": true,
+    "description": "Frontend verification for expenditure chart",
+    "steps": [
+      "Run npm run build in apps/web/ to verify full build passes",
+      "Verify ExpenditureChart component compiles with all Recharts + ShadCN chart imports"
+    ]
+  },
+  {
+    "id": "6.1",
+    "category": "frontend-income-expenses-chart",
+    "passes": true,
+    "description": "Create IncomeExpensesChart bar chart component for monthly income vs expenses",
+    "steps": [
+      "Create apps/web/src/components/dashboard/income-expenses-chart.tsx as 'use client' component",
+      "Import: useMemo from react, BarChart, Bar, XAxis, YAxis, CartesianGrid from recharts, ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLegendContent, type ChartConfig from @/components/ui/chart, Card/CardHeader/CardTitle/CardDescription/CardContent from @/components/ui/card, Skeleton from @/components/ui/skeleton, useMonthlySummary from @/hooks/use-transactions, formatCurrency from @/lib/format",
+      "Define chartConfig: { income: { label: 'Income', color: '#22C55E' }, expenses: { label: 'Expenses', color: '#EF4444' } } satisfies ChartConfig",
+      "Call useMonthlySummary(6)",
+      "Transform data for chart: map each MonthlySummaryItem to { month: short month name (e.g., 'Sep'), income: item.income, expenses: item.expenses }. Use new Date(item.month + '-01') to parse the month string",
+      "Calculate net savings: sum of all income minus sum of all expenses across the 6 months",
+      "Loading state: Card with Skeleton",
+      "Empty state: Card with message 'No transaction data yet'",
+      "Chart rendering: ChartContainer (min-h-[300px]) wrapping BarChart with accessibilityLayer",
+      "Add CartesianGrid vertical={false}",
+      "Add XAxis dataKey='month', tickLine={false}, tickMargin={10}, axisLine={false}",
+      "Add YAxis hide={true} (cleaner look — values shown in tooltip)",
+      "Add Bar dataKey='income' fill='var(--color-income)' radius={[4,4,0,0]} barSize={20}",
+      "Add Bar dataKey='expenses' fill='var(--color-expenses)' radius={[4,4,0,0]} barSize={20}",
+      "Add ChartTooltip with ChartTooltipContent that formats values as currency",
+      "Add ChartLegend with ChartLegendContent",
+      "CardDescription: show net savings — 'Net: +$1,200.00' in green if positive, '-$500.00' in red if negative",
+      "Wrap in Card with CardHeader: CardTitle 'Income vs. Expenses', CardDescription with net savings",
+      "Run npm run build in apps/web/ to verify no errors"
+    ]
+  },
+  {
+    "id": "6.2",
+    "category": "frontend-income-expenses-chart",
+    "passes": true,
+    "description": "Frontend verification for income vs expenses chart",
+    "steps": [
+      "Run npm run build in apps/web/ to verify full build passes",
+      "Verify IncomeExpensesChart component compiles cleanly"
+    ]
+  },
+  {
+    "id": "7.1",
+    "category": "frontend-spending-trend-chart",
+    "passes": true,
+    "description": "Create SpendingTrendChart area chart component for cumulative daily spending",
+    "steps": [
+      "Create apps/web/src/components/dashboard/spending-trend-chart.tsx as 'use client' component",
+      "Import: useMemo from react, AreaChart, Area, XAxis, YAxis, CartesianGrid from recharts, ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig from @/components/ui/chart, Card/CardHeader/CardTitle/CardDescription/CardContent from @/components/ui/card, Skeleton from @/components/ui/skeleton, useDailySpending from @/hooks/use-transactions, formatCurrency from @/lib/format",
+      "Define chartConfig: { cumulative: { label: 'Total Spent', color: 'var(--chart-1)' } } satisfies ChartConfig",
+      "Compute current month date range using useMemo (same pattern as expenditure chart)",
+      "Call useDailySpending(fromDate, toDate)",
+      "Transform data into cumulative: useMemo to map daily items, computing running total. Each entry: { date: item.date, daily: item.total, cumulative: runningTotal }. Format date for display as day number (e.g., '1', '5', '15')",
+      "Get current total from last cumulative value",
+      "Loading state: Card with Skeleton (wide rectangle for area chart)",
+      "Empty state: Card with message 'No spending data this month'",
+      "Chart rendering: ChartContainer (min-h-[200px]) wrapping AreaChart with accessibilityLayer",
+      "Add defs with linearGradient id='fillCumulative': stop offset=0% with var(--color-cumulative) opacity=0.3, stop offset=95% with opacity=0.05",
+      "Add CartesianGrid vertical={false}",
+      "Add XAxis dataKey='date', tickLine={false}, axisLine={false}, tickMargin={8}, tickFormatter showing day number, show a subset of ticks to avoid crowding",
+      "Add YAxis hide={true}",
+      "Add Area type='monotone' dataKey='cumulative' stroke='var(--color-cumulative)' fill='url(#fillCumulative)' strokeWidth={2}",
+      "Add ChartTooltip with custom content showing date and cumulative total formatted as currency",
+      "Wrap in Card: CardTitle 'Spending Trend', CardDescription 'Cumulative spending — [month name]' with current total shown",
+      "Run npm run build in apps/web/ to verify no errors"
+    ]
+  },
+  {
+    "id": "7.2",
+    "category": "frontend-spending-trend-chart",
+    "passes": true,
+    "description": "Frontend verification for spending trend chart",
+    "steps": [
+      "Run npm run build in apps/web/ to verify full build passes",
+      "Verify SpendingTrendChart component compiles cleanly"
+    ]
+  },
+  {
+    "id": "8.1",
+    "category": "frontend-dashboard-integration",
+    "passes": true,
+    "description": "Import and place all three charts on the dashboard page between budgets and recent transactions",
+    "steps": [
+      "Open apps/web/src/app/(dashboard)/page.tsx",
+      "Add imports: import { ExpenditureChart } from '@/components/dashboard/expenditure-chart', import { IncomeExpensesChart } from '@/components/dashboard/income-expenses-chart', import { SpendingTrendChart } from '@/components/dashboard/spending-trend-chart'",
+      "Find the section between <BudgetOverview budgets={activeBudgets} /> and the Recent Transactions <Card>",
+      "Insert the chart grid: <div className='grid gap-4 lg:grid-cols-2'><ExpenditureChart /><IncomeExpensesChart /></div> for the 2-column row",
+      "Insert <SpendingTrendChart /> as a full-width card below the 2-column grid",
+      "Resulting layout order: SummaryCards → Accounts grid → BudgetOverview → [Donut | Bar] → Area → Recent Transactions",
+      "Run npm run build in apps/web/ to verify no errors"
+    ]
+  },
+  {
+    "id": "8.2",
+    "category": "frontend-dashboard-integration",
+    "passes": true,
+    "description": "Update DashboardSkeleton to include chart placeholders",
+    "steps": [
+      "Open apps/web/src/app/(dashboard)/page.tsx",
+      "Find the DashboardSkeleton function",
+      "Add skeleton placeholders matching the chart layout: a 2-column grid with two Skeleton cards (h-[350px] each) and one full-width Skeleton card (h-[250px]) below",
+      "Place these between the existing account grid skeletons and the full-width skeleton at the bottom",
+      "Run npm run build in apps/web/ to verify no errors"
+    ]
+  },
+  {
+    "id": "8.3",
+    "category": "frontend-dashboard-integration",
+    "passes": true,
+    "description": "Final frontend verification for complete dashboard charts feature",
+    "steps": [
+      "Run npm run build in apps/web/ to verify full TypeScript + Next.js build passes",
+      "Run ./scripts/check.sh from apps/api/ to verify backend is still clean",
+      "Verify all 3 charts render on the dashboard:",
+      "  1. Expenditure donut chart shows spending by category for current month",
+      "  2. Income vs expenses bar chart shows last 6 months comparison",
+      "  3. Spending trend area chart shows cumulative daily spending for current month",
+      "Verify responsive layout: charts stack vertically on mobile, 2-column on desktop",
+      "Verify dark mode: charts inherit theme colors correctly"
+    ]
+  }
+]
