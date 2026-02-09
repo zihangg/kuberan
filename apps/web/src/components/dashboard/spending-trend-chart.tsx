@@ -1,11 +1,17 @@
 "use client";
 
 import { useMemo } from "react";
-import { AreaChart, Area, XAxis, CartesianGrid } from "recharts";
+import {
+  ComposedChart,
+  Area,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+} from "recharts";
 import {
   ChartContainer,
   ChartTooltip,
-  ChartTooltipContent,
   type ChartConfig,
 } from "@/components/ui/chart";
 import {
@@ -20,7 +26,8 @@ import { useDailySpending } from "@/hooks/use-transactions";
 import { formatCurrency } from "@/lib/format";
 
 const chartConfig = {
-  cumulative: { label: "Total Spent", color: "var(--chart-1)" },
+  daily: { label: "Daily", color: "var(--chart-2)" },
+  cumulative: { label: "Cumulative", color: "var(--chart-1)" },
 } satisfies ChartConfig;
 
 export function SpendingTrendChart() {
@@ -42,17 +49,36 @@ export function SpendingTrendChart() {
 
   const { data, isLoading } = useDailySpending(fromDate, toDate);
 
-  const chartData = useMemo(() => {
-    if (!data) return [];
-    let running = 0;
-    return data.map((item) => {
-      running += item.total;
-      const day = new Date(item.date).getDate().toString();
-      return { date: day, daily: item.total, cumulative: running };
-    });
-  }, [data]);
+  const { chartData, currentTotal, lastDay } = useMemo(() => {
+    if (!data) return { chartData: [], currentTotal: 0, lastDay: "1" };
 
-  const currentTotal = chartData.length > 0 ? chartData[chartData.length - 1].cumulative : 0;
+    const today = new Date();
+    const todayDay = today.getDate();
+
+    // Only include days up to today (truncate future days)
+    let running = 0;
+    const items = data
+      .filter((item) => {
+        const day = new Date(item.date).getDate();
+        return day <= todayDay;
+      })
+      .map((item) => {
+        running += item.total;
+        const day = new Date(item.date).getDate().toString();
+        return { date: day, daily: item.total, cumulative: running };
+      });
+
+    // Last day of the month for X-axis domain
+    const year = today.getFullYear();
+    const month = today.getMonth();
+    const endOfMonth = new Date(year, month + 1, 0).getDate().toString();
+
+    return {
+      chartData: items,
+      currentTotal: items.length > 0 ? items[items.length - 1].cumulative : 0,
+      lastDay: endOfMonth,
+    };
+  }, [data]);
 
   if (isLoading) {
     return (
@@ -73,7 +99,9 @@ export function SpendingTrendChart() {
       <Card>
         <CardHeader>
           <CardTitle>Spending Trend</CardTitle>
-          <CardDescription>Cumulative spending &middot; {monthLabel}</CardDescription>
+          <CardDescription>
+            Daily &amp; cumulative spending &middot; {monthLabel}
+          </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col items-center justify-center py-10 text-muted-foreground">
           <p className="text-sm">No spending data this month</p>
@@ -87,17 +115,31 @@ export function SpendingTrendChart() {
       <CardHeader>
         <CardTitle>Spending Trend</CardTitle>
         <CardDescription>
-          Cumulative spending &middot; {monthLabel} &middot;{" "}
+          Daily &amp; cumulative spending &middot; {monthLabel} &middot;{" "}
           {formatCurrency(currentTotal)}
         </CardDescription>
       </CardHeader>
       <CardContent>
         <ChartContainer config={chartConfig} className="min-h-[200px] w-full">
-          <AreaChart accessibilityLayer data={chartData}>
+          <ComposedChart accessibilityLayer data={chartData}>
             <defs>
-              <linearGradient id="fillCumulative" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="var(--color-cumulative)" stopOpacity={0.3} />
-                <stop offset="95%" stopColor="var(--color-cumulative)" stopOpacity={0.05} />
+              <linearGradient
+                id="fillCumulative"
+                x1="0"
+                y1="0"
+                x2="0"
+                y2="1"
+              >
+                <stop
+                  offset="0%"
+                  stopColor="var(--color-cumulative)"
+                  stopOpacity={0.3}
+                />
+                <stop
+                  offset="95%"
+                  stopColor="var(--color-cumulative)"
+                  stopOpacity={0.05}
+                />
               </linearGradient>
             </defs>
             <CartesianGrid vertical={false} />
@@ -106,22 +148,70 @@ export function SpendingTrendChart() {
               tickLine={false}
               axisLine={false}
               tickMargin={8}
+              domain={["1", lastDay]}
             />
+            <YAxis yAxisId="cumulative" hide />
+            <YAxis yAxisId="daily" hide />
             <ChartTooltip
-              content={
-                <ChartTooltipContent
-                  formatter={(value) => formatCurrency(value as number)}
-                />
-              }
+              content={({ active, payload, label }) => {
+                if (!active || !payload?.length) return null;
+                const daily = payload.find(
+                  (p) => p.dataKey === "daily"
+                )?.value as number;
+                const cumulative = payload.find(
+                  (p) => p.dataKey === "cumulative"
+                )?.value as number;
+                return (
+                  <div className="border-border/50 bg-background rounded-lg border px-3 py-2 text-xs shadow-xl">
+                    <div className="font-medium">Day {label}</div>
+                    <div className="mt-1.5 space-y-1">
+                      <div className="flex items-center gap-2">
+                        <div
+                          className="h-2.5 w-2.5 shrink-0 rounded-[2px]"
+                          style={{
+                            backgroundColor: "var(--color-daily)",
+                          }}
+                        />
+                        <span className="text-muted-foreground">Daily</span>
+                        <span className="ml-auto font-medium font-mono tabular-nums">
+                          {formatCurrency(daily)}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <div
+                          className="h-2.5 w-2.5 shrink-0 rounded-[2px]"
+                          style={{
+                            backgroundColor: "var(--color-cumulative)",
+                          }}
+                        />
+                        <span className="text-muted-foreground">
+                          Cumulative
+                        </span>
+                        <span className="ml-auto font-medium font-mono tabular-nums">
+                          {formatCurrency(cumulative)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              }}
+            />
+            <Bar
+              yAxisId="daily"
+              dataKey="daily"
+              fill="var(--color-daily)"
+              radius={[2, 2, 0, 0]}
+              opacity={0.6}
             />
             <Area
+              yAxisId="cumulative"
               type="monotone"
               dataKey="cumulative"
               stroke="var(--color-cumulative)"
               fill="url(#fillCumulative)"
               strokeWidth={2}
             />
-          </AreaChart>
+          </ComposedChart>
         </ChartContainer>
       </CardContent>
     </Card>

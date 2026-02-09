@@ -1,11 +1,10 @@
 "use client";
 
 import { useMemo } from "react";
-import { PieChart, Pie, Cell, Label } from "recharts";
+import { Label, Pie, PieChart } from "recharts";
 import {
   ChartContainer,
   ChartTooltip,
-  ChartTooltipContent,
   type ChartConfig,
 } from "@/components/ui/chart";
 import {
@@ -18,6 +17,9 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { useSpendingByCategory } from "@/hooks/use-transactions";
 import { formatCurrency } from "@/lib/format";
+
+const TOP_N = 3;
+const OTHERS_COLOR = "#6B7280";
 
 export function ExpenditureChart() {
   const { fromDate, toDate, monthLabel } = useMemo(() => {
@@ -38,12 +40,9 @@ export function ExpenditureChart() {
 
   const { data, isLoading } = useSpendingByCategory(fromDate, toDate);
 
-  const TOP_N = 3;
-  const OTHERS_COLOR = "#6B7280";
-
-  const { displayItems, chartConfig, chartData } = useMemo(() => {
+  const { chartConfig, chartData } = useMemo(() => {
     if (!data?.items)
-      return { displayItems: [], chartConfig: {} as ChartConfig, chartData: [] };
+      return { chartConfig: {} as ChartConfig, chartData: [] };
 
     const sorted = [...data.items];
     const top = sorted.slice(0, TOP_N);
@@ -63,7 +62,9 @@ export function ExpenditureChart() {
     }
 
     // Build chart config from display items
-    const config: ChartConfig = {};
+    const config: ChartConfig = {
+      total: { label: "Spending" },
+    };
     for (const item of items) {
       const key = item.category_name
         .toLowerCase()
@@ -80,17 +81,17 @@ export function ExpenditureChart() {
       icon: item.category_icon,
     }));
 
-    return { displayItems: items, chartConfig: config, chartData: cData };
+    return { chartConfig: config, chartData: cData };
   }, [data]);
 
   if (isLoading) {
     return (
-      <Card>
-        <CardHeader>
+      <Card className="flex flex-col">
+        <CardHeader className="items-center pb-0">
           <Skeleton className="h-5 w-40" />
           <Skeleton className="h-4 w-28" />
         </CardHeader>
-        <CardContent className="flex items-center justify-center">
+        <CardContent className="flex flex-1 items-center justify-center">
           <Skeleton className="h-[200px] w-[200px] rounded-full" />
         </CardContent>
       </Card>
@@ -99,12 +100,12 @@ export function ExpenditureChart() {
 
   if (!data || data.items.length === 0) {
     return (
-      <Card>
-        <CardHeader>
+      <Card className="flex flex-col">
+        <CardHeader className="items-center pb-0">
           <CardTitle>Spending Breakdown</CardTitle>
           <CardDescription>{monthLabel}</CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-col items-center justify-center py-10 text-muted-foreground">
+        <CardContent className="flex flex-1 flex-col items-center justify-center py-10 text-muted-foreground">
           <p className="text-sm">No expenses this month</p>
         </CardContent>
       </Card>
@@ -112,32 +113,52 @@ export function ExpenditureChart() {
   }
 
   return (
-    <Card>
-      <CardHeader>
+    <Card className="flex flex-col">
+      <CardHeader className="items-center pb-0">
         <CardTitle>Spending Breakdown</CardTitle>
         <CardDescription>{monthLabel}</CardDescription>
       </CardHeader>
-      <CardContent>
-        <ChartContainer config={chartConfig} className="mx-auto aspect-square max-h-[250px]">
+      <CardContent className="flex-1 pb-0">
+        <ChartContainer
+          config={chartConfig}
+          className="mx-auto aspect-square max-h-[250px]"
+        >
           <PieChart>
             <ChartTooltip
-              content={
-                <ChartTooltipContent
-                  formatter={(value) => formatCurrency(value as number)}
-                />
-              }
+              cursor={false}
+              content={({ active, payload }) => {
+                if (!active || !payload?.length) return null;
+                const item = payload[0];
+                const value = item.value as number;
+                const pct =
+                  data.total_spent > 0
+                    ? ((value / data.total_spent) * 100).toFixed(1)
+                    : "0";
+                return (
+                  <div className="border-border/50 bg-background rounded-lg border px-3 py-2 text-xs shadow-xl">
+                    <div className="flex items-center gap-2">
+                      <div
+                        className="h-2.5 w-2.5 shrink-0 rounded-[2px]"
+                        style={{ backgroundColor: item.payload.fill }}
+                      />
+                      <span className="font-medium">
+                        {item.name}
+                      </span>
+                    </div>
+                    <div className="text-muted-foreground mt-1">
+                      {formatCurrency(value)} ({pct}%)
+                    </div>
+                  </div>
+                );
+              }}
             />
             <Pie
               data={chartData}
               dataKey="value"
               nameKey="name"
-              innerRadius={60}
-              outerRadius={80}
-              paddingAngle={2}
+              innerRadius={70}
+              strokeWidth={5}
             >
-              {chartData.map((entry, index) => (
-                <Cell key={index} fill={entry.fill} />
-              ))}
               <Label
                 content={({ viewBox }) => {
                   if (viewBox && "cx" in viewBox && "cy" in viewBox) {
@@ -151,13 +172,13 @@ export function ExpenditureChart() {
                         <tspan
                           x={viewBox.cx}
                           y={viewBox.cy}
-                          className="fill-foreground text-lg font-bold"
+                          className="fill-foreground text-base font-bold"
                         >
                           {formatCurrency(data.total_spent)}
                         </tspan>
                         <tspan
                           x={viewBox.cx}
-                          y={(viewBox.cy || 0) + 20}
+                          y={(viewBox.cy || 0) + 18}
                           className="fill-muted-foreground text-xs"
                         >
                           This Month
@@ -170,31 +191,6 @@ export function ExpenditureChart() {
             </Pie>
           </PieChart>
         </ChartContainer>
-        <div className="mt-4 space-y-2">
-          {displayItems.map((item) => {
-            const pct =
-              data.total_spent > 0
-                ? ((item.total / data.total_spent) * 100).toFixed(1)
-                : "0";
-            return (
-              <div key={item.category_name} className="flex items-center justify-between text-sm">
-                <div className="flex items-center gap-2">
-                  <div
-                    className="h-3 w-3 rounded-full shrink-0"
-                    style={{ backgroundColor: item.category_color }}
-                  />
-                  <span>
-                    {item.category_icon && `${item.category_icon} `}
-                    {item.category_name}
-                  </span>
-                </div>
-                <span className="text-muted-foreground">
-                  {formatCurrency(item.total)} ({pct}%)
-                </span>
-              </div>
-            );
-          })}
-        </div>
       </CardContent>
     </Card>
   );
