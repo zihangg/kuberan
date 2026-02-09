@@ -45,6 +45,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { CreateTransactionDialog } from "@/components/transactions/create-transaction-dialog";
+import { CreateTransferDialog } from "@/components/transactions/create-transfer-dialog";
 import type { Transaction, TransactionType } from "@/types/models";
 import type { TransactionFilters } from "@/types/api";
 
@@ -138,6 +139,7 @@ export default function AccountDetailPage() {
   const [page, setPage] = useState(1);
   const [filters, setFilters] = useState<TransactionFilters>({});
   const [txDialogOpen, setTxDialogOpen] = useState(false);
+  const [transferDialogOpen, setTransferDialogOpen] = useState(false);
 
   const { data: account, isLoading: accountLoading } = useAccount(accountId);
   const { data: transactionsData, isLoading: transactionsLoading } =
@@ -228,7 +230,11 @@ export default function AccountDetailPage() {
             </div>
             <div className="flex gap-2">
               {account.type === "cash" && (
-                <Button variant="outline" size="sm" disabled>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setTransferDialogOpen(true)}
+                >
                   <ArrowLeftRight className="mr-2 h-4 w-4" />
                   Transfer
                 </Button>
@@ -412,6 +418,12 @@ export default function AccountDetailPage() {
         open={txDialogOpen}
         onOpenChange={setTxDialogOpen}
         defaultAccountId={accountId}
+      />
+
+      <CreateTransferDialog
+        open={transferDialogOpen}
+        onOpenChange={setTransferDialogOpen}
+        defaultFromAccountId={accountId}
       />
     </div>
   );
