@@ -1,0 +1,726 @@
+[
+  {
+    "id": "1.1",
+    "category": "frontend-bugfix",
+    "passes": true,
+    "description": "Fix transaction mutation query invalidation so dashboard refreshes after creating/deleting transactions",
+    "steps": [
+      "Open apps/web/src/hooks/use-transactions.ts",
+      "In useCreateTransaction (line 76): change queryClient.invalidateQueries({ queryKey: transactionKeys.lists() }) to queryClient.invalidateQueries({ queryKey: transactionKeys.all })",
+      "In useCreateTransfer (line 96): change queryClient.invalidateQueries({ queryKey: transactionKeys.lists() }) to queryClient.invalidateQueries({ queryKey: transactionKeys.all })",
+      "In useDeleteTransaction (line 115): change queryClient.invalidateQueries({ queryKey: transactionKeys.lists() }) to queryClient.invalidateQueries({ queryKey: transactionKeys.all })",
+      "This ensures all transaction queries are invalidated including userList keys used by the dashboard",
+      "Run npm run build in apps/web/ to verify no errors"
+    ]
+  },
+  {
+    "id": "1.2",
+    "category": "frontend-bugfix",
+    "passes": true,
+    "description": "Verify dashboard query invalidation fix with build",
+    "steps": [
+      "Run npm run build in apps/web/ to verify full TypeScript + Next.js build passes",
+      "Verify transactionKeys.all is ['transactions'] which will prefix-match both ['transactions', 'list', ...] and ['transactions', 'userList', ...] keys"
+    ]
+  },
+  {
+    "id": "2.1",
+    "category": "backend-credit-card",
+    "passes": true,
+    "description": "Create database migration to add credit_limit column for credit card accounts",
+    "steps": [
+      "Create apps/api/migrations/000010_add_credit_card_support.up.sql",
+      "Add SQL: ALTER TABLE accounts ADD COLUMN credit_limit BIGINT DEFAULT 0;",
+      "Create apps/api/migrations/000010_add_credit_card_support.down.sql",
+      "Add SQL: ALTER TABLE accounts DROP COLUMN IF EXISTS credit_limit;",
+      "Note: existing interest_rate and due_date columns from migration 000002 are reused for credit cards"
+    ]
+  },
+  {
+    "id": "2.2",
+    "category": "backend-credit-card",
+    "passes": true,
+    "description": "Update account model with credit_card type and CreditLimit field",
+    "steps": [
+      "Open apps/api/internal/models/account.go",
+      "Add AccountTypeCreditCard AccountType = \"credit_card\" to the const block (after AccountTypeDebt)",
+      "Add CreditLimit field to Account struct: CreditLimit int64 `gorm:\"type:bigint;default:0\" json:\"credit_limit,omitempty\"` — place it in the 'debt accounts' section alongside InterestRate and DueDate",
+      "Update BeforeCreate hook: add case AccountTypeCreditCard that clears Broker and AccountNumber (same as debt accounts)",
+      "Run go build ./... from apps/api/ to verify compilation"
+    ]
+  },
+  {
+    "id": "2.3",
+    "category": "backend-credit-card",
+    "passes": true,
+    "description": "Update account_type validator to accept credit_card",
+    "steps": [
+      "Open apps/api/internal/validator/validator.go",
+      "Find the account_type validator function (validateAccountType or similar)",
+      "Add \"credit_card\" to the list of valid account types alongside \"cash\", \"investment\", \"debt\"",
+      "Run go build ./... from apps/api/ to verify compilation"
+    ]
+  },
+  {
+    "id": "2.4",
+    "category": "backend-credit-card",
+    "passes": true,
+    "description": "Add CreateCreditCardAccount to account service interface and implementation",
+    "steps": [
+      "Open apps/api/internal/services/interfaces.go",
+      "Add to AccountServicer interface: CreateCreditCardAccount(userID uint, name, description, currency string, creditLimit int64, interestRate float64, dueDate *time.Time) (*models.Account, error)",
+      "Open apps/api/internal/services/account_service.go",
+      "Add CreateCreditCardAccount method implementation",
+      "Validate name is not empty (return apperrors.WithMessage(apperrors.ErrInvalidInput, \"account name is required\") if empty)",
+      "Default currency to \"USD\" if empty",
+      "Create account with Type: models.AccountTypeCreditCard, Balance: 0, IsActive: true, CreditLimit: creditLimit, InterestRate: interestRate",
+      "If dueDate is not nil, set account.DueDate = *dueDate",
+      "Save via s.db.Create(account), wrap errors with apperrors.Wrap(apperrors.ErrInternalServer, err)",
+      "Return the created account",
+      "Run go build ./... from apps/api/ to verify compilation"
+    ]
+  },
+  {
+    "id": "2.5",
+    "category": "backend-credit-card",
+    "passes": true,
+    "description": "Update UpdateAccountBalance to handle credit card semantics (positive balance = owed)",
+    "steps": [
+      "Open apps/api/internal/services/account_service.go",
+      "Find UpdateAccountBalance method (line 166)",
+      "Update the switch statement to account for credit card type:",
+      "For TransactionTypeIncome: if account.Type == AccountTypeCreditCard then balance -= amount (payment reduces debt), else balance += amount (income adds to balance)",
+      "For TransactionTypeExpense: if account.Type == AccountTypeCreditCard then balance += amount (spending adds to debt), else balance -= amount (expense reduces balance)",
+      "Run go build ./... from apps/api/ to verify compilation"
+    ]
+  },
+  {
+    "id": "2.6",
+    "category": "backend-credit-card",
+    "passes": true,
+    "description": "Update transfer validation to handle credit card source accounts",
+    "steps": [
+      "Open apps/api/internal/services/transaction_service.go",
+      "Find CreateTransfer method, locate the insufficient balance check: if fromAccount.Balance < amount",
+      "Change to only apply for non-credit-card accounts: if fromAccount.Type != models.AccountTypeCreditCard && fromAccount.Balance < amount",
+      "Credit cards don't have a traditional 'balance' that limits transfers (their balance represents debt owed)",
+      "Run go build ./... from apps/api/ to verify compilation"
+    ]
+  },
+  {
+    "id": "2.7",
+    "category": "backend-credit-card",
+    "passes": true,
+    "description": "Add CreateCreditCardAccount handler with Swagger annotations",
+    "steps": [
+      "Open apps/api/internal/handlers/account_handler.go",
+      "Add CreateCreditCardAccountRequest struct with fields: Name (string, required, min=1, max=100), Description (string, max=500), Currency (string, omitempty, iso4217), CreditLimit (int64, gte=0), InterestRate (float64, gte=0, lte=100), DueDate (*string for optional ISO date)",
+      "Add CreateCreditCardAccount handler method",
+      "Add full Swagger annotations: @Summary 'Create a credit card account', @Description 'Create a new credit card account for the authenticated user', @Tags accounts, @Security BearerAuth",
+      "Add @Param annotation for request body, @Success 201, @Failure 400/401/500",
+      "Handler body: getUserID(c), bind JSON request, parse optional DueDate string to *time.Time if provided",
+      "Call h.accountService.CreateCreditCardAccount(userID, req.Name, req.Description, req.Currency, req.CreditLimit, req.InterestRate, parsedDueDate)",
+      "Log via h.auditService.Log with action CREATE_ACCOUNT and type credit_card",
+      "Return c.JSON(http.StatusCreated, gin.H{\"account\": account})",
+      "Run go build ./... from apps/api/ to verify compilation"
+    ]
+  },
+  {
+    "id": "2.8",
+    "category": "backend-credit-card",
+    "passes": true,
+    "description": "Register POST /accounts/credit-card route in main.go",
+    "steps": [
+      "Open apps/api/cmd/api/main.go",
+      "Find the accounts route group: accounts := protected.Group(\"/accounts\")",
+      "Add accounts.POST(\"/credit-card\", accountHandler.CreateCreditCardAccount) alongside the existing /cash and /investment routes",
+      "Run go build ./... from apps/api/ to verify compilation",
+      "Run go vet ./... from apps/api/ to check for issues"
+    ]
+  },
+  {
+    "id": "2.9",
+    "category": "backend-credit-card",
+    "passes": true,
+    "description": "Add service tests for credit card account creation and balance logic",
+    "steps": [
+      "Open apps/api/internal/services/account_service_test.go",
+      "Add TestCreateCreditCardAccount function with nested t.Run subtests",
+      "Subtest 'creates_credit_card_account': create user, call CreateCreditCardAccount with valid params, verify account type is credit_card, balance is 0, credit_limit/interest_rate/due_date set correctly",
+      "Subtest 'defaults_currency_to_usd': call with empty currency, verify account.Currency is 'USD'",
+      "Subtest 'returns_error_for_empty_name': call with empty name, verify INVALID_INPUT error",
+      "Subtest 'sets_zero_balance': verify account.Balance is 0 regardless of credit limit",
+      "Add TestUpdateAccountBalance_CreditCard function with nested t.Run subtests",
+      "Subtest 'expense_increases_credit_card_balance': create credit card account with Balance=0, call UpdateAccountBalance with Expense type and amount=5000, verify balance is now 5000 (debt increased)",
+      "Subtest 'income_decreases_credit_card_balance': create credit card account with Balance=5000, call UpdateAccountBalance with Income type and amount=3000, verify balance is now 2000 (debt decreased)",
+      "Subtest 'cash_account_unchanged_behavior': verify cash account still works as before (income adds, expense subtracts)",
+      "Run go test ./internal/services/ -v -run TestCreateCreditCardAccount from apps/api/",
+      "Run go test ./internal/services/ -v -run TestUpdateAccountBalance_CreditCard from apps/api/"
+    ]
+  },
+  {
+    "id": "2.10",
+    "category": "backend-credit-card",
+    "passes": true,
+    "description": "Add handler tests for CreateCreditCardAccount",
+    "steps": [
+      "Open apps/api/internal/handlers/account_handler_test.go",
+      "Add createCreditCardAccountFn field to mockAccountService struct",
+      "Add CreateCreditCardAccount method on mockAccountService that delegates to createCreditCardAccountFn",
+      "Ensure var _ services.AccountServicer = (*mockAccountService)(nil) compile check still passes",
+      "Add the new POST route to setupAccountRouter: auth.POST(\"/accounts/credit-card\", handler.CreateCreditCardAccount)",
+      "Add TestAccountHandler_CreateCreditCardAccount function with nested t.Run subtests",
+      "Subtest 'returns_201_with_valid_request': configure mock to return account, verify 201 + response",
+      "Subtest 'returns_400_for_missing_name': send request without name, verify 400",
+      "Subtest 'returns_400_for_negative_credit_limit': send credit_limit=-1, verify 400",
+      "Subtest 'returns_401_without_auth': verify 401 without auth middleware",
+      "Run go test ./internal/handlers/ -v -run TestAccountHandler_CreateCreditCardAccount from apps/api/"
+    ]
+  },
+  {
+    "id": "2.11",
+    "category": "backend-credit-card",
+    "passes": true,
+    "description": "Full backend verification for credit card feature",
+    "steps": [
+      "Run ./scripts/check.sh from apps/api/",
+      "This runs: go build, go vet, golangci-lint, go test, go test -race",
+      "All 5 steps must pass with zero errors",
+      "If any step fails, fix the issues and re-run"
+    ]
+  },
+  {
+    "id": "2.12",
+    "category": "frontend-credit-card",
+    "passes": true,
+    "description": "Update frontend types for credit card accounts",
+    "steps": [
+      "Open apps/web/src/types/models.ts",
+      "Update AccountType to: export type AccountType = \"cash\" | \"investment\" | \"debt\" | \"credit_card\"",
+      "Add credit_limit?: number to the Account interface (in the debt accounts section alongside interest_rate and due_date)",
+      "Open apps/web/src/types/api.ts",
+      "Add CreateCreditCardAccountRequest interface: { name: string, description?: string, currency?: string, credit_limit?: number, interest_rate?: number, due_date?: string }",
+      "Run npm run build in apps/web/ to verify no errors"
+    ]
+  },
+  {
+    "id": "2.13",
+    "category": "frontend-credit-card",
+    "passes": true,
+    "description": "Add useCreateCreditCardAccount hook",
+    "steps": [
+      "Open apps/web/src/hooks/use-accounts.ts",
+      "Import CreateCreditCardAccountRequest from types/api",
+      "Add useCreateCreditCardAccount() mutation hook following the pattern of useCreateCashAccount and useCreateInvestmentAccount",
+      "mutationFn: POST /api/v1/accounts/credit-card with request data, unwrap AccountResponse.account",
+      "onSuccess: invalidate accountKeys.lists()",
+      "Run npm run build in apps/web/ to verify no errors"
+    ]
+  },
+  {
+    "id": "2.14",
+    "category": "frontend-credit-card",
+    "passes": true,
+    "description": "Add Credit Card tab to create account dialog",
+    "steps": [
+      "Open apps/web/src/components/accounts/create-account-dialog.tsx",
+      "Import useCreateCreditCardAccount from hooks/use-accounts",
+      "Add state variables for credit card form: ccName, ccDescription, ccCurrency, ccCreditLimit (number, cents), ccInterestRate (number), ccDueDate (string)",
+      "Add a third TabsTrigger: value='credit-card', label 'Credit Card'",
+      "Add TabsContent for 'credit-card' with fields:",
+      "  - Name: Input, required, maxLength 100",
+      "  - Description: Input, optional, maxLength 500",
+      "  - Currency: Select dropdown with same currency options as cash/investment tabs",
+      "  - Credit Limit: CurrencyInput component (value in cents)",
+      "  - Interest Rate: Input type='number', min=0, max=100, step=0.01, with '%' suffix label",
+      "  - Due Date: Input type='date', optional",
+      "Add handleCreateCreditCard submit function: validate name required + credit limit >= 0, call useCreateCreditCardAccount mutation",
+      "On success: toast 'Account created', close dialog, reset form",
+      "On error: inline destructive banner",
+      "Add reset logic for credit card fields in the resetForm function",
+      "Run npm run build in apps/web/ to verify no errors"
+    ]
+  },
+  {
+    "id": "2.15",
+    "category": "frontend-credit-card",
+    "passes": true,
+    "description": "Update dashboard summary cards to show credit card liabilities and net worth",
+    "steps": [
+      "Open apps/web/src/app/(dashboard)/page.tsx",
+      "Find the SummaryCards component",
+      "Add credit card total calculation: const creditCardTotal = accounts.filter(a => a.type === 'credit_card').reduce((sum, a) => sum + a.balance, 0)",
+      "Change the 'Total Balance' card to 'Net Worth': (cashTotal + investmentTotal) - creditCardTotal",
+      "Keep the Cash and Investment cards as they are",
+      "Add a fourth card: 'Credit Cards' showing creditCardTotal — display with a different color scheme (e.g., text-orange-600 or text-red-600) to indicate liability",
+      "Update the ACCOUNT_TYPE_LABELS or similar maps to include credit_card label throughout the frontend",
+      "Ensure AccountCard component on dashboard handles credit_card type with an appropriate icon/badge color",
+      "Run npm run build in apps/web/ to verify no errors"
+    ]
+  },
+  {
+    "id": "2.16",
+    "category": "frontend-credit-card",
+    "passes": true,
+    "description": "Frontend verification for credit card feature",
+    "steps": [
+      "Run npm run build in apps/web/ to verify full TypeScript + Next.js build passes",
+      "Verify all credit card related types, hooks, and components compile cleanly",
+      "Verify dashboard summary cards handle credit_card accounts correctly"
+    ]
+  },
+  {
+    "id": "3.1",
+    "category": "backend-account-update",
+    "passes": true,
+    "description": "Add AccountUpdateFields struct and replace UpdateCashAccount with generic UpdateAccount in interface",
+    "steps": [
+      "Open apps/api/internal/services/interfaces.go",
+      "Add AccountUpdateFields struct above the AccountServicer interface with fields: Name *string, Description *string, IsActive *bool, Broker *string, AccountNumber *string, InterestRate *float64, DueDate *time.Time, CreditLimit *int64",
+      "In AccountServicer interface: replace UpdateCashAccount(userID, accountID uint, name, description string) (*models.Account, error) with UpdateAccount(userID, accountID uint, updates AccountUpdateFields) (*models.Account, error)",
+      "Run go build ./... from apps/api/ — this WILL fail because the old method is used elsewhere. That's expected, we fix it next."
+    ]
+  },
+  {
+    "id": "3.2",
+    "category": "backend-account-update",
+    "passes": true,
+    "description": "Implement generic UpdateAccount service method replacing UpdateCashAccount",
+    "steps": [
+      "Open apps/api/internal/services/account_service.go",
+      "Replace the UpdateCashAccount method with UpdateAccount(userID, accountID uint, updates AccountUpdateFields) (*models.Account, error)",
+      "Fetch account via s.GetAccountByID(userID, accountID) — this already checks user ownership and active status",
+      "Remove the account.Type != AccountTypeCash check (generic update supports all types)",
+      "Build updates map from non-nil fields in AccountUpdateFields:",
+      "  - Name: apply for all account types if non-nil and non-empty",
+      "  - Description: apply for all account types if non-nil",
+      "  - IsActive: apply for all account types if non-nil",
+      "  - Broker: only apply if account.Type == AccountTypeInvestment",
+      "  - AccountNumber: only apply if account.Type == AccountTypeInvestment",
+      "  - InterestRate: only apply if account.Type == AccountTypeCreditCard",
+      "  - DueDate: only apply if account.Type == AccountTypeCreditCard",
+      "  - CreditLimit: only apply if account.Type == AccountTypeCreditCard",
+      "If len(updates) > 0, apply via s.db.Model(account).Updates(updates)",
+      "Reload account from DB after update to return fresh data: s.db.First(account, account.ID)",
+      "Return updated account",
+      "Run go build ./... from apps/api/ to verify compilation"
+    ]
+  },
+  {
+    "id": "3.3",
+    "category": "backend-account-update",
+    "passes": true,
+    "description": "Update account handler to use generic UpdateAccount with expanded request fields",
+    "steps": [
+      "Open apps/api/internal/handlers/account_handler.go",
+      "Replace UpdateCashAccountRequest with UpdateAccountRequest struct: Name *string `json:\"name\" binding:\"omitempty,min=1,max=100\"`, Description *string `json:\"description\" binding:\"omitempty,max=500\"`, IsActive *bool `json:\"is_active\"`, Broker *string `json:\"broker\" binding:\"omitempty,max=100\"`, AccountNumber *string `json:\"account_number\" binding:\"omitempty,max=50\"`, InterestRate *float64 `json:\"interest_rate\" binding:\"omitempty,gte=0,lte=100\"`, DueDate *string `json:\"due_date\"`, CreditLimit *int64 `json:\"credit_limit\" binding:\"omitempty,gte=0\"`",
+      "Rename UpdateCashAccount handler to UpdateAccount",
+      "Update Swagger annotations: @Summary 'Update account', @Description 'Update an existing account for the authenticated user. Accepts common fields for all account types and type-specific fields.'",
+      "Map request fields to services.AccountUpdateFields struct, parsing DueDate string to *time.Time if provided",
+      "Call h.accountService.UpdateAccount(userID, accountID, updateFields)",
+      "Keep audit logging with the updated field values",
+      "Run go build ./... from apps/api/ to verify compilation"
+    ]
+  },
+  {
+    "id": "3.4",
+    "category": "backend-account-update",
+    "passes": true,
+    "description": "Remove ErrNotCashAccount error code (no longer needed)",
+    "steps": [
+      "Open apps/api/internal/errors/errors.go",
+      "Remove ErrNotCashAccount from the Account errors section",
+      "Search the codebase for any remaining references to ErrNotCashAccount and remove them",
+      "Run go build ./... from apps/api/ to verify compilation"
+    ]
+  },
+  {
+    "id": "3.5",
+    "category": "backend-account-update",
+    "passes": true,
+    "description": "Update and add service tests for generic UpdateAccount",
+    "steps": [
+      "Open apps/api/internal/services/account_service_test.go",
+      "Update existing TestUpdateCashAccount tests to use the new UpdateAccount method signature with AccountUpdateFields struct",
+      "Rename test to TestUpdateAccount and update all subtests:",
+      "Subtest 'updates_cash_account_name_and_description': create cash account, call UpdateAccount with Name and Description pointers, verify fields updated",
+      "Subtest 'updates_investment_account_broker': create investment account, call UpdateAccount with Broker pointer, verify broker updated",
+      "Subtest 'updates_investment_account_number': create investment account, call UpdateAccount with AccountNumber pointer, verify updated",
+      "Subtest 'updates_credit_card_interest_rate': create credit card account, call UpdateAccount with InterestRate pointer, verify updated",
+      "Subtest 'updates_credit_card_credit_limit': create credit card account, call UpdateAccount with CreditLimit pointer, verify updated",
+      "Subtest 'updates_credit_card_due_date': create credit card account, call UpdateAccount with DueDate pointer, verify updated",
+      "Subtest 'ignores_broker_for_cash_account': create cash account, call UpdateAccount with Broker pointer, verify broker is NOT set on the account",
+      "Subtest 'ignores_credit_limit_for_investment_account': create investment account, call UpdateAccount with CreditLimit pointer, verify ignored",
+      "Subtest 'toggles_is_active': create account, call UpdateAccount with IsActive=false, verify account is inactive",
+      "Subtest 'returns_error_for_nonexistent_account': call UpdateAccount with invalid ID, verify ACCOUNT_NOT_FOUND error",
+      "Subtest 'returns_error_for_wrong_user': create account for user A, try to update as user B, verify ACCOUNT_NOT_FOUND error",
+      "Run go test ./internal/services/ -v -run TestUpdateAccount from apps/api/"
+    ]
+  },
+  {
+    "id": "3.6",
+    "category": "backend-account-update",
+    "passes": true,
+    "description": "Update handler tests for generic UpdateAccount",
+    "steps": [
+      "Open apps/api/internal/handlers/account_handler_test.go",
+      "Update mockAccountService: replace updateCashAccountFn with updateAccountFn matching new signature",
+      "Update the UpdateCashAccount mock method to UpdateAccount delegating to updateAccountFn",
+      "Update existing TestAccountHandler_UpdateCashAccount tests to TestAccountHandler_UpdateAccount",
+      "Update test cases to use new request format with pointer fields",
+      "Add subtest 'returns_200_with_investment_fields': send broker and account_number in request, verify mock receives them",
+      "Add subtest 'returns_200_with_credit_card_fields': send interest_rate and credit_limit in request, verify mock receives them",
+      "Run go test ./internal/handlers/ -v -run TestAccountHandler_UpdateAccount from apps/api/"
+    ]
+  },
+  {
+    "id": "3.7",
+    "category": "backend-account-update",
+    "passes": true,
+    "description": "Full backend verification for generic account update",
+    "steps": [
+      "Run ./scripts/check.sh from apps/api/",
+      "All 5 steps must pass: build, vet, lint, test, race",
+      "If any step fails, fix the issues and re-run"
+    ]
+  },
+  {
+    "id": "3.8",
+    "category": "frontend-account-update",
+    "passes": true,
+    "description": "Update frontend UpdateAccountRequest type with expanded fields",
+    "steps": [
+      "Open apps/web/src/types/api.ts",
+      "Update UpdateAccountRequest interface to include all new optional fields: name?: string, description?: string, is_active?: boolean, broker?: string, account_number?: string, interest_rate?: number, due_date?: string, credit_limit?: number",
+      "Run npm run build in apps/web/ to verify no errors"
+    ]
+  },
+  {
+    "id": "3.9",
+    "category": "frontend-account-update",
+    "passes": true,
+    "description": "Update edit account dialog with type-specific editable fields",
+    "steps": [
+      "Open apps/web/src/components/accounts/edit-account-dialog.tsx",
+      "Add state variables for new fields: isActive (boolean), broker (string), accountNumber (string), interestRate (number), dueDate (string), creditLimit (number in cents)",
+      "Initialize all state from account prop in useEffect (sync when account changes)",
+      "Keep Type displayed as read-only Badge, Currency as read-only text",
+      "Add Active/Inactive toggle (Switch or Checkbox) — applies to all account types",
+      "Conditionally render investment-specific fields when account.type === 'investment':",
+      "  - Broker: Input, optional, maxLength 100",
+      "  - Account Number: Input, optional, maxLength 50",
+      "Conditionally render credit card-specific fields when account.type === 'credit_card':",
+      "  - Credit Limit: CurrencyInput component",
+      "  - Interest Rate: Input type='number', 0-100, with '%' label",
+      "  - Due Date: Input type='date', optional",
+      "On submit: build UpdateAccountRequest with only changed fields (compare each field to original account values), call useUpdateAccount",
+      "On success: toast, close dialog",
+      "Run npm run build in apps/web/ to verify no errors"
+    ]
+  },
+  {
+    "id": "3.10",
+    "category": "frontend-account-update",
+    "passes": true,
+    "description": "Frontend verification for generic account update",
+    "steps": [
+      "Run npm run build in apps/web/ to verify full build passes",
+      "Verify edit account dialog compiles with all type-specific field handling"
+    ]
+  },
+  {
+    "id": "4.1",
+    "category": "backend-transaction-edit",
+    "passes": true,
+    "description": "Add TransactionUpdateFields struct and UpdateTransaction to transaction service interface",
+    "steps": [
+      "Open apps/api/internal/services/interfaces.go",
+      "Add TransactionUpdateFields struct with fields: AccountID *uint, CategoryID **uint (double pointer: nil=no change, *nil=clear, *value=set), Type *models.TransactionType, Amount *int64, Description *string, Date *time.Time",
+      "Add to TransactionServicer interface: UpdateTransaction(userID, transactionID uint, updates TransactionUpdateFields) (*models.Transaction, error)",
+      "Run go build ./... from apps/api/ — this WILL fail until the service implements the method"
+    ]
+  },
+  {
+    "id": "4.2",
+    "category": "backend-transaction-edit",
+    "passes": true,
+    "description": "Add transaction editing error codes",
+    "steps": [
+      "Open apps/api/internal/errors/errors.go",
+      "Add to Transaction errors section: ErrTransactionNotEditable = &AppError{Code: \"TRANSACTION_NOT_EDITABLE\", Message: \"This transaction type cannot be edited\", StatusCode: http.StatusBadRequest}",
+      "Add: ErrInvalidTypeChange = &AppError{Code: \"INVALID_TYPE_CHANGE\", Message: \"Cannot change transaction type to or from transfer/investment\", StatusCode: http.StatusBadRequest}",
+      "Run go build ./... from apps/api/ to verify compilation (interface not satisfied yet, that's OK)"
+    ]
+  },
+  {
+    "id": "4.3",
+    "category": "backend-transaction-edit",
+    "passes": true,
+    "description": "Implement UpdateTransaction service method with balance adjustment logic",
+    "steps": [
+      "Open apps/api/internal/services/transaction_service.go",
+      "Add UpdateTransaction method on transactionService",
+      "Step 1: Fetch existing transaction via GetTransactionByID(userID, transactionID)",
+      "Step 2: Reject if transaction.Type is transfer or investment — return ErrTransactionNotEditable",
+      "Step 3: If updates.Type is non-nil, validate: reject if new type is transfer or investment — return ErrInvalidTypeChange",
+      "Step 4: Determine old values: oldAccountID = transaction.AccountID, oldType = transaction.Type, oldAmount = transaction.Amount",
+      "Step 5: Determine new values: newAccountID = oldAccountID (override if updates.AccountID non-nil), newType = oldType (override if updates.Type non-nil), newAmount = oldAmount (override if updates.Amount non-nil)",
+      "Step 6: Fetch old account via accountService.GetAccountByID(userID, oldAccountID)",
+      "Step 7: If account is changing, fetch new account via accountService.GetAccountByID(userID, newAccountID)",
+      "Step 8: Within s.db.Transaction(func(tx *gorm.DB) error { ... }):",
+      "  8a: Reverse old impact on old account — call accountService.UpdateAccountBalance(tx, oldAccount, reverseType(oldType), oldAmount) where reverseType flips income↔expense",
+      "  8b: Apply field updates to transaction record: if updates.AccountID non-nil set transaction.AccountID, if updates.Type non-nil set transaction.Type, if updates.Amount non-nil set transaction.Amount, if updates.Description non-nil set transaction.Description, if updates.Date non-nil set transaction.Date",
+      "  8c: Handle CategoryID double pointer: if updates.CategoryID non-nil, then if *updates.CategoryID is nil set transaction.CategoryID = nil, else set transaction.CategoryID = *updates.CategoryID",
+      "  8d: Save transaction via tx.Save(transaction)",
+      "  8e: Apply new impact on target account — call accountService.UpdateAccountBalance(tx, targetAccount, newType, newAmount) where targetAccount is newAccount if changed, else oldAccount",
+      "Return updated transaction",
+      "Run go build ./... from apps/api/ to verify compilation"
+    ]
+  },
+  {
+    "id": "4.4",
+    "category": "backend-transaction-edit",
+    "passes": true,
+    "description": "Add UpdateTransaction handler with Swagger annotations",
+    "steps": [
+      "Open apps/api/internal/handlers/transaction_handler.go",
+      "Add UpdateTransactionRequest struct: AccountID *uint `json:\"account_id\"`, CategoryID *int64 `json:\"category_id\"`, Type *models.TransactionType `json:\"type\" binding:\"omitempty,transaction_type\"`, Amount *int64 `json:\"amount\" binding:\"omitempty,gt=0\"`, Description *string `json:\"description\" binding:\"omitempty,max=500\"`, Date *string `json:\"date\"`",
+      "Add UpdateTransaction handler method",
+      "Add full Swagger annotations: @Summary 'Update transaction', @Description 'Update an existing transaction. Only income/expense transactions can be edited. Transfer and investment transactions cannot be modified.', @Tags transactions, @Security BearerAuth",
+      "Add @Param for path id and request body, @Success 200, @Failure 400/401/404/500",
+      "Handler body: getUserID(c), parsePathID(c, \"id\"), bind JSON request",
+      "Map request to services.TransactionUpdateFields:",
+      "  - AccountID: direct pass-through",
+      "  - CategoryID: handle nullable JSON. If req.CategoryID is nil, don't change. If req.CategoryID is a pointer to a negative value (like -1) or the JSON field was explicitly null, set to clear (*nil). Otherwise set to the value.",
+      "  - Type: direct pass-through",
+      "  - Amount: direct pass-through",
+      "  - Description: direct pass-through",
+      "  - Date: parse string to *time.Time if provided",
+      "Call h.transactionService.UpdateTransaction(userID, txID, updateFields)",
+      "Log via h.auditService.Log with action UPDATE_TRANSACTION",
+      "Return c.JSON(http.StatusOK, gin.H{\"transaction\": transaction})",
+      "Run go build ./... from apps/api/ to verify compilation"
+    ]
+  },
+  {
+    "id": "4.5",
+    "category": "backend-transaction-edit",
+    "passes": true,
+    "description": "Register PUT /transactions/:id route in main.go",
+    "steps": [
+      "Open apps/api/cmd/api/main.go",
+      "Find the transactions route group",
+      "Add transactions.PUT(\"/:id\", transactionHandler.UpdateTransaction) — place after GET /:id and before DELETE /:id",
+      "Run go build ./... from apps/api/ to verify compilation",
+      "Run go vet ./... from apps/api/ to check for issues"
+    ]
+  },
+  {
+    "id": "4.6",
+    "category": "backend-transaction-edit",
+    "passes": true,
+    "description": "Add service tests for UpdateTransaction",
+    "steps": [
+      "Open apps/api/internal/services/transaction_service_test.go",
+      "Add TestUpdateTransaction function with nested t.Run subtests",
+      "Subtest 'updates_amount_adjusts_balance': create income transaction of 5000 on account (balance=5000), update amount to 3000, verify account balance adjusted to 3000",
+      "Subtest 'updates_type_income_to_expense': create income transaction (balance=5000), change type to expense, verify balance reversed from +5000 to -5000 (net: original_balance - 5000 - 5000)",
+      "Subtest 'updates_type_expense_to_income': create expense transaction, change to income, verify balance adjustment",
+      "Subtest 'updates_account_id': create two accounts, create transaction on account A, update to account B, verify account A balance reversed and account B balance updated",
+      "Subtest 'updates_category': create transaction with category, update to different category, verify category_id changed",
+      "Subtest 'clears_category': create transaction with category, update with CategoryID=**nil, verify category_id is nil",
+      "Subtest 'updates_description': change description, verify updated",
+      "Subtest 'updates_date': change date, verify updated",
+      "Subtest 'rejects_transfer_transaction': create a transfer transaction, attempt to update, verify TRANSACTION_NOT_EDITABLE error",
+      "Subtest 'rejects_investment_transaction': create an investment transaction, attempt to update, verify TRANSACTION_NOT_EDITABLE error",
+      "Subtest 'rejects_type_change_to_transfer': create income transaction, attempt to change type to transfer, verify INVALID_TYPE_CHANGE error",
+      "Subtest 'rejects_type_change_to_investment': create income transaction, attempt to change type to investment, verify INVALID_TYPE_CHANGE error",
+      "Subtest 'user_isolation': create transaction for user A, attempt to update as user B, verify TRANSACTION_NOT_FOUND error",
+      "Each subtest: fresh SetupTestDB + defer TeardownTestDB, create fixtures, verify balance state before and after update",
+      "Run go test ./internal/services/ -v -run TestUpdateTransaction from apps/api/"
+    ]
+  },
+  {
+    "id": "4.7",
+    "category": "backend-transaction-edit",
+    "passes": true,
+    "description": "Add handler tests for UpdateTransaction",
+    "steps": [
+      "Open apps/api/internal/handlers/transaction_handler_test.go",
+      "Add updateTransactionFn field to mockTransactionService struct",
+      "Add UpdateTransaction method on mockTransactionService that delegates to updateTransactionFn",
+      "Ensure var _ services.TransactionServicer = (*mockTransactionService)(nil) compile check still passes",
+      "Add the new PUT route to setupTransactionRouter: auth.PUT(\"/transactions/:id\", handler.UpdateTransaction)",
+      "Add TestTransactionHandler_UpdateTransaction function with nested t.Run subtests",
+      "Subtest 'returns_200_with_updated_transaction': configure mock to return updated transaction, verify 200 + response",
+      "Subtest 'returns_400_for_invalid_amount': send amount=0 or amount=-1, verify 400",
+      "Subtest 'returns_400_for_invalid_type': send type='invalid', verify 400",
+      "Subtest 'returns_404_for_nonexistent_transaction': configure mock to return TRANSACTION_NOT_FOUND, verify 404",
+      "Subtest 'returns_400_for_non_editable_type': configure mock to return TRANSACTION_NOT_EDITABLE, verify 400",
+      "Subtest 'passes_update_fields_to_service': capture args via closure, send partial update, verify correct fields passed",
+      "Run go test ./internal/handlers/ -v -run TestTransactionHandler_UpdateTransaction from apps/api/"
+    ]
+  },
+  {
+    "id": "4.8",
+    "category": "backend-transaction-edit",
+    "passes": true,
+    "description": "Full backend verification for transaction editing",
+    "steps": [
+      "Run ./scripts/check.sh from apps/api/",
+      "All 5 steps must pass: build, vet, lint, test, race",
+      "If any step fails, fix the issues and re-run"
+    ]
+  },
+  {
+    "id": "4.9",
+    "category": "frontend-transaction-edit",
+    "passes": true,
+    "description": "Add UpdateTransactionRequest type and useUpdateTransaction hook",
+    "steps": [
+      "Open apps/web/src/types/api.ts",
+      "Add UpdateTransactionRequest interface: { account_id?: number, category_id?: number | null, type?: TransactionType, amount?: number, description?: string, date?: string }",
+      "Open apps/web/src/hooks/use-transactions.ts",
+      "Import UpdateTransactionRequest from types/api",
+      "Add useUpdateTransaction(id: number) mutation hook: PUT /api/v1/transactions/:id with request data, unwrap TransactionResponse.transaction",
+      "onSuccess: invalidate transactionKeys.all and accountKeys.all (balances may change on multiple accounts)",
+      "Run npm run build in apps/web/ to verify no errors"
+    ]
+  },
+  {
+    "id": "4.10",
+    "category": "frontend-transaction-edit",
+    "passes": true,
+    "description": "Create edit transaction dialog with full editing and delete capabilities",
+    "steps": [
+      "Create apps/web/src/components/transactions/edit-transaction-dialog.tsx as 'use client' component",
+      "Controlled Dialog with props: open, onOpenChange, transaction (Transaction object to edit)",
+      "Import useUpdateTransaction, useDeleteTransaction from hooks, useAccounts, useCategories",
+      "Check transaction type: if transfer or investment, render read-only view with all transaction details displayed as text + a 'Delete Transaction' button. Show info message: 'Transfer/investment transactions cannot be edited. Delete and recreate if needed.'",
+      "For income/expense transactions, render editable form:",
+      "  - Type toggle: Expense / Income buttons (pre-selected from transaction.type)",
+      "  - Account: Select dropdown with all accounts (pre-selected from transaction.account_id)",
+      "  - Amount: CurrencyInput (pre-populated with transaction.amount)",
+      "  - Category: Select dropdown filtered by selected type (pre-selected from transaction.category_id), with 'No category' option",
+      "  - Description: Input (pre-populated)",
+      "  - Date: Input type='date' (pre-populated, parsed from transaction.date)",
+      "Initialize form state from transaction prop using useEffect",
+      "On save: build UpdateTransactionRequest with only changed fields (compare each to original), call useUpdateTransaction(transaction.id)",
+      "On success: toast 'Transaction updated', close dialog",
+      "Error mapping: TRANSACTION_NOT_EDITABLE → 'This transaction type cannot be edited', INVALID_TYPE_CHANGE → 'Cannot change to this transaction type', ACCOUNT_NOT_FOUND → 'Selected account not found', generic fallback",
+      "Add 'Delete Transaction' button (destructive variant) that triggers an AlertDialog confirmation",
+      "Delete confirmation: 'Are you sure you want to delete this transaction? This will reverse its balance impact on the account.'",
+      "On delete confirm: call useDeleteTransaction with transaction.id, on success toast 'Transaction deleted' + close dialog",
+      "Add loading states for both save and delete buttons",
+      "Run npm run build in apps/web/ to verify no errors"
+    ]
+  },
+  {
+    "id": "4.11",
+    "category": "frontend-transaction-edit",
+    "passes": true,
+    "description": "Wire edit transaction dialog into transactions page, account detail page, and dashboard",
+    "steps": [
+      "Open apps/web/src/app/(dashboard)/transactions/page.tsx",
+      "Import EditTransactionDialog from components/transactions/edit-transaction-dialog",
+      "Add useState: editTxOpen (boolean), selectedTransaction (Transaction | null)",
+      "Make transaction rows clickable: add onClick handler that sets selectedTransaction and opens editTxOpen",
+      "Add cursor-pointer className to clickable rows",
+      "Render EditTransactionDialog at bottom of component with transaction={selectedTransaction}",
+      "Open apps/web/src/app/(dashboard)/accounts/[id]/page.tsx",
+      "Same pattern: import, useState, clickable rows, render EditTransactionDialog",
+      "Open apps/web/src/app/(dashboard)/page.tsx",
+      "Same pattern for dashboard recent transaction rows: make them clickable, open EditTransactionDialog",
+      "Need to fetch full transaction data since dashboard only shows partial data — use useTransaction(id) hook when dialog opens, or pass the transaction object directly if it has enough fields",
+      "Run npm run build in apps/web/ to verify no errors"
+    ]
+  },
+  {
+    "id": "4.12",
+    "category": "frontend-transaction-edit",
+    "passes": true,
+    "description": "Frontend verification for transaction editing",
+    "steps": [
+      "Run npm run build in apps/web/ to verify full TypeScript + Next.js build passes",
+      "Verify edit transaction dialog compiles with all field handling",
+      "Verify clickable transaction rows work across all three pages"
+    ]
+  },
+  {
+    "id": "5.1",
+    "category": "frontend-unified-dialog",
+    "passes": true,
+    "description": "Merge transfer functionality into create transaction dialog as inline type option",
+    "steps": [
+      "Open apps/web/src/components/transactions/create-transaction-dialog.tsx",
+      "Import useCreateTransfer from hooks/use-transactions",
+      "Update the type toggle section: add a third button 'Transfer' alongside Expense and Income",
+      "Add state variables for transfer: fromAccountId (string), toAccountId (string) — these replace the single accountId when transfer is selected",
+      "When type is 'transfer':",
+      "  - Hide the single Account dropdown",
+      "  - Show 'From Account' Select dropdown (all accounts, not just cash — filter to cash + credit_card for practical use)",
+      "  - Show 'To Account' Select dropdown (all accounts, exclude selected from-account)",
+      "  - Hide Category field (transfers don't have categories)",
+      "  - Keep Amount, Description, Date fields visible",
+      "When type is 'expense' or 'income':",
+      "  - Show original form unchanged (single Account, Category, Amount, Description, Date)",
+      "  - Hide From/To account fields",
+      "Update handleTypeChange: when changing to/from transfer, reset relevant account selections",
+      "Update form validation: when transfer — validate fromAccountId and toAccountId are set and different + amount > 0. When expense/income — validate accountId + amount > 0 (existing logic)",
+      "Update handleSubmit: if type is 'transfer', call useCreateTransfer with { from_account_id, to_account_id, amount, description, date }. Otherwise call useCreateTransaction as before.",
+      "Update dialog title: 'Add Transaction' for expense/income, could optionally change to 'Transfer Funds' when transfer selected",
+      "Update dialog description to reflect the selected type",
+      "Update submit button text: 'Add Transaction' for expense/income, 'Transfer Funds' for transfer",
+      "Update resetForm to also reset fromAccountId and toAccountId",
+      "Add error mapping for transfer-specific errors: SAME_ACCOUNT_TRANSFER → 'Cannot transfer to the same account', INSUFFICIENT_BALANCE → 'Insufficient balance for this transfer'",
+      "Run npm run build in apps/web/ to verify no errors"
+    ]
+  },
+  {
+    "id": "5.2",
+    "category": "frontend-unified-dialog",
+    "passes": true,
+    "description": "Remove separate transfer button and dialog references from pages",
+    "steps": [
+      "Open apps/web/src/app/(dashboard)/transactions/page.tsx",
+      "Remove the 'Transfer' button from the page header (keep only 'Add Transaction')",
+      "Remove the CreateTransferDialog import",
+      "Remove the transferOpen useState and CreateTransferDialog rendering",
+      "The unified CreateTransactionDialog now handles transfers via the type toggle",
+      "Open apps/web/src/app/(dashboard)/accounts/[id]/page.tsx",
+      "Remove the 'Transfer' button from the account detail header",
+      "Remove the CreateTransferDialog import",
+      "Remove the transferOpen useState and CreateTransferDialog rendering",
+      "The existing CreateTransactionDialog with defaultAccountId prop will work for the unified dialog — when user selects 'Transfer', the defaultAccountId can pre-select the From Account",
+      "Run npm run build in apps/web/ to verify no errors"
+    ]
+  },
+  {
+    "id": "5.3",
+    "category": "frontend-unified-dialog",
+    "passes": true,
+    "description": "Delete the standalone create-transfer-dialog component file",
+    "steps": [
+      "Delete apps/web/src/components/transactions/create-transfer-dialog.tsx",
+      "Search codebase for any remaining imports of CreateTransferDialog or create-transfer-dialog — there should be none after step 5.2",
+      "Run npm run build in apps/web/ to verify no broken imports"
+    ]
+  },
+  {
+    "id": "5.4",
+    "category": "frontend-unified-dialog",
+    "passes": true,
+    "description": "Final verification: full lint and build pass for entire plan",
+    "steps": [
+      "Run npm run lint in apps/web/ to verify no ESLint issues",
+      "Run npm run build in apps/web/ to verify full TypeScript + Next.js build passes",
+      "Run ./scripts/check.sh from apps/api/ to verify backend is still clean",
+      "Verify all 5 features work as intended:",
+      "  1. Dashboard refreshes after creating a transaction (query invalidation fix)",
+      "  2. Credit card accounts can be created with credit_limit, interest_rate, due_date",
+      "  3. All account types can be edited with type-specific fields",
+      "  4. Income/expense transactions can be edited (amount, type, account, category, description, date)",
+      "  5. Transfers are created via the unified Add Transaction dialog (no separate Transfer button)"
+    ]
+  }
+]

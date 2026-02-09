@@ -1,0 +1,94 @@
+## Phase 1: Dashboard Query Invalidation Fix
+
+### PRD 1.1 + 1.2 — DONE
+- Changed `transactionKeys.lists()` → `transactionKeys.all` in useCreateTransaction, useCreateTransfer, useDeleteTransaction
+- `transactionKeys.all` = ["transactions"] which prefix-matches both ["transactions", "list", ...] and ["transactions", "userList", ...] keys
+- Files changed: apps/web/src/hooks/use-transactions.ts
+- Frontend build passes cleanly
+
+## Phase 2: Credit Card Account Type — Backend
+
+### PRD 2.1–2.11 — DONE
+- Migration 000010: adds credit_limit BIGINT DEFAULT 0 to accounts table
+- Model: added AccountTypeCreditCard constant + CreditLimit int64 field, BeforeCreate clears broker/accountNumber
+- Validator: added "credit_card" to account_type validator
+- Service interface: added CreateCreditCardAccount method
+- Service impl: CreateCreditCardAccount creates CC with balance=0, sets credit_limit/interest_rate/due_date
+- Balance logic: credit card + expense → balance increases (adds debt), credit card + income → balance decreases (payment)
+- Transfer validation: skip insufficient balance check for credit card source accounts
+- Handler: CreateCreditCardAccountRequest struct, parses optional due_date (RFC3339 or date-only), full Swagger annotations
+- Route: POST /accounts/credit-card registered in main.go
+- Fixture: CreateTestCreditCardAccount helper in testutil
+- Service tests: TestCreateCreditCardAccount (creation, default currency, empty name), TestUpdateAccountBalance_CreditCard (expense increases, income decreases, cash unchanged)
+- Handler tests: TestAccountHandler_CreateCreditCardAccount (201 success, 400 missing name, 400 negative credit limit, 401 no auth)
+- Files changed: migrations/000010_*.sql (new), models/account.go, validator/validator.go, services/interfaces.go, services/account_service.go, services/account_service_test.go, services/transaction_service.go, handlers/account_handler.go, handlers/account_handler_test.go, testutil/fixtures.go, cmd/api/main.go
+- All checks pass: build, vet, lint, test, test -race
+
+## Phase 2: Credit Card Account Type — Frontend
+
+### PRD 2.12–2.16 — DONE
+- Types: added "credit_card" to AccountType union, credit_limit to Account, CreateCreditCardAccountRequest to api.ts
+- Hook: useCreateCreditCardAccount mutation — POST /api/v1/accounts/credit-card
+- Create dialog: third tab "Credit Card" with name, description, currency, credit limit (CurrencyInput), interest rate (%), due date fields
+- Dashboard: SummaryCards now 4 cards — Net Worth (cash+investment-cc), Cash, Investments, Credit Cards (orange text for liability)
+- ACCOUNT_TYPE_LABELS updated in all 4 files: page.tsx (dashboard), accounts/page.tsx, accounts/[id]/page.tsx, edit-account-dialog.tsx
+- Skeleton grid updated to 4 columns
+- Files changed: types/models.ts, types/api.ts, hooks/use-accounts.ts, components/accounts/create-account-dialog.tsx, app/(dashboard)/page.tsx, app/(dashboard)/accounts/page.tsx, app/(dashboard)/accounts/[id]/page.tsx, components/accounts/edit-account-dialog.tsx
+- Frontend build passes, backend check.sh passes
+
+## Phase 3: Generic Account Update
+
+### PRD 3.1–3.7 (Backend) — DONE
+- Interface: added AccountUpdateFields struct (Name, Description, IsActive, Broker, AccountNumber, InterestRate, DueDate, CreditLimit — all pointers), replaced UpdateCashAccount with UpdateAccount(userID, accountID, updates) on AccountServicer
+- Service: UpdateAccount fetches account, builds updates map from non-nil fields, type-specific: investment gets Broker/AccountNumber, credit_card gets InterestRate/DueDate/CreditLimit, all get Name/Description/IsActive. Reloads after save.
+- Handler: UpdateAccountRequest with all pointer fields, renamed UpdateCashAccount→UpdateAccount, parses due_date string
+- Errors: removed ErrNotCashAccount (no longer needed)
+- Route: accounts.PUT("/:id") now calls UpdateAccount (updated main.go + integration setup)
+- Service tests: TestUpdateAccount with 11 subtests — cash name/desc, investment broker/account_number, credit card interest_rate/credit_limit/due_date, ignores irrelevant fields, toggles is_active, nonexistent/wrong user errors
+- Handler tests: TestAccountHandler_UpdateAccount with 4 subtests — name update, investment fields, credit card fields, 404 not found
+- Files changed: services/interfaces.go, services/account_service.go, services/account_service_test.go, handlers/account_handler.go, handlers/account_handler_test.go, errors/errors.go, cmd/api/main.go, tests/integration/setup_test.go
+
+### PRD 3.8–3.10 (Frontend) — DONE
+- Types: expanded UpdateAccountRequest with is_active, broker, account_number, interest_rate, due_date, credit_limit
+- Edit dialog: added isActive checkbox, investment fields (broker, account_number), credit card fields (credit limit CurrencyInput, interest rate %, due date). Only sends changed fields.
+- Files changed: types/api.ts, components/accounts/edit-account-dialog.tsx
+- Backend check.sh passes, frontend build passes
+
+## Phase 4: Transaction Editing — Backend
+
+### PRD 4.1–4.8 — DONE
+- Interface: added TransactionUpdateFields struct (AccountID, CategoryID **uint double pointer, Type, Amount, Description, Date — all pointers) + UpdateTransaction on TransactionServicer
+- Errors: added ErrTransactionNotEditable (TRANSACTION_NOT_EDITABLE, 400) and ErrInvalidTypeChange (INVALID_TYPE_CHANGE, 400)
+- Service: UpdateTransaction fetches tx, rejects transfer/investment types, rejects type change to transfer/investment, within DB transaction: reverses old balance impact on old account, applies field updates, applies new balance impact on target account. Uses reverseType() helper to flip income↔expense.
+- Handler: UpdateTransactionRequest with pointer fields, CategoryID as *int64 (nil=don't change, <=0=clear, >0=set), maps to TransactionUpdateFields with double pointer, parses date via parseFlexibleTime. Full Swagger annotations.
+- Route: transactions.PUT("/:id", transactionHandler.UpdateTransaction) in main.go
+- Service tests: TestUpdateTransaction with 12 subtests — updates_amount_adjusts_balance, updates_type_income_to_expense, updates_type_expense_to_income, updates_account_id (two accounts), updates_category, clears_category, updates_description_and_date, rejects_transfer_transaction, rejects_investment_transaction, rejects_type_change_to_transfer, rejects_type_change_to_investment, user_isolation
+- Handler tests: TestTransactionHandler_UpdateTransaction with 6 subtests — 200 success, 400 invalid amount, 400 invalid type, 404 not found, 400 non-editable, passes fields to service
+- Files changed: services/interfaces.go, services/transaction_service.go, services/transaction_service_test.go, handlers/transaction_handler.go, handlers/transaction_handler_test.go, errors/errors.go, cmd/api/main.go
+- All checks pass: build, vet, lint (0 issues), test, test -race
+
+## Phase 4: Transaction Editing — Frontend
+
+### PRD 4.9–4.12 — DONE
+- Types: added UpdateTransactionRequest to api.ts (account_id, category_id nullable, type, amount, description, date)
+- Hook: useUpdateTransaction(id) mutation — PUT /api/v1/transactions/:id, invalidates transactionKeys.all + accountKeys.all
+- EditTransactionDialog: full editing for income/expense (type toggle, account, amount, category filtered by type, description, date), read-only + delete for transfer/investment. Only sends changed fields. Delete confirmation via AlertDialog.
+- Error mapping: TRANSACTION_NOT_EDITABLE, INVALID_TYPE_CHANGE, ACCOUNT_NOT_FOUND
+- Wired into: transactions/page.tsx, accounts/[id]/page.tsx, dashboard page.tsx — clickable rows with cursor-pointer
+- Installed ShadCN alert-dialog component
+- Files changed: types/api.ts, hooks/use-transactions.ts, components/transactions/edit-transaction-dialog.tsx (new), components/ui/alert-dialog.tsx (new), app/(dashboard)/transactions/page.tsx, app/(dashboard)/accounts/[id]/page.tsx, app/(dashboard)/page.tsx
+- Frontend build passes, backend check.sh passes
+
+## Phase 5: Unified Transaction Dialog with Transfer
+
+### PRD 5.1–5.4 — DONE
+- Merged transfer into create-transaction-dialog as third type toggle (Expense | Income | Transfer)
+- Transfer mode: shows From Account + To Account dropdowns, hides Category, calls useCreateTransfer
+- Expense/Income mode: unchanged behavior, calls useCreateTransaction
+- Dialog title/description/submit button text adapt dynamically to selected type
+- Error mapping includes SAME_ACCOUNT and INSUFFICIENT_BALANCE for transfers
+- Removed separate Transfer button from transactions/page.tsx and accounts/[id]/page.tsx
+- Removed transferDialogOpen state + CreateTransferDialog rendering from both pages
+- Deleted create-transfer-dialog.tsx (absorbed into unified dialog)
+- Files changed: components/transactions/create-transaction-dialog.tsx, components/transactions/create-transfer-dialog.tsx (deleted), app/(dashboard)/transactions/page.tsx, app/(dashboard)/accounts/[id]/page.tsx
+- Frontend lint + build pass, backend check.sh passes
