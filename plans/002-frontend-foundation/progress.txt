@@ -1,0 +1,242 @@
+# Frontend Foundation Progress
+
+## Task 1.1: Install dependencies and initialize ShadCN UI
+- Status: COMPLETE
+- ShadCN init: New York style, neutral base color, Tailwind v4
+- Installed: @tanstack/react-query, lucide-react
+- ShadCN components: button, input, label, card, dialog, form, dropdown-menu, sidebar, sonner, separator, avatar, badge, skeleton, table, select, tabs, popover, command, sheet (+ auto-added tooltip, use-mobile hook)
+- Note: `toast` component deprecated in shadcn, using `sonner` instead
+- Created: src/components/ui/ (20 files), src/lib/utils.ts, src/hooks/use-mobile.ts, components.json
+- Build passes cleanly
+
+## Task 1.2: Create TypeScript type definitions matching backend API
+- Status: COMPLETE
+- Created src/types/models.ts: BaseModel, User, Account, Transaction, Category, Budget, BudgetProgress, Investment, InvestmentTransaction, PortfolioSummary + all enum types (AccountType, TransactionType, CategoryType, BudgetPeriod, AssetType, InvestmentTransactionType)
+- Created src/types/api.ts: PageResponse<T>, PaginationParams, ApiError, LoginRequest, RegisterRequest, RefreshRequest, AuthResponse, ProfileResponse, CreateCashAccountRequest, CreateInvestmentAccountRequest, UpdateAccountRequest, CreateTransactionRequest, CreateTransferRequest, TransactionFilters, CreateCategoryRequest, UpdateCategoryRequest
+- Verified against backend Go models (JSON tags, omitempty, pointer types -> optional/null)
+- Added ProfileResponse wrapper type matching backend's `{ "user": {...} }` pattern
+- All monetary fields documented as cents; relationship fields marked optional
+- Build + lint pass cleanly
+
+## Task 1.3: Create typed API client with fetch wrapper
+- Status: COMPLETE
+- Created src/lib/api-client.ts
+- Generic get<T>(), post<T>(), put<T>(), del<T>() methods using native fetch
+- Base URL from NEXT_PUBLIC_API_URL env var
+- Auto Authorization: Bearer header from stored access token
+- 401 handling: attempt token refresh, retry original request once; if refresh fails, clear tokens + redirect to /login
+- Deduplicates concurrent refresh attempts (single refreshPromise)
+- Typed error parsing: parses backend { error: { code, message } } into ApiClientError class
+- Query param serialization (omits undefined/null values)
+- Handles 204 No Content responses
+- Token store exported separately (getAccessToken, setAccessToken, getRefreshToken, setRefreshToken, clearTokens) for auth-provider use
+- localStorage keys prefixed: kuberan_access_token, kuberan_refresh_token
+- SSR-safe: token getters return null on server (typeof window === "undefined")
+- Build + lint pass cleanly
+
+## Task 1.4: Create auth infrastructure (token storage, context, hook)
+- Status: COMPLETE
+- Created src/lib/auth.ts: re-exports tokenStore utilities from api-client, JWT payload parsing (parseJwtPayload), isTokenExpired with buffer, isAuthenticated check, auth cookie helpers (setAuthCookie/clearAuthCookie) for middleware route protection
+- Created src/providers/auth-provider.tsx: AuthContext with user/isLoading/isAuthenticated state; on mount restores session via GET /profile; exposes login(), register(), logout(); manages auth cookie alongside localStorage tokens
+- Created src/hooks/use-auth.ts: convenience hook wrapping useContext(AuthContext) with null guard
+- Decision: auth cookie (kuberan_auth=1) is a non-sensitive flag for Next.js middleware fast redirects; real auth uses localStorage JWT tokens
+- Decision: re-export tokenStore from auth.ts rather than duplicate; auth.ts adds JWT parsing + cookie logic on top
+- Files: src/lib/auth.ts, src/providers/auth-provider.tsx, src/hooks/use-auth.ts
+- Build + lint pass cleanly
+
+## Task 1.5: Create React Query provider
+- Status: COMPLETE
+- Created src/providers/query-provider.tsx as client component
+- QueryClient configured: staleTime 5min, retry 1
+- Uses useState(() => new QueryClient(...)) pattern to avoid re-creating on re-render
+- Wraps children with QueryClientProvider
+- Build + lint pass cleanly
+
+## Task 1.6: Create app shell and layout structure
+- Status: COMPLETE
+- Updated src/app/layout.tsx: metadata (title "Kuberan", desc "Personal finance tracker"), wrapped children with QueryProvider > AuthProvider, added Toaster (sonner)
+- Created src/components/layout/app-sidebar.tsx: ShadCN Sidebar with 6 nav items (Dashboard, Accounts, Transactions, Categories, Budgets, Investments) using lucide icons, active state via pathname matching
+- Created src/components/layout/app-header.tsx: SidebarTrigger + separator + user dropdown (avatar with initials, name, email label, logout action)
+- Created src/app/(dashboard)/layout.tsx: protected layout with SidebarProvider + AppSidebar + SidebarInset(AppHeader + main), redirects to /login if not authenticated, loading skeleton while auth initializing
+- Created src/app/(auth)/layout.tsx: centered card layout, redirects to / if already authenticated
+- Moved page.tsx from app/ to app/(dashboard)/, replaced boilerplate with simple dashboard placeholder
+- Decision: Toaster uses next-themes useTheme() which defaults gracefully without ThemeProvider (returns "system")
+- Decision: auth protection is client-side in layout (redirect via router.replace); middleware (task 2.3) will add server-side fast redirect later
+- Files: src/app/layout.tsx, src/components/layout/app-sidebar.tsx, src/components/layout/app-header.tsx, src/app/(dashboard)/layout.tsx, src/app/(dashboard)/page.tsx, src/app/(auth)/layout.tsx
+- Build + lint pass cleanly
+
+## Task 1.7: Create formatting utilities and currency input component
+- Status: COMPLETE
+- Created src/lib/format.ts: formatCurrency(cents, currency?), formatDate(iso), formatDateTime(iso), formatPercentage(value)
+- formatCurrency uses Intl.NumberFormat for locale-aware formatting, converts cents to dollars
+- formatDate/formatDateTime use toLocaleDateString with en-US locale
+- Created src/components/ui/currency-input.tsx: controlled component accepting/storing cents, displays formatted dollars
+- CurrencyInput: regex validation for digits + single decimal + max 2 decimal places, formats on blur, currency symbol prefix via absolute-positioned span
+- Syncs display when value prop changes externally, prevents stale internal state
+- Files: src/lib/format.ts, src/components/ui/currency-input.tsx
+- Build + lint pass cleanly
+
+## Task 1.8: Set up environment configuration
+- Status: COMPLETE
+- Created apps/web/.env.local with NEXT_PUBLIC_API_URL=http://localhost:8080
+- Verified docker-compose.yml already has NEXT_PUBLIC_API_URL in web service environment
+- .env* is gitignored in apps/web/.gitignore
+
+## Task 2.1: Create login page
+- Status: COMPLETE
+- Created src/app/(auth)/login/page.tsx
+- Form: email + password fields using ShadCN Input/Label/Button/Card
+- Client-side validation: email required + format regex, password required + min 8 chars
+- Submit calls login() from useAuth() hook, redirects to / on success
+- Error handling: maps ApiClientError codes (INVALID_CREDENTIALS, ACCOUNT_LOCKED) to user-friendly messages
+- Error display: destructive-colored banner above form
+- Loading state: submit button disabled + "Signing in..." text while submitting
+- Link to /register at bottom
+- Uses auth layout (centered card, max-w-md, redirects if already authenticated)
+- Files: src/app/(auth)/login/page.tsx
+- Build + lint pass cleanly
+
+## Task 2.2: Create register page
+- Status: COMPLETE
+- Created src/app/(auth)/register/page.tsx
+- Form: first name, last name (side-by-side grid), email, password, confirm password
+- Client-side validation: email required + format + max 255, password required + min 8 + max 128, confirm must match, names max 100
+- Submit calls register() from useAuth() with RegisterRequest (empty strings sent as undefined)
+- Error handling: maps DUPLICATE_EMAIL to user-friendly message, generic fallback
+- Error display: same destructive-colored banner pattern as login
+- Loading state: submit button disabled + "Creating account..." text
+- Link to /login at bottom
+- autoComplete attributes: given-name, family-name, email, new-password
+- Follows identical patterns to login page (Card layout, getErrorMessage, state management)
+- Files: src/app/(auth)/register/page.tsx
+- Build + lint pass cleanly
+
+## Task 2.3: Create Next.js middleware for route protection
+- Status: COMPLETE
+- Created src/middleware.ts
+- Matcher: regex excludes _next/static, _next/image, favicon.ico, sitemap.xml, robots.txt, api routes
+- Checks for kuberan_auth cookie (flag cookie set by auth-provider, not sensitive)
+- Unauthenticated on protected route → redirect to /login
+- Authenticated on /login or /register → redirect to /
+- AUTH_ROUTES array for clean membership check
+- Real auth validation remains client-side in AuthProvider; middleware provides fast server-side redirect to avoid page flash
+- Files: src/middleware.ts
+- Build + lint pass cleanly
+
+## Task 3.1: Create React Query service hooks
+- Status: COMPLETE
+- Created src/hooks/use-accounts.ts: useAccounts(params?), useAccount(id), useCreateCashAccount(), useCreateInvestmentAccount(), useUpdateAccount(id)
+- Created src/hooks/use-transactions.ts: useAccountTransactions(accountId, filters?), useTransaction(id), useCreateTransaction(), useCreateTransfer(), useDeleteTransaction()
+- Created src/hooks/use-categories.ts: useCategories(params?)
+- Created src/hooks/use-profile.ts: useProfile()
+- Added wrapper response types to src/types/api.ts: AccountResponse, TransactionResponse, CategoryResponse, DeleteResponse (backend wraps single items in object key)
+- Query key factories exported from each hook file (accountKeys, transactionKeys, categoryKeys, profileKeys) for cache invalidation
+- All mutations invalidate relevant queries: creating transaction invalidates account + transaction lists; transfer invalidates both account details; delete invalidates all transactions + accounts
+- Hooks unwrap backend response wrappers (e.g., `res.account`) so consumers get clean typed objects
+- Spread operator on query params to satisfy Record<string,...> type constraint in apiClient.get
+- Files: src/hooks/use-accounts.ts, src/hooks/use-transactions.ts, src/hooks/use-categories.ts, src/hooks/use-profile.ts, src/types/api.ts (modified)
+- Build + lint + tsc --noEmit pass cleanly
+
+## Task 3.2: Create dashboard page with account summary and recent transactions
+- Status: COMPLETE
+- Replaced placeholder page.tsx with full dashboard implementation
+- Welcome header: shows "Welcome back, {firstName}" or "Dashboard" fallback
+- Total balance card: sums all account balances, shows account count
+- Account cards grid: up to 6 accounts in responsive grid (sm:2, lg:3 cols), type badge, balance, click navigates to /accounts/[id]; "View all" link if >6
+- Recent transactions: last 5 from first account via useAccountTransactions hook, colored icons + amounts per type (income=green, expense=red, transfer=blue, investment=purple)
+- Loading: DashboardSkeleton component while accounts load, separate skeleton for transactions
+- Empty states: "Get Started" card with Create Account CTA when no accounts; "No transactions yet" text
+- Quick actions: "Add Account" button linking to /accounts page
+- Transaction type config record maps type to label, color, icon for reuse
+- Files: src/app/(dashboard)/page.tsx
+- Build + lint pass cleanly
+
+## Task 3.3: Create accounts list page
+- Status: COMPLETE
+- Created src/app/(dashboard)/accounts/page.tsx
+- Page header with "Accounts" title + "Create Account" button (Plus icon)
+- ShadCN Table with columns: Name (clickable link to /accounts/[id]), Type (badge), Balance (right-aligned, formatted), Currency, Status (Active/Inactive badge), Created (formatted date)
+- Loading state: AccountsTableSkeleton with 5 skeleton rows
+- Empty state: dashed border card with "No accounts yet" message + CTA button
+- Pagination info shown when totalPages > 1 (page X of Y)
+- Follows dashboard patterns: ACCOUNT_TYPE_LABELS record, useAccounts() hook, formatCurrency/formatDate utils
+- Create Account button now wired to dialog (task 3.4)
+- Files: src/app/(dashboard)/accounts/page.tsx
+- Build + lint pass cleanly
+
+## Task 3.4: Create account dialog with cash and investment tabs
+- Status: COMPLETE
+- Created src/components/accounts/create-account-dialog.tsx
+- ShadCN Dialog with controlled open/onOpenChange props
+- Tabs: Cash Account | Investment Account
+- Cash tab: name (required, max 100), description (opt, max 500), currency select (7 currencies), initial balance (CurrencyInput in cents)
+- Investment tab: name, description, currency, broker (opt, max 100), account number (opt, max 50)
+- Client-side validation matching backend constraints
+- Uses useCreateCashAccount / useCreateInvestmentAccount mutations
+- On success: sonner toast with account name, close dialog, form reset
+- On error: inline destructive banner (same pattern as auth pages)
+- Wired into accounts page: both header button and empty state button open dialog via useState
+- Files: src/components/accounts/create-account-dialog.tsx, src/app/(dashboard)/accounts/page.tsx (modified)
+- Build + lint pass cleanly
+
+## Task 3.5: Create account detail page with transactions table and filters
+- Status: COMPLETE
+- Created src/app/(dashboard)/accounts/[id]/page.tsx
+- Account header: name, type badge (Cash/Investment/Debt), active status badge, balance (formatted with currency), description, broker/account number for investment accounts
+- Back navigation: ghost button linking to /accounts
+- Transactions section in Card:
+  - Header with transaction count, Add Transaction button (disabled placeholder for task 3.6), Transfer button for cash accounts (disabled placeholder for task 3.7)
+  - Filter bar (4-col grid): from date, to date, type dropdown (all/income/expense/transfer/investment), category dropdown (loaded from categories API)
+  - Transactions table: Date, Description (with type icon), Type badge (colored), Category, Amount (signed, colored by type)
+  - Pagination with Previous/Next buttons and page indicator
+  - Empty state: different message for filtered vs unfiltered
+- Investment accounts: placeholder Card for future investments tab
+- Not-found state: message + back button if account doesn't exist
+- Loading state: AccountDetailSkeleton with skeleton rows
+- Reuses patterns: TRANSACTION_TYPE_CONFIG record, ACCOUNT_TYPE_LABELS, formatCurrency/formatDate
+- Files: src/app/(dashboard)/accounts/[id]/page.tsx
+- Build + lint pass cleanly
+
+## Task 3.6: Create transaction dialog
+- Status: COMPLETE
+- Created src/components/transactions/create-transaction-dialog.tsx
+- ShadCN Dialog with controlled open/onOpenChange props
+- Fields: account dropdown (hidden if defaultAccountId provided), type toggle (expense/income), amount (CurrencyInput in cents), category dropdown (filtered by type), description, date picker
+- Category dropdown filters by transaction type: income type shows income categories, expense type shows expense categories; resets when type changes
+- "No category" option with value="none" handled properly in submit (checked !== "none" before converting)
+- Client-side validation: account required, amount > 0
+- Uses useCreateTransaction mutation; on success: sonner toast, close dialog, form reset
+- On error: inline destructive banner (same pattern as other dialogs)
+- Wired into account detail page: replaced disabled placeholder button with working button + dialog with defaultAccountId
+- Wired into dashboard page: added "Add Transaction" quick action button + dialog (no defaultAccountId, shows account selector)
+- Files: src/components/transactions/create-transaction-dialog.tsx (new), src/app/(dashboard)/accounts/[id]/page.tsx (modified), src/app/(dashboard)/page.tsx (modified)
+- Build + lint pass cleanly
+
+## Task 3.7: Create transfer dialog
+- Status: COMPLETE
+- Created src/components/transactions/create-transfer-dialog.tsx
+- ShadCN Dialog with controlled open/onOpenChange + defaultFromAccountId props
+- Fields: from account dropdown (pre-selected if defaultFromAccountId, disabled), to account dropdown (excludes from account), amount (CurrencyInput in cents), description, date picker
+- Filters to cash + active accounts only for both dropdowns
+- Validation: from and to required, from !== to, amount > 0
+- Error handling: maps SAME_ACCOUNT, INSUFFICIENT_BALANCE to user-friendly messages, generic fallback via ApiClientError
+- Uses useCreateTransfer mutation; on success: sonner toast, close dialog, form reset
+- Resets to-account if it equals newly selected from-account
+- Wired into account detail page: replaced disabled Transfer button with working button + dialog with defaultFromAccountId; only shown for cash accounts
+- Files: src/components/transactions/create-transfer-dialog.tsx (new), src/app/(dashboard)/accounts/[id]/page.tsx (modified)
+- Build + lint pass cleanly
+
+## Task 3.8: Final verification: full build and lint pass
+- Status: COMPLETE
+- `npm run lint` → ✔ No ESLint warnings or errors
+- `npm run build` → ✓ Compiled successfully, all 6 pages generated
+- Build output: 6 routes (/, /accounts, /accounts/[id], /login, /register, /_not-found) + middleware
+- Static pages: /, /accounts, /login, /register; Dynamic: /accounts/[id]
+- File structure verified: 10 app pages, 5 custom components, 6 hooks, 4 lib files, 2 providers, 2 type files, 1 middleware — matches plan exactly
+- All 18 PRD tasks (1.1-3.8) complete and passing
+
+## Summary
+- Plan 002-frontend-foundation fully complete
+- All 3 phases implemented: Foundation Layer, Auth Pages, Dashboard & Accounts
+- Total custom files: ~30 (excluding ShadCN UI components)
+- Zero lint warnings, zero build errors, TypeScript strict mode throughout

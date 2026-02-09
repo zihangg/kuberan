@@ -1,0 +1,284 @@
+[
+  {
+    "id": "1.1",
+    "category": "foundation",
+    "description": "Install dependencies and initialize ShadCN UI",
+    "passes": true,
+    "steps": [
+      "Run npx shadcn@latest init in apps/web/ (New York style, default theme)",
+      "Install @tanstack/react-query via npm",
+      "Install lucide-react via npm",
+      "Install ShadCN components: button, input, label, card, dialog, form, dropdown-menu, sidebar, toast, sonner, separator, avatar, badge, skeleton, table, select, tabs, popover, command, sheet",
+      "Verify src/components/ui/ directory is created with all components",
+      "Verify src/lib/utils.ts is created with cn() utility",
+      "Run npm run build to verify no errors"
+    ]
+  },
+  {
+    "id": "1.2",
+    "category": "foundation",
+    "description": "Create TypeScript type definitions matching backend API",
+    "passes": true,
+    "steps": [
+      "Create src/types/models.ts with all domain model interfaces: User, Account, Transaction, Category, Budget, BudgetProgress, Investment, InvestmentTransaction, PortfolioSummary",
+      "Create src/types/api.ts with API types: PageResponse<T>, PaginationParams, ApiError, LoginRequest, RegisterRequest, AuthResponse, RefreshRequest, CreateCashAccountRequest, CreateInvestmentAccountRequest, UpdateAccountRequest, CreateTransactionRequest, CreateTransferRequest, TransactionFilters, CreateCategoryRequest, UpdateCategoryRequest",
+      "Ensure all monetary fields are typed as number with comments indicating cents",
+      "Ensure all enum types match backend exactly (AccountType, TransactionType, CategoryType, BudgetPeriod, AssetType)",
+      "Run npm run build to verify no type errors"
+    ]
+  },
+  {
+    "id": "1.3",
+    "category": "foundation",
+    "description": "Create typed API client with fetch wrapper",
+    "passes": true,
+    "steps": [
+      "Create src/lib/api-client.ts",
+      "Implement base URL from NEXT_PUBLIC_API_URL environment variable",
+      "Implement generic get<T>(), post<T>(), put<T>(), del<T>() methods",
+      "Add automatic Authorization: Bearer header from stored access token",
+      "Add automatic 401 handling with token refresh and request retry",
+      "Add typed error parsing matching backend { error: { code, message } } format",
+      "Add query parameter serialization for GET requests with filters/pagination",
+      "If refresh fails, clear tokens and redirect to /login",
+      "Run npm run build to verify no errors"
+    ]
+  },
+  {
+    "id": "1.4",
+    "category": "foundation",
+    "description": "Create auth infrastructure (token storage, context, hook)",
+    "passes": true,
+    "steps": [
+      "Create src/lib/auth.ts with getAccessToken, setAccessToken, getRefreshToken, setRefreshToken, clearTokens using localStorage",
+      "Add JWT claims parsing helper for expiry checking",
+      "Create src/providers/auth-provider.tsx as client component with AuthContext",
+      "Implement state: user, isLoading, isAuthenticated",
+      "On mount: check stored tokens, fetch profile (GET /api/v1/profile), handle refresh if needed",
+      "Expose login(), register(), logout(), refreshAuth() methods via context",
+      "Create src/hooks/use-auth.ts convenience hook consuming AuthContext",
+      "Run npm run build to verify no errors"
+    ]
+  },
+  {
+    "id": "1.5",
+    "category": "foundation",
+    "description": "Create React Query provider",
+    "passes": true,
+    "steps": [
+      "Create src/providers/query-provider.tsx as client component",
+      "Configure QueryClient with staleTime: 5 minutes, retry: 1",
+      "Export QueryProvider wrapping QueryClientProvider",
+      "Run npm run build to verify no errors"
+    ]
+  },
+  {
+    "id": "1.6",
+    "category": "foundation",
+    "description": "Create app shell and layout structure",
+    "passes": true,
+    "steps": [
+      "Update src/app/layout.tsx: change metadata to Kuberan, wrap children with QueryProvider and AuthProvider, add Toaster",
+      "Create src/app/(auth)/layout.tsx: centered card layout for login/register, redirect if authenticated",
+      "Create src/app/(dashboard)/layout.tsx: sidebar + header layout, protected (redirect if not authenticated), loading skeleton",
+      "Create src/components/layout/app-sidebar.tsx: ShadCN Sidebar with nav items (Dashboard, Accounts, Transactions, Categories, Budgets, Investments) with lucide icons",
+      "Create src/components/layout/app-header.tsx: user dropdown with avatar/name/logout",
+      "Remove default create-next-app boilerplate from page.tsx",
+      "Run npm run build to verify no errors"
+    ]
+  },
+  {
+    "id": "1.7",
+    "category": "foundation",
+    "description": "Create formatting utilities and currency input component",
+    "passes": true,
+    "steps": [
+      "Create src/lib/format.ts with formatCurrency(cents, currency?), formatDate(iso), formatDateTime(iso), formatPercentage(value)",
+      "Create src/components/ui/currency-input.tsx: accepts/stores cents, displays formatted dollars, handles decimal input, currency symbol prefix",
+      "Run npm run build to verify no errors"
+    ]
+  },
+  {
+    "id": "1.8",
+    "category": "foundation",
+    "description": "Set up environment configuration",
+    "passes": true,
+    "steps": [
+      "Create apps/web/.env.local with NEXT_PUBLIC_API_URL=http://localhost:8080",
+      "Verify NEXT_PUBLIC_API_URL is already set in docker-compose.yml",
+      "Run npm run build to verify no errors"
+    ]
+  },
+  {
+    "id": "2.1",
+    "category": "auth",
+    "description": "Create login page",
+    "passes": true,
+    "steps": [
+      "Create src/app/(auth)/login/page.tsx",
+      "Add email and password form fields using ShadCN Input/Label/Button",
+      "Add client-side validation: email required + format, password required + min 8",
+      "Submit calls login() from auth context",
+      "Display errors: INVALID_CREDENTIALS, ACCOUNT_LOCKED, generic fallback",
+      "Add link to register page",
+      "On success: redirect to / (dashboard)",
+      "Add loading state on submit button",
+      "Run npm run build to verify no errors"
+    ]
+  },
+  {
+    "id": "2.2",
+    "category": "auth",
+    "description": "Create register page",
+    "passes": true,
+    "steps": [
+      "Create src/app/(auth)/register/page.tsx",
+      "Add form fields: email, password, confirm password, first name, last name",
+      "Add client-side validation: email format + max 255, password min 8 + max 128, confirm match, names max 100",
+      "Submit calls register() from auth context",
+      "Display errors: DUPLICATE_EMAIL, generic fallback",
+      "Add link to login page",
+      "On success: auto-login, redirect to /",
+      "Run npm run build to verify no errors"
+    ]
+  },
+  {
+    "id": "2.3",
+    "category": "auth",
+    "description": "Create Next.js middleware for route protection",
+    "passes": true,
+    "steps": [
+      "Create src/middleware.ts",
+      "Configure matcher to exclude /login, /register, /_next/, /api/, static files",
+      "Check for auth cookie/token presence",
+      "If no token on protected route: redirect to /login",
+      "If token exists on /login or /register: redirect to /",
+      "Run npm run build to verify no errors"
+    ]
+  },
+  {
+    "id": "3.1",
+    "category": "dashboard",
+    "description": "Create React Query service hooks for accounts, transactions, categories, profile",
+    "passes": true,
+    "steps": [
+      "Create src/hooks/use-accounts.ts: useAccounts(), useAccount(id), useCreateCashAccount(), useCreateInvestmentAccount(), useUpdateAccount()",
+      "Create src/hooks/use-transactions.ts: useAccountTransactions(accountId, filters), useTransaction(id), useCreateTransaction(), useCreateTransfer(), useDeleteTransaction()",
+      "Create src/hooks/use-categories.ts: useCategories(params)",
+      "Create src/hooks/use-profile.ts: useProfile()",
+      "All mutations invalidate relevant queries on success",
+      "Run npm run build to verify no errors"
+    ]
+  },
+  {
+    "id": "3.2",
+    "category": "dashboard",
+    "description": "Create dashboard page with account summary and recent transactions",
+    "passes": true,
+    "steps": [
+      "Create src/app/(dashboard)/page.tsx",
+      "Add welcome header with user's first name",
+      "Add total balance card summing all account balances",
+      "Add account cards grid (name, type badge, balance) with click to navigate",
+      "Add recent transactions section (last 5 from first account)",
+      "Add quick action buttons: Add Account, Add Transaction",
+      "Add loading skeletons while data loads",
+      "Add empty states for no accounts / no transactions",
+      "Run npm run build to verify no errors"
+    ]
+  },
+  {
+    "id": "3.3",
+    "category": "dashboard",
+    "description": "Create accounts list page",
+    "passes": true,
+    "steps": [
+      "Create src/app/(dashboard)/accounts/page.tsx",
+      "Add page header with Create Account button",
+      "Add accounts table/cards: Name, Type badge, Balance, Currency, Status, Created",
+      "Add click to navigate to /accounts/[id]",
+      "Add pagination controls",
+      "Add empty state: No accounts yet",
+      "Run npm run build to verify no errors"
+    ]
+  },
+  {
+    "id": "3.4",
+    "category": "dashboard",
+    "description": "Create account dialog with cash and investment tabs",
+    "passes": true,
+    "steps": [
+      "Create src/components/accounts/create-account-dialog.tsx",
+      "Add ShadCN Dialog with Tabs: Cash Account, Investment Account",
+      "Cash tab: name, description, currency select, initial balance (currency input)",
+      "Investment tab: name, description, currency select, broker, account number",
+      "Validation matching backend constraints",
+      "On submit: call appropriate mutation",
+      "On success: close dialog, toast, invalidate accounts query",
+      "On error: show inline error",
+      "Run npm run build to verify no errors"
+    ]
+  },
+  {
+    "id": "3.5",
+    "category": "dashboard",
+    "description": "Create account detail page with transactions table and filters",
+    "passes": true,
+    "steps": [
+      "Create src/app/(dashboard)/accounts/[id]/page.tsx",
+      "Add account header: name, type badge, balance, currency, description, edit button",
+      "Add transactions section with Add Transaction and Transfer buttons",
+      "Add filter bar: date range, type dropdown, category dropdown, amount range",
+      "Add transactions table: Date, Description, Type badge, Category, Amount (colored)",
+      "Add pagination for transactions",
+      "Add empty state for no transactions",
+      "For investment accounts: show investments tab placeholder",
+      "Run npm run build to verify no errors"
+    ]
+  },
+  {
+    "id": "3.6",
+    "category": "dashboard",
+    "description": "Create transaction dialog",
+    "passes": true,
+    "steps": [
+      "Create src/components/transactions/create-transaction-dialog.tsx",
+      "Add fields: account dropdown (or pre-selected), type (income/expense), amount (currency input), category dropdown, description, date picker",
+      "Category dropdown filters by selected type (income categories for income, expense for expense)",
+      "Validation: required fields, amount > 0",
+      "On submit: call useCreateTransaction mutation",
+      "On success: close, toast, invalidate queries",
+      "On error: show error (e.g., insufficient balance)",
+      "Run npm run build to verify no errors"
+    ]
+  },
+  {
+    "id": "3.7",
+    "category": "dashboard",
+    "description": "Create transfer dialog",
+    "passes": true,
+    "steps": [
+      "Create src/components/transactions/create-transfer-dialog.tsx",
+      "Add fields: from account dropdown, to account dropdown (excludes from), amount (currency input), description, date picker",
+      "Validation: from !== to, amount > 0",
+      "On submit: call useCreateTransfer mutation",
+      "On success: close, toast, invalidate both accounts' queries",
+      "On error: show error (e.g., insufficient balance, same account)",
+      "Run npm run build to verify no errors"
+    ]
+  },
+  {
+    "id": "3.8",
+    "category": "dashboard",
+    "description": "Final verification: full build and lint pass",
+    "passes": true,
+    "steps": [
+      "Run npm run lint to verify no ESLint issues",
+      "Run npm run build to verify full TypeScript + Next.js build passes",
+      "Verify all pages render without errors (manual check or dev server)",
+      "Verify auth flow: login, register, logout, route protection",
+      "Verify account CRUD: create cash/investment, list, view detail",
+      "Verify transactions: create income/expense, transfer, delete, filter"
+    ]
+  }
+]

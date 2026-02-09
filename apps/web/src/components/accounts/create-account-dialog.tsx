@@ -28,7 +28,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-const CURRENCIES = ["USD", "EUR", "GBP", "CAD", "AUD", "JPY", "INR"];
+const CURRENCIES = ["USD", "EUR", "GBP", "CAD", "AUD", "JPY", "INR", "MYR"];
 
 function getErrorMessage(error: unknown): string {
   if (error instanceof ApiClientError) {
