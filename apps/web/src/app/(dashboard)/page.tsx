@@ -9,10 +9,13 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   TrendingUp,
+  Landmark,
+  PiggyBank,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useAccounts } from "@/hooks/use-accounts";
-import { useAccountTransactions } from "@/hooks/use-transactions";
+import { useTransactions } from "@/hooks/use-transactions";
+import { useBudgets, useBudgetProgress } from "@/hooks/use-budgets";
 import { formatCurrency, formatDate } from "@/lib/format";
 import {
   Card,
@@ -25,7 +28,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { CreateTransactionDialog } from "@/components/transactions/create-transaction-dialog";
-import type { Account, Transaction, TransactionType } from "@/types/models";
+import type { Account, Budget, Transaction, TransactionType } from "@/types/models";
 
 const ACCOUNT_TYPE_LABELS: Record<string, string> = {
   cash: "Cash",
@@ -55,7 +58,11 @@ function DashboardSkeleton() {
   return (
     <div className="space-y-6">
       <Skeleton className="h-8 w-64" />
-      <Skeleton className="h-32 w-full" />
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {Array.from({ length: 3 }).map((_, i) => (
+          <Skeleton key={i} className="h-28" />
+        ))}
+      </div>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {Array.from({ length: 3 }).map((_, i) => (
           <Skeleton key={i} className="h-28" />
@@ -66,20 +73,67 @@ function DashboardSkeleton() {
   );
 }
 
-function TotalBalanceCard({ accounts }: { accounts: Account[] }) {
+function SummaryCards({ accounts }: { accounts: Account[] }) {
   const total = accounts.reduce((sum, a) => sum + a.balance, 0);
+  const cashTotal = accounts
+    .filter((a) => a.type === "cash")
+    .reduce((sum, a) => sum + a.balance, 0);
+  const investmentTotal = accounts
+    .filter((a) => a.type === "investment")
+    .reduce((sum, a) => sum + a.balance, 0);
+
   return (
-    <Card>
-      <CardHeader>
-        <CardDescription>Total Balance</CardDescription>
-        <CardTitle className="text-3xl">{formatCurrency(total)}</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <p className="text-sm text-muted-foreground">
-          Across {accounts.length} account{accounts.length !== 1 ? "s" : ""}
-        </p>
-      </CardContent>
-    </Card>
+    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardDescription>Total Balance</CardDescription>
+            <Wallet className="h-4 w-4 text-muted-foreground" />
+          </div>
+          <CardTitle className="text-3xl">{formatCurrency(total)}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground">
+            Across {accounts.length} account{accounts.length !== 1 ? "s" : ""}
+          </p>
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardDescription>Cash</CardDescription>
+            <PiggyBank className="h-4 w-4 text-muted-foreground" />
+          </div>
+          <CardTitle className="text-3xl">{formatCurrency(cashTotal)}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground">
+            {accounts.filter((a) => a.type === "cash").length} cash account
+            {accounts.filter((a) => a.type === "cash").length !== 1 ? "s" : ""}
+          </p>
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardDescription>Investments</CardDescription>
+            <Landmark className="h-4 w-4 text-muted-foreground" />
+          </div>
+          <CardTitle className="text-3xl">
+            {formatCurrency(investmentTotal)}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground">
+            {accounts.filter((a) => a.type === "investment").length} investment
+            account
+            {accounts.filter((a) => a.type === "investment").length !== 1
+              ? "s"
+              : ""}
+          </p>
+        </CardContent>
+      </Card>
+    </div>
   );
 }
 
@@ -105,7 +159,79 @@ function AccountCard({ account }: { account: Account }) {
   );
 }
 
-function TransactionRow({ transaction }: { transaction: Transaction }) {
+function BudgetMiniProgress({ budgetId }: { budgetId: number }) {
+  const { data: progress, isLoading } = useBudgetProgress(budgetId);
+
+  if (isLoading) {
+    return <Skeleton className="h-2 w-full rounded-full" />;
+  }
+
+  if (!progress) return null;
+
+  const pct = Math.min(progress.percentage, 100);
+  const barColor =
+    progress.percentage > 90
+      ? "bg-red-500"
+      : progress.percentage > 75
+        ? "bg-amber-500"
+        : "bg-emerald-500";
+
+  return (
+    <div className="space-y-1">
+      <div className="h-2 w-full rounded-full bg-muted">
+        <div
+          className={`h-2 rounded-full transition-all ${barColor}`}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+      <p className="text-xs text-muted-foreground">
+        {formatCurrency(progress.spent)} / {formatCurrency(progress.budgeted)}
+      </p>
+    </div>
+  );
+}
+
+function BudgetOverview({ budgets }: { budgets: Budget[] }) {
+  if (budgets.length === 0) return null;
+
+  return (
+    <div>
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="text-lg font-semibold">Budget Overview</h2>
+        <Button asChild variant="link" size="sm">
+          <Link href="/budgets">View all</Link>
+        </Button>
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {budgets.slice(0, 4).map((budget) => (
+          <Card key={budget.id}>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium">
+                {budget.name}
+              </CardTitle>
+              {budget.category && (
+                <Badge variant="outline" className="w-fit text-xs">
+                  {budget.category.name}
+                </Badge>
+              )}
+            </CardHeader>
+            <CardContent>
+              <BudgetMiniProgress budgetId={budget.id} />
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function TransactionRow({
+  transaction,
+  accountName,
+}: {
+  transaction: Transaction;
+  accountName?: string;
+}) {
   const config = TRANSACTION_TYPE_CONFIG[transaction.type];
   const Icon = config.icon;
   const isNegative =
@@ -123,6 +249,7 @@ function TransactionRow({ transaction }: { transaction: Transaction }) {
           </p>
           <p className="text-xs text-muted-foreground">
             {formatDate(transaction.date)}
+            {accountName && ` · ${accountName}`}
           </p>
         </div>
       </div>
@@ -140,12 +267,20 @@ export default function DashboardPage() {
   const { data: accountsData, isLoading: accountsLoading } = useAccounts();
 
   const accounts = accountsData?.data ?? [];
-  const firstAccountId = accounts.length > 0 ? accounts[0].id : 0;
 
   const { data: transactionsData, isLoading: transactionsLoading } =
-    useAccountTransactions(firstAccountId, { page_size: 5 });
+    useTransactions({ page_size: 5 });
 
   const transactions = transactionsData?.data ?? [];
+
+  const { data: budgetsData } = useBudgets({
+    is_active: true,
+    page_size: 4,
+  });
+  const activeBudgets = budgetsData?.data ?? [];
+
+  // Build account name lookup for transaction display
+  const accountNameMap = new Map(accounts.map((a) => [a.id, a.name]));
 
   if (accountsLoading) {
     return <DashboardSkeleton />;
@@ -196,7 +331,7 @@ export default function DashboardPage() {
         </Card>
       ) : (
         <>
-          <TotalBalanceCard accounts={accounts} />
+          <SummaryCards accounts={accounts} />
 
           <div>
             <div className="mb-3 flex items-center justify-between">
@@ -214,15 +349,15 @@ export default function DashboardPage() {
             </div>
           </div>
 
+          <BudgetOverview budgets={activeBudgets} />
+
           <Card>
             <CardHeader>
               <div className="flex items-center justify-between">
                 <CardTitle>Recent Transactions</CardTitle>
-                {firstAccountId > 0 && (
-                  <Button asChild variant="link" size="sm">
-                    <Link href={`/accounts/${firstAccountId}`}>View all</Link>
-                  </Button>
-                )}
+                <Button asChild variant="link" size="sm">
+                  <Link href="/transactions">View all</Link>
+                </Button>
               </div>
             </CardHeader>
             <CardContent>
@@ -239,7 +374,11 @@ export default function DashboardPage() {
               ) : (
                 <div className="divide-y">
                   {transactions.map((tx) => (
-                    <TransactionRow key={tx.id} transaction={tx} />
+                    <TransactionRow
+                      key={tx.id}
+                      transaction={tx}
+                      accountName={accountNameMap.get(tx.account_id)}
+                    />
                   ))}
                 </div>
               )}
