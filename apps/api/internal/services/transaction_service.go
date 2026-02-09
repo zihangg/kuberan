@@ -212,7 +212,34 @@ func applyTransactionFilters(q *gorm.DB, f TransactionFilter) *gorm.DB {
 	if f.MaxAmount != nil {
 		q = q.Where("amount <= ?", *f.MaxAmount)
 	}
+	if f.AccountID != nil {
+		q = q.Where("account_id = ?", *f.AccountID)
+	}
 	return q
+}
+
+// GetUserTransactions retrieves a paginated, filtered list of all transactions for a user across all accounts.
+func (s *transactionService) GetUserTransactions(userID uint, page pagination.PageRequest, filter TransactionFilter) (*pagination.PageResponse[models.Transaction], error) {
+	page.Defaults()
+
+	base := s.db.Model(&models.Transaction{}).Where("user_id = ?", userID)
+	base = applyTransactionFilters(base, filter)
+
+	var totalItems int64
+	if err := base.Count(&totalItems).Error; err != nil {
+		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
+	}
+
+	var transactions []models.Transaction
+	if err := base.Preload("Category").
+		Scopes(pagination.Paginate(page)).
+		Order("date DESC").
+		Find(&transactions).Error; err != nil {
+		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
+	}
+
+	result := pagination.NewPageResponse(transactions, page.Page, page.PageSize, totalItems)
+	return &result, nil
 }
 
 // GetTransactionByID retrieves a transaction by ID for a specific user

@@ -217,6 +217,65 @@ func (h *TransactionHandler) GetAccountTransactions(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
+// GetUserTransactions handles the retrieval of all transactions for the authenticated user
+// @Summary     Get user transactions
+// @Description Get a paginated list of all transactions for the authenticated user with optional filters
+// @Tags        transactions
+// @Accept      json
+// @Produce     json
+// @Security    BearerAuth
+// @Param       page        query int    false "Page number (default 1)"
+// @Param       page_size   query int    false "Items per page (default 20, max 100)"
+// @Param       account_id  query int    false "Filter by account ID"
+// @Param       from_date   query string false "Filter by start date (RFC3339, e.g. 2024-01-01T00:00:00Z)"
+// @Param       to_date     query string false "Filter by end date (RFC3339)"
+// @Param       type        query string false "Filter by transaction type (income, expense, transfer, investment)"
+// @Param       category_id query int    false "Filter by category ID"
+// @Param       min_amount  query int    false "Filter by minimum amount (cents)"
+// @Param       max_amount  query int    false "Filter by maximum amount (cents)"
+// @Success     200 {object} pagination.PageResponse[models.Transaction] "Paginated transactions"
+// @Failure     400 {object} ErrorResponse "Invalid input"
+// @Failure     401 {object} ErrorResponse "Unauthorized"
+// @Failure     500 {object} ErrorResponse "Server error"
+// @Router      /transactions [get]
+func (h *TransactionHandler) GetUserTransactions(c *gin.Context) {
+	userID, err := getUserID(c)
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	var page pagination.PageRequest
+	if err := c.ShouldBindQuery(&page); err != nil {
+		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, err.Error()))
+		return
+	}
+
+	filter, err := parseTransactionFilter(c)
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	if v := c.Query("account_id"); v != "" {
+		id, parseErr := strconv.ParseUint(v, 10, 32)
+		if parseErr != nil {
+			respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, "invalid account_id"))
+			return
+		}
+		acctID := uint(id)
+		filter.AccountID = &acctID
+	}
+
+	result, err := h.transactionService.GetUserTransactions(userID, page, filter)
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, result)
+}
+
 func parseTransactionFilter(c *gin.Context) (services.TransactionFilter, error) {
 	var filter services.TransactionFilter
 

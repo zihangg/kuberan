@@ -19,6 +19,7 @@ type mockTransactionService struct {
 	createTransactionFn      func(userID, accountID uint, categoryID *uint, transactionType models.TransactionType, amount int64, description string, date time.Time) (*models.Transaction, error)
 	createTransferFn         func(userID, fromAccountID, toAccountID uint, amount int64, description string, date time.Time) (*models.Transaction, error)
 	getAccountTransactionsFn func(userID, accountID uint, page pagination.PageRequest, filter services.TransactionFilter) (*pagination.PageResponse[models.Transaction], error)
+	getUserTransactionsFn    func(userID uint, page pagination.PageRequest, filter services.TransactionFilter) (*pagination.PageResponse[models.Transaction], error)
 	getTransactionByIDFn     func(userID, transactionID uint) (*models.Transaction, error)
 	deleteTransactionFn      func(userID, transactionID uint) error
 }
@@ -45,6 +46,14 @@ func (m *mockTransactionService) GetAccountTransactions(userID, accountID uint, 
 	return &resp, nil
 }
 
+func (m *mockTransactionService) GetUserTransactions(userID uint, page pagination.PageRequest, filter services.TransactionFilter) (*pagination.PageResponse[models.Transaction], error) {
+	if m.getUserTransactionsFn != nil {
+		return m.getUserTransactionsFn(userID, page, filter)
+	}
+	resp := pagination.NewPageResponse([]models.Transaction{}, 1, 20, 0)
+	return &resp, nil
+}
+
 func (m *mockTransactionService) GetTransactionByID(userID, transactionID uint) (*models.Transaction, error) {
 	if m.getTransactionByIDFn != nil {
 		return m.getTransactionByIDFn(userID, transactionID)
@@ -64,6 +73,7 @@ var _ services.TransactionServicer = (*mockTransactionService)(nil)
 func setupTransactionRouter(handler *TransactionHandler) *gin.Engine {
 	r := gin.New()
 	auth := r.Group("", injectUserID(1))
+	auth.GET("/transactions", handler.GetUserTransactions)
 	auth.POST("/transactions", handler.CreateTransaction)
 	auth.POST("/transactions/transfer", handler.CreateTransfer)
 	auth.GET("/accounts/:id/transactions", handler.GetAccountTransactions)
@@ -334,6 +344,117 @@ func TestTransactionHandler_GetAccountTransactions(t *testing.T) {
 
 		if rec.Code != http.StatusBadRequest {
 			t.Fatalf("expected 400, got %d", rec.Code)
+		}
+	})
+}
+
+func TestTransactionHandler_GetUserTransactions(t *testing.T) {
+	t.Run("returns_200_with_transactions", func(t *testing.T) {
+		now := time.Now()
+		txSvc := &mockTransactionService{
+			getUserTransactionsFn: func(_ uint, _ pagination.PageRequest, _ services.TransactionFilter) (*pagination.PageResponse[models.Transaction], error) {
+				resp := pagination.NewPageResponse([]models.Transaction{
+					{Base: models.Base{ID: 1}, Amount: 5000, Type: "income", Date: now},
+					{Base: models.Base{ID: 2}, Amount: 3000, Type: "expense", Date: now},
+				}, 1, 20, 2)
+				return &resp, nil
+			},
+		}
+		handler := NewTransactionHandler(txSvc, &mockAuditService{})
+		r := setupTransactionRouter(handler)
+
+		rec := doRequest(r, "GET", "/transactions", "")
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		result := parseJSON(t, rec)
+		data := result["data"].([]interface{})
+		if len(data) != 2 {
+			t.Errorf("expected 2 transactions, got %d", len(data))
+		}
+	})
+
+	t.Run("returns_200_empty_when_no_transactions", func(t *testing.T) {
+		txSvc := &mockTransactionService{
+			getUserTransactionsFn: func(_ uint, _ pagination.PageRequest, _ services.TransactionFilter) (*pagination.PageResponse[models.Transaction], error) {
+				resp := pagination.NewPageResponse([]models.Transaction{}, 1, 20, 0)
+				return &resp, nil
+			},
+		}
+		handler := NewTransactionHandler(txSvc, &mockAuditService{})
+		r := setupTransactionRouter(handler)
+
+		rec := doRequest(r, "GET", "/transactions", "")
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d", rec.Code)
+		}
+		result := parseJSON(t, rec)
+		data := result["data"].([]interface{})
+		if len(data) != 0 {
+			t.Errorf("expected 0 transactions, got %d", len(data))
+		}
+	})
+
+	t.Run("passes_filters_to_service", func(t *testing.T) {
+		var capturedFilter services.TransactionFilter
+		txSvc := &mockTransactionService{
+			getUserTransactionsFn: func(_ uint, _ pagination.PageRequest, filter services.TransactionFilter) (*pagination.PageResponse[models.Transaction], error) {
+				capturedFilter = filter
+				resp := pagination.NewPageResponse([]models.Transaction{}, 1, 20, 0)
+				return &resp, nil
+			},
+		}
+		handler := NewTransactionHandler(txSvc, &mockAuditService{})
+		r := setupTransactionRouter(handler)
+
+		doRequest(r, "GET", "/transactions?type=income&account_id=5&min_amount=100", "")
+
+		if capturedFilter.Type == nil || *capturedFilter.Type != models.TransactionTypeIncome {
+			t.Errorf("expected type=income filter, got %v", capturedFilter.Type)
+		}
+		if capturedFilter.AccountID == nil || *capturedFilter.AccountID != 5 {
+			t.Errorf("expected account_id=5, got %v", capturedFilter.AccountID)
+		}
+		if capturedFilter.MinAmount == nil || *capturedFilter.MinAmount != 100 {
+			t.Errorf("expected min_amount=100, got %v", capturedFilter.MinAmount)
+		}
+	})
+
+	t.Run("returns_400_for_invalid_date", func(t *testing.T) {
+		handler := NewTransactionHandler(&mockTransactionService{}, &mockAuditService{})
+		r := setupTransactionRouter(handler)
+
+		rec := doRequest(r, "GET", "/transactions?from_date=not-a-date", "")
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400, got %d", rec.Code)
+		}
+		assertErrorCode(t, parseJSON(t, rec), "INVALID_INPUT")
+	})
+
+	t.Run("returns_400_for_invalid_type", func(t *testing.T) {
+		handler := NewTransactionHandler(&mockTransactionService{}, &mockAuditService{})
+		r := setupTransactionRouter(handler)
+
+		rec := doRequest(r, "GET", "/transactions?type=invalid", "")
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400, got %d", rec.Code)
+		}
+		assertErrorCode(t, parseJSON(t, rec), "INVALID_INPUT")
+	})
+
+	t.Run("returns_401_without_auth", func(t *testing.T) {
+		handler := NewTransactionHandler(&mockTransactionService{}, &mockAuditService{})
+		r := gin.New()
+		r.GET("/transactions", handler.GetUserTransactions)
+
+		rec := doRequest(r, "GET", "/transactions", "")
+
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("expected 401, got %d", rec.Code)
 		}
 	})
 }

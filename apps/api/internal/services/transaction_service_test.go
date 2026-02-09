@@ -439,6 +439,249 @@ func TestGetAccountTransactions(t *testing.T) {
 	})
 }
 
+func TestGetUserTransactions(t *testing.T) {
+	t.Run("lists_all_transactions_across_accounts", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		acctSvc := NewAccountService(db)
+		txSvc := NewTransactionService(db, acctSvc)
+		user := testutil.CreateTestUser(t, db)
+		acct1 := testutil.CreateTestCashAccount(t, db, user.ID)
+		acct2 := testutil.CreateTestCashAccount(t, db, user.ID)
+
+		testutil.CreateTestTransaction(t, db, user.ID, acct1.ID, models.TransactionTypeIncome, 1000)
+		testutil.CreateTestTransaction(t, db, user.ID, acct2.ID, models.TransactionTypeIncome, 2000)
+
+		page := pagination.PageRequest{Page: 1, PageSize: 20}
+		result, err := txSvc.GetUserTransactions(user.ID, page, TransactionFilter{})
+		testutil.AssertNoError(t, err)
+
+		if result.TotalItems != 2 {
+			t.Errorf("expected 2 transactions across accounts, got %d", result.TotalItems)
+		}
+	})
+
+	t.Run("filters_by_type", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		acctSvc := NewAccountService(db)
+		txSvc := NewTransactionService(db, acctSvc)
+		user := testutil.CreateTestUser(t, db)
+		account := testutil.CreateTestCashAccount(t, db, user.ID)
+
+		testutil.CreateTestTransaction(t, db, user.ID, account.ID, models.TransactionTypeIncome, 1000)
+		testutil.CreateTestTransaction(t, db, user.ID, account.ID, models.TransactionTypeExpense, 500)
+		testutil.CreateTestTransaction(t, db, user.ID, account.ID, models.TransactionTypeIncome, 2000)
+
+		expenseType := models.TransactionTypeExpense
+		filter := TransactionFilter{Type: &expenseType}
+		page := pagination.PageRequest{Page: 1, PageSize: 20}
+		result, err := txSvc.GetUserTransactions(user.ID, page, filter)
+		testutil.AssertNoError(t, err)
+
+		if result.TotalItems != 1 {
+			t.Errorf("expected 1 expense transaction, got %d", result.TotalItems)
+		}
+	})
+
+	t.Run("filters_by_date_range", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		acctSvc := NewAccountService(db)
+		txSvc := NewTransactionService(db, acctSvc)
+		user := testutil.CreateTestUser(t, db)
+		account := testutil.CreateTestCashAccount(t, db, user.ID)
+
+		now := time.Now()
+		db.Create(&models.Transaction{
+			UserID: user.ID, AccountID: account.ID,
+			Type: models.TransactionTypeIncome, Amount: 1000,
+			Date: now.AddDate(0, -3, 0),
+		})
+		db.Create(&models.Transaction{
+			UserID: user.ID, AccountID: account.ID,
+			Type: models.TransactionTypeIncome, Amount: 2000,
+			Date: now.AddDate(0, 0, -1),
+		})
+
+		fromDate := now.AddDate(0, -1, 0)
+		toDate := now
+		filter := TransactionFilter{FromDate: &fromDate, ToDate: &toDate}
+		page := pagination.PageRequest{Page: 1, PageSize: 20}
+		result, err := txSvc.GetUserTransactions(user.ID, page, filter)
+		testutil.AssertNoError(t, err)
+
+		if result.TotalItems != 1 {
+			t.Errorf("expected 1 transaction in date range, got %d", result.TotalItems)
+		}
+	})
+
+	t.Run("filters_by_category", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		acctSvc := NewAccountService(db)
+		txSvc := NewTransactionService(db, acctSvc)
+		user := testutil.CreateTestUser(t, db)
+		account := testutil.CreateTestCashAccount(t, db, user.ID)
+		cat := testutil.CreateTestCategory(t, db, user.ID, models.CategoryTypeExpense)
+
+		db.Create(&models.Transaction{
+			UserID: user.ID, AccountID: account.ID,
+			Type: models.TransactionTypeExpense, Amount: 500,
+			CategoryID: &cat.ID, Date: time.Now(),
+		})
+		testutil.CreateTestTransaction(t, db, user.ID, account.ID, models.TransactionTypeExpense, 300)
+
+		filter := TransactionFilter{CategoryID: &cat.ID}
+		page := pagination.PageRequest{Page: 1, PageSize: 20}
+		result, err := txSvc.GetUserTransactions(user.ID, page, filter)
+		testutil.AssertNoError(t, err)
+
+		if result.TotalItems != 1 {
+			t.Errorf("expected 1 transaction with category, got %d", result.TotalItems)
+		}
+	})
+
+	t.Run("filters_by_amount_range", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		acctSvc := NewAccountService(db)
+		txSvc := NewTransactionService(db, acctSvc)
+		user := testutil.CreateTestUser(t, db)
+		account := testutil.CreateTestCashAccount(t, db, user.ID)
+
+		testutil.CreateTestTransaction(t, db, user.ID, account.ID, models.TransactionTypeIncome, 500)
+		testutil.CreateTestTransaction(t, db, user.ID, account.ID, models.TransactionTypeIncome, 1500)
+		testutil.CreateTestTransaction(t, db, user.ID, account.ID, models.TransactionTypeIncome, 3000)
+
+		minAmt := int64(1000)
+		maxAmt := int64(2000)
+		filter := TransactionFilter{MinAmount: &minAmt, MaxAmount: &maxAmt}
+		page := pagination.PageRequest{Page: 1, PageSize: 20}
+		result, err := txSvc.GetUserTransactions(user.ID, page, filter)
+		testutil.AssertNoError(t, err)
+
+		if result.TotalItems != 1 {
+			t.Errorf("expected 1 transaction in amount range, got %d", result.TotalItems)
+		}
+	})
+
+	t.Run("filters_by_account_id", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		acctSvc := NewAccountService(db)
+		txSvc := NewTransactionService(db, acctSvc)
+		user := testutil.CreateTestUser(t, db)
+		acct1 := testutil.CreateTestCashAccount(t, db, user.ID)
+		acct2 := testutil.CreateTestCashAccount(t, db, user.ID)
+
+		testutil.CreateTestTransaction(t, db, user.ID, acct1.ID, models.TransactionTypeIncome, 1000)
+		testutil.CreateTestTransaction(t, db, user.ID, acct1.ID, models.TransactionTypeIncome, 2000)
+		testutil.CreateTestTransaction(t, db, user.ID, acct2.ID, models.TransactionTypeIncome, 3000)
+
+		filter := TransactionFilter{AccountID: &acct1.ID}
+		page := pagination.PageRequest{Page: 1, PageSize: 20}
+		result, err := txSvc.GetUserTransactions(user.ID, page, filter)
+		testutil.AssertNoError(t, err)
+
+		if result.TotalItems != 2 {
+			t.Errorf("expected 2 transactions for account 1, got %d", result.TotalItems)
+		}
+	})
+
+	t.Run("paginates_correctly", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		acctSvc := NewAccountService(db)
+		txSvc := NewTransactionService(db, acctSvc)
+		user := testutil.CreateTestUser(t, db)
+		account := testutil.CreateTestCashAccount(t, db, user.ID)
+
+		for i := 0; i < 5; i++ {
+			testutil.CreateTestTransaction(t, db, user.ID, account.ID, models.TransactionTypeIncome, int64((i+1)*1000))
+		}
+
+		page := pagination.PageRequest{Page: 1, PageSize: 2}
+		result, err := txSvc.GetUserTransactions(user.ID, page, TransactionFilter{})
+		testutil.AssertNoError(t, err)
+
+		if result.TotalItems != 5 {
+			t.Errorf("expected total 5, got %d", result.TotalItems)
+		}
+		if len(result.Data) != 2 {
+			t.Errorf("expected 2 items on page, got %d", len(result.Data))
+		}
+		if result.TotalPages != 3 {
+			t.Errorf("expected 3 total pages, got %d", result.TotalPages)
+		}
+		if result.Page != 1 {
+			t.Errorf("expected page 1, got %d", result.Page)
+		}
+	})
+
+	t.Run("user_isolation", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		acctSvc := NewAccountService(db)
+		txSvc := NewTransactionService(db, acctSvc)
+		user1 := testutil.CreateTestUser(t, db)
+		user2 := testutil.CreateTestUser(t, db)
+		acct1 := testutil.CreateTestCashAccount(t, db, user1.ID)
+		acct2 := testutil.CreateTestCashAccount(t, db, user2.ID)
+
+		testutil.CreateTestTransaction(t, db, user1.ID, acct1.ID, models.TransactionTypeIncome, 1000)
+		testutil.CreateTestTransaction(t, db, user2.ID, acct2.ID, models.TransactionTypeIncome, 2000)
+
+		page := pagination.PageRequest{Page: 1, PageSize: 20}
+		result, err := txSvc.GetUserTransactions(user1.ID, page, TransactionFilter{})
+		testutil.AssertNoError(t, err)
+
+		if result.TotalItems != 1 {
+			t.Errorf("expected 1 transaction for user1, got %d", result.TotalItems)
+		}
+	})
+
+	t.Run("orders_by_date_desc", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		acctSvc := NewAccountService(db)
+		txSvc := NewTransactionService(db, acctSvc)
+		user := testutil.CreateTestUser(t, db)
+		account := testutil.CreateTestCashAccount(t, db, user.ID)
+
+		now := time.Now()
+		db.Create(&models.Transaction{
+			UserID: user.ID, AccountID: account.ID,
+			Type: models.TransactionTypeIncome, Amount: 1000,
+			Description: "oldest", Date: now.AddDate(0, 0, -3),
+		})
+		db.Create(&models.Transaction{
+			UserID: user.ID, AccountID: account.ID,
+			Type: models.TransactionTypeIncome, Amount: 3000,
+			Description: "newest", Date: now,
+		})
+		db.Create(&models.Transaction{
+			UserID: user.ID, AccountID: account.ID,
+			Type: models.TransactionTypeIncome, Amount: 2000,
+			Description: "middle", Date: now.AddDate(0, 0, -1),
+		})
+
+		page := pagination.PageRequest{Page: 1, PageSize: 20}
+		result, err := txSvc.GetUserTransactions(user.ID, page, TransactionFilter{})
+		testutil.AssertNoError(t, err)
+
+		if len(result.Data) != 3 {
+			t.Fatalf("expected 3 transactions, got %d", len(result.Data))
+		}
+		if result.Data[0].Description != "newest" {
+			t.Errorf("expected first transaction to be 'newest', got %q", result.Data[0].Description)
+		}
+		if result.Data[2].Description != "oldest" {
+			t.Errorf("expected last transaction to be 'oldest', got %q", result.Data[2].Description)
+		}
+	})
+}
+
 func TestDeleteTransaction(t *testing.T) {
 	t.Run("income_reversal", func(t *testing.T) {
 		db := testutil.SetupTestDB(t)
