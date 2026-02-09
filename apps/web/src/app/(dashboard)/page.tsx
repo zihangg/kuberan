@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import {
   Wallet,
@@ -23,6 +24,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { CreateTransactionDialog } from "@/components/transactions/create-transaction-dialog";
 import type { Account, Transaction, TransactionType } from "@/types/models";
 
 const ACCOUNT_TYPE_LABELS: Record<string, string> = {
@@ -134,6 +136,7 @@ function TransactionRow({ transaction }: { transaction: Transaction }) {
 
 export default function DashboardPage() {
   const { user } = useAuth();
+  const [txDialogOpen, setTxDialogOpen] = useState(false);
   const { data: accountsData, isLoading: accountsLoading } = useAccounts();
 
   const accounts = accountsData?.data ?? [];
@@ -162,6 +165,14 @@ export default function DashboardPage() {
               <Wallet className="mr-2 h-4 w-4" />
               Add Account
             </Link>
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setTxDialogOpen(true)}
+          >
+            <Plus className="mr-2 h-4 w-4" />
+            Add Transaction
           </Button>
         </div>
       </div>
@@ -236,6 +247,11 @@ export default function DashboardPage() {
           </Card>
         </>
       )}
+
+      <CreateTransactionDialog
+        open={txDialogOpen}
+        onOpenChange={setTxDialogOpen}
+      />
     </div>
   );
 }

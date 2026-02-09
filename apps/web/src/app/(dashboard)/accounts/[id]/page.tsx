@@ -44,6 +44,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { CreateTransactionDialog } from "@/components/transactions/create-transaction-dialog";
 import type { Transaction, TransactionType } from "@/types/models";
 import type { TransactionFilters } from "@/types/api";
 
@@ -136,6 +137,7 @@ export default function AccountDetailPage() {
 
   const [page, setPage] = useState(1);
   const [filters, setFilters] = useState<TransactionFilters>({});
+  const [txDialogOpen, setTxDialogOpen] = useState(false);
 
   const { data: account, isLoading: accountLoading } = useAccount(accountId);
   const { data: transactionsData, isLoading: transactionsLoading } =
@@ -231,7 +233,7 @@ export default function AccountDetailPage() {
                   Transfer
                 </Button>
               )}
-              <Button size="sm" disabled>
+              <Button size="sm" onClick={() => setTxDialogOpen(true)}>
                 <Plus className="mr-2 h-4 w-4" />
                 Add Transaction
               </Button>
@@ -405,6 +407,12 @@ export default function AccountDetailPage() {
           </CardHeader>
         </Card>
       )}
+
+      <CreateTransactionDialog
+        open={txDialogOpen}
+        onOpenChange={setTxDialogOpen}
+        defaultAccountId={accountId}
+      />
     </div>
   );
 }
