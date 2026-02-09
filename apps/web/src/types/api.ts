@@ -1,4 +1,7 @@
 import type {
+  Account,
+  Category,
+  Transaction,
   User,
   TransactionType,
   CategoryType,
@@ -53,6 +56,23 @@ export interface AuthResponse {
 // Profile response
 export interface ProfileResponse {
   user: User;
+}
+
+// Single-item response wrappers (backend wraps single items in a key)
+export interface AccountResponse {
+  account: Account;
+}
+
+export interface TransactionResponse {
+  transaction: Transaction;
+}
+
+export interface CategoryResponse {
+  category: Category;
+}
+
+export interface DeleteResponse {
+  message: string;
 }
 
 // Account requests
