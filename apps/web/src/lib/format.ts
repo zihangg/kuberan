@@ -3,11 +3,11 @@
  * @param cents - Amount in cents (e.g., 1050 = $10.50)
  * @param currency - ISO 4217 currency code (default: "USD")
  */
-export function formatCurrency(cents: number, currency = "USD"): string {
+export function formatCurrency(cents: number, currency = "MYR"): string {
   const dollars = cents / 100;
   return new Intl.NumberFormat("en-US", {
     style: "currency",
-    currency,
+    currency: currency || "MYR",
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(dollars);
