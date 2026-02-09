@@ -25,6 +25,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { toRFC3339 } from "@/lib/format";
 import type { TransactionType } from "@/types/models";
 
 function getErrorMessage(error: unknown): string {
@@ -112,7 +113,7 @@ export function CreateTransactionDialog({
         amount,
         category_id: categoryId && categoryId !== "none" ? Number(categoryId) : undefined,
         description: description.trim() || undefined,
-        date: date || undefined,
+        date: date ? toRFC3339(date) : undefined,
       },
       {
         onSuccess: () => {

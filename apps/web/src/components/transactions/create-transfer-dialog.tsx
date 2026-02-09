@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { ApiClientError } from "@/lib/api-client";
 import { useAccounts } from "@/hooks/use-accounts";
 import { useCreateTransfer } from "@/hooks/use-transactions";
+import { toRFC3339 } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -127,7 +128,7 @@ export function CreateTransferDialog({
         to_account_id: to,
         amount,
         description: description.trim() || undefined,
-        date: date || undefined,
+        date: date ? toRFC3339(date) : undefined,
       },
       {
         onSuccess: () => {

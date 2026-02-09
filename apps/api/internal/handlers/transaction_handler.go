@@ -31,7 +31,7 @@ type CreateTransactionRequest struct {
 	Type        models.TransactionType `json:"type" binding:"required,transaction_type"`
 	Amount      int64                  `json:"amount" binding:"required,gt=0"`
 	Description string                 `json:"description" binding:"max=500"`
-	Date        *time.Time             `json:"date"`
+	Date        *string                `json:"date"`
 }
 
 // TransactionResponse represents a transaction in the response
@@ -73,8 +73,13 @@ func (h *TransactionHandler) CreateTransaction(c *gin.Context) {
 	}
 
 	transactionDate := time.Now()
-	if req.Date != nil {
-		transactionDate = *req.Date
+	if req.Date != nil && *req.Date != "" {
+		parsed, parseErr := parseFlexibleTime(*req.Date)
+		if parseErr != nil {
+			respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, parseErr.Error()))
+			return
+		}
+		transactionDate = parsed
 	}
 
 	transaction, err := h.transactionService.CreateTransaction(
@@ -99,11 +104,11 @@ func (h *TransactionHandler) CreateTransaction(c *gin.Context) {
 
 // CreateTransferRequest represents the request payload for creating a transfer
 type CreateTransferRequest struct {
-	FromAccountID uint       `json:"from_account_id" binding:"required"`
-	ToAccountID   uint       `json:"to_account_id" binding:"required"`
-	Amount        int64      `json:"amount" binding:"required,gt=0"`
-	Description   string     `json:"description" binding:"max=500"`
-	Date          *time.Time `json:"date"`
+	FromAccountID uint    `json:"from_account_id" binding:"required"`
+	ToAccountID   uint    `json:"to_account_id" binding:"required"`
+	Amount        int64   `json:"amount" binding:"required,gt=0"`
+	Description   string  `json:"description" binding:"max=500"`
+	Date          *string `json:"date"`
 }
 
 // CreateTransfer handles the creation of a transfer between two accounts
@@ -134,8 +139,13 @@ func (h *TransactionHandler) CreateTransfer(c *gin.Context) {
 	}
 
 	transferDate := time.Now()
-	if req.Date != nil {
-		transferDate = *req.Date
+	if req.Date != nil && *req.Date != "" {
+		parsed, parseErr := parseFlexibleTime(*req.Date)
+		if parseErr != nil {
+			respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, parseErr.Error()))
+			return
+		}
+		transferDate = parsed
 	}
 
 	transaction, err := h.transactionService.CreateTransfer(
@@ -171,8 +181,8 @@ func (h *TransactionHandler) CreateTransfer(c *gin.Context) {
 // @Param       id          path  int    true  "Account ID"
 // @Param       page        query int    false "Page number (default 1)"
 // @Param       page_size   query int    false "Items per page (default 20, max 100)"
-// @Param       from_date   query string false "Filter by start date (RFC3339, e.g. 2024-01-01T00:00:00Z)"
-// @Param       to_date     query string false "Filter by end date (RFC3339)"
+// @Param       from_date   query string false "Filter by start date (RFC3339 e.g. 2024-01-01T00:00:00Z, or YYYY-MM-DD)"
+// @Param       to_date     query string false "Filter by end date (RFC3339 or YYYY-MM-DD)"
 // @Param       type        query string false "Filter by transaction type (income, expense, transfer, investment)"
 // @Param       category_id query int    false "Filter by category ID"
 // @Param       min_amount  query int    false "Filter by minimum amount (cents)"
@@ -227,8 +237,8 @@ func (h *TransactionHandler) GetAccountTransactions(c *gin.Context) {
 // @Param       page        query int    false "Page number (default 1)"
 // @Param       page_size   query int    false "Items per page (default 20, max 100)"
 // @Param       account_id  query int    false "Filter by account ID"
-// @Param       from_date   query string false "Filter by start date (RFC3339, e.g. 2024-01-01T00:00:00Z)"
-// @Param       to_date     query string false "Filter by end date (RFC3339)"
+// @Param       from_date   query string false "Filter by start date (RFC3339 e.g. 2024-01-01T00:00:00Z, or YYYY-MM-DD)"
+// @Param       to_date     query string false "Filter by end date (RFC3339 or YYYY-MM-DD)"
 // @Param       type        query string false "Filter by transaction type (income, expense, transfer, investment)"
 // @Param       category_id query int    false "Filter by category ID"
 // @Param       min_amount  query int    false "Filter by minimum amount (cents)"
@@ -280,17 +290,17 @@ func parseTransactionFilter(c *gin.Context) (services.TransactionFilter, error) 
 	var filter services.TransactionFilter
 
 	if v := c.Query("from_date"); v != "" {
-		t, err := time.Parse(time.RFC3339, v)
+		t, err := parseFlexibleTime(v)
 		if err != nil {
-			return filter, apperrors.WithMessage(apperrors.ErrInvalidInput, "invalid from_date format, use RFC3339")
+			return filter, apperrors.WithMessage(apperrors.ErrInvalidInput, "invalid from_date format, use RFC3339 or YYYY-MM-DD")
 		}
 		filter.FromDate = &t
 	}
 
 	if v := c.Query("to_date"); v != "" {
-		t, err := time.Parse(time.RFC3339, v)
+		t, err := parseFlexibleTime(v)
 		if err != nil {
-			return filter, apperrors.WithMessage(apperrors.ErrInvalidInput, "invalid to_date format, use RFC3339")
+			return filter, apperrors.WithMessage(apperrors.ErrInvalidInput, "invalid to_date format, use RFC3339 or YYYY-MM-DD")
 		}
 		filter.ToDate = &t
 	}

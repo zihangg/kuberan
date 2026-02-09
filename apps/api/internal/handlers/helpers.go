@@ -3,12 +3,28 @@ package handlers
 import (
 	"errors"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
 	apperrors "kuberan/internal/errors"
 	"kuberan/internal/logger"
 )
+
+// parseFlexibleTime parses a date/time string accepting both RFC3339
+// (e.g. "2006-01-02T15:04:05Z07:00") and date-only (e.g. "2006-01-02") formats.
+// Date-only strings are interpreted as midnight UTC.
+func parseFlexibleTime(value string) (time.Time, error) {
+	// Try RFC3339 first (most specific)
+	if t, err := time.Parse(time.RFC3339, value); err == nil {
+		return t, nil
+	}
+	// Fall back to date-only format
+	if t, err := time.Parse("2006-01-02", value); err == nil {
+		return t, nil
+	}
+	return time.Time{}, errors.New("invalid date format, use RFC3339 (e.g. 2024-01-01T00:00:00Z) or YYYY-MM-DD")
+}
 
 // getUserID extracts the authenticated user ID from the Gin context.
 // Returns ErrUnauthorized if not present.

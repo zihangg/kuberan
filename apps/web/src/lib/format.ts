@@ -46,3 +46,15 @@ export function formatDateTime(iso: string): string {
 export function formatPercentage(value: number): string {
   return `${value.toFixed(2)}%`;
 }
+
+/**
+ * Convert a date-only string (YYYY-MM-DD) to RFC 3339 format (YYYY-MM-DDT00:00:00Z).
+ * If the string already contains "T" (i.e., is already RFC 3339), it is returned as-is.
+ * @param dateStr - A date string in YYYY-MM-DD or RFC 3339 format
+ */
+export function toRFC3339(dateStr: string): string {
+  if (dateStr.includes("T")) {
+    return dateStr;
+  }
+  return `${dateStr}T00:00:00Z`;
+}
