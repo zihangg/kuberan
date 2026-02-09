@@ -77,6 +77,23 @@ type TransactionFilter struct {
 	AccountID  *uint
 }
 
+// SpendingByCategoryItem represents spending total for a single category.
+type SpendingByCategoryItem struct {
+	CategoryID    *uint  `json:"category_id"`
+	CategoryName  string `json:"category_name"`
+	CategoryColor string `json:"category_color"`
+	CategoryIcon  string `json:"category_icon"`
+	Total         int64  `json:"total"`
+}
+
+// SpendingByCategory represents the full spending breakdown response.
+type SpendingByCategory struct {
+	Items      []SpendingByCategoryItem `json:"items"`
+	TotalSpent int64                    `json:"total_spent"`
+	FromDate   time.Time                `json:"from_date"`
+	ToDate     time.Time                `json:"to_date"`
+}
+
 // TransactionServicer defines the contract for transaction-related business logic.
 type TransactionServicer interface {
 	CreateTransaction(userID, accountID uint, categoryID *uint, transactionType models.TransactionType, amount int64, description string, date time.Time) (*models.Transaction, error)
@@ -86,6 +103,7 @@ type TransactionServicer interface {
 	GetTransactionByID(userID, transactionID uint) (*models.Transaction, error)
 	UpdateTransaction(userID, transactionID uint, updates TransactionUpdateFields) (*models.Transaction, error)
 	DeleteTransaction(userID, transactionID uint) error
+	GetSpendingByCategory(userID uint, from, to time.Time) (*SpendingByCategory, error)
 }
 
 // BudgetProgress contains spending vs budget data for a budget's current period.

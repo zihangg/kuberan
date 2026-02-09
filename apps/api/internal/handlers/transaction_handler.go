@@ -501,6 +501,60 @@ func (h *TransactionHandler) DeleteTransaction(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Transaction deleted successfully"})
 }
 
+// GetSpendingByCategory handles the retrieval of expense totals grouped by category
+// @Summary     Get spending by category
+// @Description Get expense totals grouped by category for a date range
+// @Tags        transactions
+// @Accept      json
+// @Produce     json
+// @Security    BearerAuth
+// @Param       from_date query string true "Start date (RFC3339 or YYYY-MM-DD)"
+// @Param       to_date   query string true "End date (RFC3339 or YYYY-MM-DD)"
+// @Success     200 {object} services.SpendingByCategory "Spending breakdown by category"
+// @Failure     400 {object} ErrorResponse "Invalid input"
+// @Failure     401 {object} ErrorResponse "Unauthorized"
+// @Failure     500 {object} ErrorResponse "Server error"
+// @Router      /transactions/spending-by-category [get]
+func (h *TransactionHandler) GetSpendingByCategory(c *gin.Context) {
+	userID, err := getUserID(c)
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	fromStr := c.Query("from_date")
+	if fromStr == "" {
+		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, "from_date is required"))
+		return
+	}
+
+	toStr := c.Query("to_date")
+	if toStr == "" {
+		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, "to_date is required"))
+		return
+	}
+
+	fromTime, parseErr := parseFlexibleTime(fromStr)
+	if parseErr != nil {
+		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, parseErr.Error()))
+		return
+	}
+
+	toTime, parseErr := parseFlexibleTime(toStr)
+	if parseErr != nil {
+		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, parseErr.Error()))
+		return
+	}
+
+	result, err := h.transactionService.GetSpendingByCategory(userID, fromTime, toTime)
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, result)
+}
+
 // MessageResponse represents a simple message response
 type MessageResponse struct {
 	Message string `json:"message"`

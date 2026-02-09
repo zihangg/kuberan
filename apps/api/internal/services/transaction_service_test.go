@@ -1091,3 +1091,211 @@ func TestUpdateTransaction(t *testing.T) {
 		testutil.AssertAppError(t, err, "TRANSACTION_NOT_FOUND")
 	})
 }
+
+func TestGetSpendingByCategory(t *testing.T) {
+	now := time.Now()
+	from := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
+	to := from.AddDate(0, 1, -1).Add(23*time.Hour + 59*time.Minute + 59*time.Second)
+
+	t.Run("groups_by_category", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		acctSvc := NewAccountService(db)
+		txSvc := NewTransactionService(db, acctSvc)
+		user := testutil.CreateTestUser(t, db)
+		account := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 100000)
+
+		catA := testutil.CreateTestCategory(t, db, user.ID, models.CategoryTypeExpense)
+		catB := testutil.CreateTestCategory(t, db, user.ID, models.CategoryTypeExpense)
+
+		// Two expenses for catA
+		_, err := txSvc.CreateTransaction(user.ID, account.ID, &catA.ID, models.TransactionTypeExpense, 3000, "", from.Add(time.Hour))
+		testutil.AssertNoError(t, err)
+		_, err = txSvc.CreateTransaction(user.ID, account.ID, &catA.ID, models.TransactionTypeExpense, 2000, "", from.Add(2*time.Hour))
+		testutil.AssertNoError(t, err)
+
+		// One expense for catB
+		_, err = txSvc.CreateTransaction(user.ID, account.ID, &catB.ID, models.TransactionTypeExpense, 1500, "", from.Add(3*time.Hour))
+		testutil.AssertNoError(t, err)
+
+		result, err := txSvc.GetSpendingByCategory(user.ID, from, to)
+		testutil.AssertNoError(t, err)
+
+		if len(result.Items) != 2 {
+			t.Fatalf("expected 2 items, got %d", len(result.Items))
+		}
+		if result.TotalSpent != 6500 {
+			t.Errorf("expected total_spent 6500, got %d", result.TotalSpent)
+		}
+		// First item should be catA (5000 > 1500)
+		if result.Items[0].Total != 5000 {
+			t.Errorf("expected first item total 5000, got %d", result.Items[0].Total)
+		}
+		if result.Items[1].Total != 1500 {
+			t.Errorf("expected second item total 1500, got %d", result.Items[1].Total)
+		}
+	})
+
+	t.Run("handles_uncategorized", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		acctSvc := NewAccountService(db)
+		txSvc := NewTransactionService(db, acctSvc)
+		user := testutil.CreateTestUser(t, db)
+		account := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 100000)
+
+		_, err := txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeExpense, 2500, "", from.Add(time.Hour))
+		testutil.AssertNoError(t, err)
+
+		result, err := txSvc.GetSpendingByCategory(user.ID, from, to)
+		testutil.AssertNoError(t, err)
+
+		if len(result.Items) != 1 {
+			t.Fatalf("expected 1 item, got %d", len(result.Items))
+		}
+		if result.Items[0].CategoryName != "Uncategorized" {
+			t.Errorf("expected category_name 'Uncategorized', got %q", result.Items[0].CategoryName)
+		}
+		if result.Items[0].CategoryColor != "#9CA3AF" {
+			t.Errorf("expected color '#9CA3AF', got %q", result.Items[0].CategoryColor)
+		}
+		if result.Items[0].CategoryID != nil {
+			t.Errorf("expected nil category_id, got %v", result.Items[0].CategoryID)
+		}
+	})
+
+	t.Run("filters_by_date_range", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		acctSvc := NewAccountService(db)
+		txSvc := NewTransactionService(db, acctSvc)
+		user := testutil.CreateTestUser(t, db)
+		account := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 100000)
+
+		cat := testutil.CreateTestCategory(t, db, user.ID, models.CategoryTypeExpense)
+
+		// January expense (out of range for February query)
+		jan := time.Date(now.Year(), 1, 15, 12, 0, 0, 0, time.UTC)
+		_, err := txSvc.CreateTransaction(user.ID, account.ID, &cat.ID, models.TransactionTypeExpense, 1000, "", jan)
+		testutil.AssertNoError(t, err)
+
+		// February expense (in range)
+		feb := time.Date(now.Year(), 2, 15, 12, 0, 0, 0, time.UTC)
+		_, err = txSvc.CreateTransaction(user.ID, account.ID, &cat.ID, models.TransactionTypeExpense, 2000, "", feb)
+		testutil.AssertNoError(t, err)
+
+		febFrom := time.Date(now.Year(), 2, 1, 0, 0, 0, 0, time.UTC)
+		febTo := time.Date(now.Year(), 2, 28, 23, 59, 59, 0, time.UTC)
+		result, err := txSvc.GetSpendingByCategory(user.ID, febFrom, febTo)
+		testutil.AssertNoError(t, err)
+
+		if result.TotalSpent != 2000 {
+			t.Errorf("expected total_spent 2000, got %d", result.TotalSpent)
+		}
+	})
+
+	t.Run("excludes_non_expense_types", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		acctSvc := NewAccountService(db)
+		txSvc := NewTransactionService(db, acctSvc)
+		user := testutil.CreateTestUser(t, db)
+		account := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 100000)
+		account2 := testutil.CreateTestCashAccount(t, db, user.ID)
+
+		// Income transaction
+		_, err := txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeIncome, 5000, "", from.Add(time.Hour))
+		testutil.AssertNoError(t, err)
+
+		// Transfer transaction
+		_, err = txSvc.CreateTransfer(user.ID, account.ID, account2.ID, 1000, "", from.Add(2*time.Hour))
+		testutil.AssertNoError(t, err)
+
+		result, err := txSvc.GetSpendingByCategory(user.ID, from, to)
+		testutil.AssertNoError(t, err)
+
+		if result.TotalSpent != 0 {
+			t.Errorf("expected total_spent 0, got %d", result.TotalSpent)
+		}
+		if len(result.Items) != 0 {
+			t.Errorf("expected 0 items, got %d", len(result.Items))
+		}
+	})
+
+	t.Run("returns_empty_for_no_expenses", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		acctSvc := NewAccountService(db)
+		txSvc := NewTransactionService(db, acctSvc)
+		user := testutil.CreateTestUser(t, db)
+
+		result, err := txSvc.GetSpendingByCategory(user.ID, from, to)
+		testutil.AssertNoError(t, err)
+
+		if result.TotalSpent != 0 {
+			t.Errorf("expected total_spent 0, got %d", result.TotalSpent)
+		}
+		if len(result.Items) != 0 {
+			t.Errorf("expected 0 items, got %d", len(result.Items))
+		}
+	})
+
+	t.Run("user_isolation", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		acctSvc := NewAccountService(db)
+		txSvc := NewTransactionService(db, acctSvc)
+		userA := testutil.CreateTestUser(t, db)
+		userB := testutil.CreateTestUser(t, db)
+		accountA := testutil.CreateTestCashAccountWithBalance(t, db, userA.ID, 100000)
+		accountB := testutil.CreateTestCashAccountWithBalance(t, db, userB.ID, 100000)
+
+		_, err := txSvc.CreateTransaction(userA.ID, accountA.ID, nil, models.TransactionTypeExpense, 3000, "", from.Add(time.Hour))
+		testutil.AssertNoError(t, err)
+		_, err = txSvc.CreateTransaction(userB.ID, accountB.ID, nil, models.TransactionTypeExpense, 5000, "", from.Add(time.Hour))
+		testutil.AssertNoError(t, err)
+
+		result, err := txSvc.GetSpendingByCategory(userA.ID, from, to)
+		testutil.AssertNoError(t, err)
+
+		if result.TotalSpent != 3000 {
+			t.Errorf("expected total_spent 3000, got %d", result.TotalSpent)
+		}
+	})
+
+	t.Run("sorts_by_total_descending", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		acctSvc := NewAccountService(db)
+		txSvc := NewTransactionService(db, acctSvc)
+		user := testutil.CreateTestUser(t, db)
+		account := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 100000)
+
+		catSmall := testutil.CreateTestCategory(t, db, user.ID, models.CategoryTypeExpense)
+		catMedium := testutil.CreateTestCategory(t, db, user.ID, models.CategoryTypeExpense)
+		catLarge := testutil.CreateTestCategory(t, db, user.ID, models.CategoryTypeExpense)
+
+		_, err := txSvc.CreateTransaction(user.ID, account.ID, &catSmall.ID, models.TransactionTypeExpense, 1000, "", from.Add(time.Hour))
+		testutil.AssertNoError(t, err)
+		_, err = txSvc.CreateTransaction(user.ID, account.ID, &catMedium.ID, models.TransactionTypeExpense, 3000, "", from.Add(2*time.Hour))
+		testutil.AssertNoError(t, err)
+		_, err = txSvc.CreateTransaction(user.ID, account.ID, &catLarge.ID, models.TransactionTypeExpense, 5000, "", from.Add(3*time.Hour))
+		testutil.AssertNoError(t, err)
+
+		result, err := txSvc.GetSpendingByCategory(user.ID, from, to)
+		testutil.AssertNoError(t, err)
+
+		if len(result.Items) != 3 {
+			t.Fatalf("expected 3 items, got %d", len(result.Items))
+		}
+		if result.Items[0].Total != 5000 {
+			t.Errorf("expected first item total 5000, got %d", result.Items[0].Total)
+		}
+		if result.Items[1].Total != 3000 {
+			t.Errorf("expected second item total 3000, got %d", result.Items[1].Total)
+		}
+		if result.Items[2].Total != 1000 {
+			t.Errorf("expected third item total 1000, got %d", result.Items[2].Total)
+		}
+	})
+}

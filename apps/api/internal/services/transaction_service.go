@@ -2,6 +2,7 @@ package services
 
 import (
 	"errors"
+	"sort"
 	"time"
 
 	"gorm.io/gorm"
@@ -402,4 +403,66 @@ func (s *transactionService) DeleteTransaction(userID, transactionID uint) error
 			return apperrors.ErrInvalidTransactionType
 		}
 	})
+}
+
+// GetSpendingByCategory returns expense totals grouped by category for a date range.
+func (s *transactionService) GetSpendingByCategory(userID uint, from, to time.Time) (*SpendingByCategory, error) {
+	type categorySpend struct {
+		CategoryID *uint
+		Total      int64
+	}
+
+	var results []categorySpend
+	err := s.db.Model(&models.Transaction{}).
+		Select("category_id, COALESCE(SUM(amount), 0) as total").
+		Where("user_id = ? AND type = ? AND deleted_at IS NULL AND date BETWEEN ? AND ?",
+			userID, models.TransactionTypeExpense, from, to).
+		Group("category_id").
+		Scan(&results).Error
+	if err != nil {
+		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
+	}
+
+	var items []SpendingByCategoryItem
+	var totalSpent int64
+
+	for _, r := range results {
+		item := SpendingByCategoryItem{
+			CategoryID: r.CategoryID,
+			Total:      r.Total,
+		}
+
+		if r.CategoryID != nil {
+			var category models.Category
+			if catErr := s.db.First(&category, *r.CategoryID).Error; catErr != nil {
+				item.CategoryName = "Unknown Category"
+				item.CategoryColor = "#9CA3AF"
+			} else {
+				item.CategoryName = category.Name
+				item.CategoryColor = category.Color
+				item.CategoryIcon = category.Icon
+			}
+		} else {
+			item.CategoryName = "Uncategorized"
+			item.CategoryColor = "#9CA3AF"
+		}
+
+		totalSpent += r.Total
+		items = append(items, item)
+	}
+
+	sort.Slice(items, func(i, j int) bool {
+		return items[i].Total > items[j].Total
+	})
+
+	if items == nil {
+		items = []SpendingByCategoryItem{}
+	}
+
+	return &SpendingByCategory{
+		Items:      items,
+		TotalSpent: totalSpent,
+		FromDate:   from,
+		ToDate:     to,
+	}, nil
 }

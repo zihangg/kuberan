@@ -23,6 +23,7 @@ type mockTransactionService struct {
 	getTransactionByIDFn     func(userID, transactionID uint) (*models.Transaction, error)
 	updateTransactionFn      func(userID, transactionID uint, updates services.TransactionUpdateFields) (*models.Transaction, error)
 	deleteTransactionFn      func(userID, transactionID uint) error
+	getSpendingByCategoryFn  func(userID uint, from, to time.Time) (*services.SpendingByCategory, error)
 }
 
 func (m *mockTransactionService) CreateTransaction(userID, accountID uint, categoryID *uint, transactionType models.TransactionType, amount int64, description string, date time.Time) (*models.Transaction, error) {
@@ -76,6 +77,13 @@ func (m *mockTransactionService) DeleteTransaction(userID, transactionID uint) e
 	return nil
 }
 
+func (m *mockTransactionService) GetSpendingByCategory(userID uint, from, to time.Time) (*services.SpendingByCategory, error) {
+	if m.getSpendingByCategoryFn != nil {
+		return m.getSpendingByCategoryFn(userID, from, to)
+	}
+	return &services.SpendingByCategory{Items: []services.SpendingByCategoryItem{}}, nil
+}
+
 var _ services.TransactionServicer = (*mockTransactionService)(nil)
 
 func setupTransactionRouter(handler *TransactionHandler) *gin.Engine {
@@ -84,6 +92,7 @@ func setupTransactionRouter(handler *TransactionHandler) *gin.Engine {
 	auth.GET("/transactions", handler.GetUserTransactions)
 	auth.POST("/transactions", handler.CreateTransaction)
 	auth.POST("/transactions/transfer", handler.CreateTransfer)
+	auth.GET("/transactions/spending-by-category", handler.GetSpendingByCategory)
 	auth.GET("/accounts/:id/transactions", handler.GetAccountTransactions)
 	auth.GET("/transactions/:id", handler.GetTransactionByID)
 	auth.PUT("/transactions/:id", handler.UpdateTransaction)
@@ -654,6 +663,85 @@ func TestTransactionHandler_UpdateTransaction(t *testing.T) {
 		}
 		if captured.Description == nil || *captured.Description != "Updated" {
 			t.Errorf("expected description=Updated, got %v", captured.Description)
+		}
+	})
+}
+
+func TestTransactionHandler_GetSpendingByCategory(t *testing.T) {
+	t.Run("returns_200_with_data", func(t *testing.T) {
+		catID := uint(3)
+		txSvc := &mockTransactionService{
+			getSpendingByCategoryFn: func(_ uint, _, _ time.Time) (*services.SpendingByCategory, error) {
+				return &services.SpendingByCategory{
+					Items: []services.SpendingByCategoryItem{
+						{CategoryID: &catID, CategoryName: "Groceries", CategoryColor: "#22C55E", Total: 5000},
+						{CategoryID: nil, CategoryName: "Uncategorized", CategoryColor: "#9CA3AF", Total: 1500},
+					},
+					TotalSpent: 6500,
+				}, nil
+			},
+		}
+		handler := NewTransactionHandler(txSvc, &mockAuditService{})
+		r := setupTransactionRouter(handler)
+
+		rec := doRequest(r, "GET", "/transactions/spending-by-category?from_date=2026-01-01&to_date=2026-01-31", "")
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		result := parseJSON(t, rec)
+		items := result["items"].([]interface{})
+		if len(items) != 2 {
+			t.Errorf("expected 2 items, got %d", len(items))
+		}
+		if result["total_spent"].(float64) != 6500 {
+			t.Errorf("expected total_spent 6500, got %v", result["total_spent"])
+		}
+	})
+
+	t.Run("returns_400_missing_from_date", func(t *testing.T) {
+		handler := NewTransactionHandler(&mockTransactionService{}, &mockAuditService{})
+		r := setupTransactionRouter(handler)
+
+		rec := doRequest(r, "GET", "/transactions/spending-by-category?to_date=2026-01-31", "")
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+		}
+	})
+
+	t.Run("returns_400_missing_to_date", func(t *testing.T) {
+		handler := NewTransactionHandler(&mockTransactionService{}, &mockAuditService{})
+		r := setupTransactionRouter(handler)
+
+		rec := doRequest(r, "GET", "/transactions/spending-by-category?from_date=2026-01-01", "")
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+		}
+	})
+
+	t.Run("returns_200_empty_items", func(t *testing.T) {
+		txSvc := &mockTransactionService{
+			getSpendingByCategoryFn: func(_ uint, _, _ time.Time) (*services.SpendingByCategory, error) {
+				return &services.SpendingByCategory{
+					Items:      []services.SpendingByCategoryItem{},
+					TotalSpent: 0,
+				}, nil
+			},
+		}
+		handler := NewTransactionHandler(txSvc, &mockAuditService{})
+		r := setupTransactionRouter(handler)
+
+		rec := doRequest(r, "GET", "/transactions/spending-by-category?from_date=2026-01-01&to_date=2026-01-31", "")
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		result := parseJSON(t, rec)
+		items := result["items"].([]interface{})
+		if len(items) != 0 {
+			t.Errorf("expected 0 items, got %d", len(items))
 		}
 	})
 }

@@ -165,6 +165,7 @@ func run() error {
 	transactions.GET("", transactionHandler.GetUserTransactions)
 	transactions.POST("", transactionHandler.CreateTransaction)
 	transactions.POST("/transfer", transactionHandler.CreateTransfer)
+	transactions.GET("/spending-by-category", transactionHandler.GetSpendingByCategory)
 	transactions.GET("/:id", transactionHandler.GetTransactionByID)
 	transactions.PUT("/:id", transactionHandler.UpdateTransaction)
 	transactions.DELETE("/:id", transactionHandler.DeleteTransaction)
