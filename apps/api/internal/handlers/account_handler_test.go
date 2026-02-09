@@ -22,7 +22,7 @@ type mockAccountService struct {
 	createCreditCardAccountFn func(userID uint, name, description, currency string, creditLimit int64, interestRate float64, dueDate *time.Time) (*models.Account, error)
 	getUserAccountsFn         func(userID uint, page pagination.PageRequest) (*pagination.PageResponse[models.Account], error)
 	getAccountByIDFn          func(userID, accountID uint) (*models.Account, error)
-	updateCashAccountFn       func(userID, accountID uint, name, description string) (*models.Account, error)
+	updateAccountFn           func(userID, accountID uint, updates services.AccountUpdateFields) (*models.Account, error)
 	updateAccountBalanceFn    func(tx *gorm.DB, account *models.Account, transactionType models.TransactionType, amount int64) error
 }
 
@@ -62,9 +62,9 @@ func (m *mockAccountService) GetAccountByID(userID, accountID uint) (*models.Acc
 	return &models.Account{}, nil
 }
 
-func (m *mockAccountService) UpdateCashAccount(userID, accountID uint, name, description string) (*models.Account, error) {
-	if m.updateCashAccountFn != nil {
-		return m.updateCashAccountFn(userID, accountID, name, description)
+func (m *mockAccountService) UpdateAccount(userID, accountID uint, updates services.AccountUpdateFields) (*models.Account, error) {
+	if m.updateAccountFn != nil {
+		return m.updateAccountFn(userID, accountID, updates)
 	}
 	return &models.Account{}, nil
 }
@@ -87,7 +87,7 @@ func setupAccountRouter(handler *AccountHandler) *gin.Engine {
 	auth.POST("/accounts/credit-card", handler.CreateCreditCardAccount)
 	auth.GET("/accounts", handler.GetUserAccounts)
 	auth.GET("/accounts/:id", handler.GetAccountByID)
-	auth.PUT("/accounts/:id", handler.UpdateCashAccount)
+	auth.PUT("/accounts/:id", handler.UpdateAccount)
 	return r
 }
 
@@ -303,10 +303,18 @@ func TestAccountHandler_GetAccountByID(t *testing.T) {
 	})
 }
 
-func TestAccountHandler_UpdateCashAccount(t *testing.T) {
-	t.Run("returns 200 on success", func(t *testing.T) {
+func TestAccountHandler_UpdateAccount(t *testing.T) {
+	t.Run("returns_200_with_name_update", func(t *testing.T) {
 		acctSvc := &mockAccountService{
-			updateCashAccountFn: func(_, accountID uint, name, desc string) (*models.Account, error) {
+			updateAccountFn: func(_, accountID uint, updates services.AccountUpdateFields) (*models.Account, error) {
+				name := ""
+				if updates.Name != nil {
+					name = *updates.Name
+				}
+				desc := ""
+				if updates.Description != nil {
+					desc = *updates.Description
+				}
 				return &models.Account{
 					Base:        models.Base{ID: accountID},
 					Name:        name,
@@ -330,21 +338,75 @@ func TestAccountHandler_UpdateCashAccount(t *testing.T) {
 		}
 	})
 
-	t.Run("returns 400 on not cash account", func(t *testing.T) {
+	t.Run("returns_200_with_investment_fields", func(t *testing.T) {
+		var captured services.AccountUpdateFields
 		acctSvc := &mockAccountService{
-			updateCashAccountFn: func(_, _ uint, _, _ string) (*models.Account, error) {
-				return nil, apperrors.ErrNotCashAccount
+			updateAccountFn: func(_, accountID uint, updates services.AccountUpdateFields) (*models.Account, error) {
+				captured = updates
+				return &models.Account{
+					Base: models.Base{ID: accountID},
+					Type: models.AccountTypeInvestment,
+				}, nil
 			},
 		}
 		handler := NewAccountHandler(acctSvc, &mockAuditService{})
 		r := setupAccountRouter(handler)
 
-		rec := doRequest(r, "PUT", "/accounts/1", `{"name":"Updated"}`)
+		rec := doRequest(r, "PUT", "/accounts/1", `{"broker":"Schwab","account_number":"XYZ"}`)
 
-		if rec.Code != http.StatusBadRequest {
-			t.Fatalf("expected 400, got %d", rec.Code)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 		}
-		assertErrorCode(t, parseJSON(t, rec), "NOT_CASH_ACCOUNT")
+		if captured.Broker == nil || *captured.Broker != "Schwab" {
+			t.Errorf("expected broker Schwab, got %v", captured.Broker)
+		}
+		if captured.AccountNumber == nil || *captured.AccountNumber != "XYZ" {
+			t.Errorf("expected account_number XYZ, got %v", captured.AccountNumber)
+		}
+	})
+
+	t.Run("returns_200_with_credit_card_fields", func(t *testing.T) {
+		var captured services.AccountUpdateFields
+		acctSvc := &mockAccountService{
+			updateAccountFn: func(_, accountID uint, updates services.AccountUpdateFields) (*models.Account, error) {
+				captured = updates
+				return &models.Account{
+					Base: models.Base{ID: accountID},
+					Type: models.AccountTypeCreditCard,
+				}, nil
+			},
+		}
+		handler := NewAccountHandler(acctSvc, &mockAuditService{})
+		r := setupAccountRouter(handler)
+
+		rec := doRequest(r, "PUT", "/accounts/1", `{"interest_rate":22.5,"credit_limit":1000000}`)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		if captured.InterestRate == nil || *captured.InterestRate != 22.5 {
+			t.Errorf("expected interest_rate 22.5, got %v", captured.InterestRate)
+		}
+		if captured.CreditLimit == nil || *captured.CreditLimit != 1000000 {
+			t.Errorf("expected credit_limit 1000000, got %v", captured.CreditLimit)
+		}
+	})
+
+	t.Run("returns_404_when_not_found", func(t *testing.T) {
+		acctSvc := &mockAccountService{
+			updateAccountFn: func(_, _ uint, _ services.AccountUpdateFields) (*models.Account, error) {
+				return nil, apperrors.ErrAccountNotFound
+			},
+		}
+		handler := NewAccountHandler(acctSvc, &mockAuditService{})
+		r := setupAccountRouter(handler)
+
+		rec := doRequest(r, "PUT", "/accounts/999", `{"name":"Updated"}`)
+
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("expected 404, got %d", rec.Code)
+		}
+		assertErrorCode(t, parseJSON(t, rec), "ACCOUNT_NOT_FOUND")
 	})
 }
 

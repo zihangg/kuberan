@@ -163,31 +163,56 @@ func (s *accountService) GetAccountByID(userID, accountID uint) (*models.Account
 	return &account, nil
 }
 
-// UpdateCashAccount updates an existing cash account
-func (s *accountService) UpdateCashAccount(userID, accountID uint, name, description string) (*models.Account, error) {
-	// Get the account
+// UpdateAccount updates an existing account for any account type.
+// Only fields relevant to the account's type are applied.
+func (s *accountService) UpdateAccount(userID, accountID uint, fields AccountUpdateFields) (*models.Account, error) {
 	account, err := s.GetAccountByID(userID, accountID)
 	if err != nil {
 		return nil, err
 	}
 
-	// Ensure it's a cash account
-	if account.Type != models.AccountTypeCash {
-		return nil, apperrors.ErrNotCashAccount
-	}
-
-	// Update fields if provided
 	updates := make(map[string]interface{})
-	if name != "" {
-		updates["name"] = name
+
+	// Common fields (all account types)
+	if fields.Name != nil && *fields.Name != "" {
+		updates["name"] = *fields.Name
 	}
-	if description != "" {
-		updates["description"] = description
+	if fields.Description != nil {
+		updates["description"] = *fields.Description
+	}
+	if fields.IsActive != nil {
+		updates["is_active"] = *fields.IsActive
 	}
 
-	// Apply updates if any
+	// Investment-only fields
+	if account.Type == models.AccountTypeInvestment {
+		if fields.Broker != nil {
+			updates["broker"] = *fields.Broker
+		}
+		if fields.AccountNumber != nil {
+			updates["account_number"] = *fields.AccountNumber
+		}
+	}
+
+	// Credit card-only fields
+	if account.Type == models.AccountTypeCreditCard {
+		if fields.InterestRate != nil {
+			updates["interest_rate"] = *fields.InterestRate
+		}
+		if fields.DueDate != nil {
+			updates["due_date"] = *fields.DueDate
+		}
+		if fields.CreditLimit != nil {
+			updates["credit_limit"] = *fields.CreditLimit
+		}
+	}
+
 	if len(updates) > 0 {
 		if err := s.db.Model(account).Updates(updates).Error; err != nil {
+			return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
+		}
+		// Reload to get fresh data
+		if err := s.db.First(account, account.ID).Error; err != nil {
 			return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
 		}
 	}

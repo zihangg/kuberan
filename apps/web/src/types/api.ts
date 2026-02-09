@@ -106,6 +106,12 @@ export interface CreateCreditCardAccountRequest {
 export interface UpdateAccountRequest {
   name?: string;
   description?: string;
+  is_active?: boolean;
+  broker?: string;
+  account_number?: string;
+  interest_rate?: number;
+  due_date?: string;
+  credit_limit?: number;
 }
 
 // Transaction requests

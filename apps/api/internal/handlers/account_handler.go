@@ -50,10 +50,17 @@ type CreateCreditCardAccountRequest struct {
 	DueDate      *string `json:"due_date"`
 }
 
-// UpdateCashAccountRequest represents the request payload for updating a cash account
-type UpdateCashAccountRequest struct {
-	Name        string `json:"name" binding:"omitempty,min=1,max=100"`
-	Description string `json:"description" binding:"max=500"`
+// UpdateAccountRequest represents the request payload for updating an account.
+// Accepts common fields for all account types and type-specific optional fields.
+type UpdateAccountRequest struct {
+	Name          *string  `json:"name" binding:"omitempty,min=1,max=100"`
+	Description   *string  `json:"description" binding:"omitempty,max=500"`
+	IsActive      *bool    `json:"is_active"`
+	Broker        *string  `json:"broker" binding:"omitempty,max=100"`
+	AccountNumber *string  `json:"account_number" binding:"omitempty,max=50"`
+	InterestRate  *float64 `json:"interest_rate" binding:"omitempty,gte=0,lte=100"`
+	DueDate       *string  `json:"due_date"`
+	CreditLimit   *int64   `json:"credit_limit" binding:"omitempty,gte=0"`
 }
 
 // AccountResponse represents an account in the response
@@ -287,22 +294,22 @@ func (h *AccountHandler) GetAccountByID(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"account": account})
 }
 
-// UpdateCashAccount handles updating a cash account
-// @Summary     Update cash account
-// @Description Update an existing cash account for the authenticated user
+// UpdateAccount handles updating an account of any type.
+// @Summary     Update account
+// @Description Update an existing account for the authenticated user. Accepts common fields for all account types and type-specific fields.
 // @Tags        accounts
 // @Accept      json
 // @Produce     json
 // @Security    BearerAuth
 // @Param       id path int true "Account ID"
-// @Param       request body UpdateCashAccountRequest true "Updated account details"
+// @Param       request body UpdateAccountRequest true "Updated account details"
 // @Success     200 {object} AccountResponse "Updated account"
 // @Failure     400 {object} ErrorResponse "Invalid input or account ID"
 // @Failure     401 {object} ErrorResponse "Unauthorized"
 // @Failure     404 {object} ErrorResponse "Account not found"
 // @Failure     500 {object} ErrorResponse "Server error"
 // @Router      /accounts/{id} [put]
-func (h *AccountHandler) UpdateCashAccount(c *gin.Context) {
+func (h *AccountHandler) UpdateAccount(c *gin.Context) {
 	userID, err := getUserID(c)
 	if err != nil {
 		respondWithError(c, err)
@@ -315,25 +322,41 @@ func (h *AccountHandler) UpdateCashAccount(c *gin.Context) {
 		return
 	}
 
-	var req UpdateCashAccountRequest
+	var req UpdateAccountRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, err.Error()))
 		return
 	}
 
-	account, err := h.accountService.UpdateCashAccount(
-		userID,
-		accountID,
-		req.Name,
-		req.Description,
-	)
+	updateFields := services.AccountUpdateFields{
+		Name:          req.Name,
+		Description:   req.Description,
+		IsActive:      req.IsActive,
+		Broker:        req.Broker,
+		AccountNumber: req.AccountNumber,
+		InterestRate:  req.InterestRate,
+		CreditLimit:   req.CreditLimit,
+	}
+
+	if req.DueDate != nil && *req.DueDate != "" {
+		parsed, parseErr := time.Parse(time.RFC3339, *req.DueDate)
+		if parseErr != nil {
+			parsed, parseErr = time.Parse("2006-01-02", *req.DueDate)
+			if parseErr != nil {
+				respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, "invalid due_date format"))
+				return
+			}
+		}
+		updateFields.DueDate = &parsed
+	}
+
+	account, err := h.accountService.UpdateAccount(userID, accountID, updateFields)
 	if err != nil {
 		respondWithError(c, err)
 		return
 	}
 
-	h.auditService.Log(userID, "UPDATE_ACCOUNT", "account", accountID, c.ClientIP(),
-		map[string]interface{}{"name": req.Name, "description": req.Description})
+	h.auditService.Log(userID, "UPDATE_ACCOUNT", "account", accountID, c.ClientIP(), nil)
 
 	c.JSON(http.StatusOK, gin.H{"account": account})
 }

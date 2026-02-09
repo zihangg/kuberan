@@ -20,6 +20,19 @@ type UserServicer interface {
 	GetRefreshTokenHash(userID uint) (string, error)
 }
 
+// AccountUpdateFields holds optional fields for updating an account.
+// Nil pointer means "don't change"; non-nil means "set to this value".
+type AccountUpdateFields struct {
+	Name          *string
+	Description   *string
+	IsActive      *bool
+	Broker        *string    // investment only
+	AccountNumber *string    // investment only
+	InterestRate  *float64   // credit_card only
+	DueDate       *time.Time // credit_card only
+	CreditLimit   *int64     // credit_card only
+}
+
 // AccountServicer defines the contract for account-related business logic.
 type AccountServicer interface {
 	CreateCashAccount(userID uint, name, description, currency string, initialBalance int64) (*models.Account, error)
@@ -27,7 +40,7 @@ type AccountServicer interface {
 	CreateCreditCardAccount(userID uint, name, description, currency string, creditLimit int64, interestRate float64, dueDate *time.Time) (*models.Account, error)
 	GetUserAccounts(userID uint, page pagination.PageRequest) (*pagination.PageResponse[models.Account], error)
 	GetAccountByID(userID, accountID uint) (*models.Account, error)
-	UpdateCashAccount(userID, accountID uint, name, description string) (*models.Account, error)
+	UpdateAccount(userID, accountID uint, updates AccountUpdateFields) (*models.Account, error)
 	UpdateAccountBalance(tx *gorm.DB, account *models.Account, transactionType models.TransactionType, amount int64) error
 }
 

@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { CurrencyInput } from "@/components/ui/currency-input";
 import {
   Dialog,
   DialogContent,
@@ -17,6 +18,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import type { Account } from "@/types/models";
+import type { UpdateAccountRequest } from "@/types/api";
 
 const ACCOUNT_TYPE_LABELS: Record<string, string> = {
   cash: "Cash",
@@ -52,6 +54,12 @@ export function EditAccountDialog({
 }: EditAccountDialogProps) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+  const [isActive, setIsActive] = useState(true);
+  const [broker, setBroker] = useState("");
+  const [accountNumber, setAccountNumber] = useState("");
+  const [interestRate, setInterestRate] = useState("");
+  const [dueDate, setDueDate] = useState("");
+  const [creditLimit, setCreditLimit] = useState(0);
   const [error, setError] = useState("");
 
   const updateAccount = useUpdateAccount(account?.id ?? 0);
@@ -62,6 +70,12 @@ export function EditAccountDialog({
     if (account) {
       setName(account.name);
       setDescription(account.description ?? "");
+      setIsActive(account.is_active);
+      setBroker(account.broker ?? "");
+      setAccountNumber(account.account_number ?? "");
+      setInterestRate(account.interest_rate?.toString() ?? "");
+      setDueDate(account.due_date ? account.due_date.split("T")[0] : "");
+      setCreditLimit(account.credit_limit ?? 0);
       setError("");
     }
   }, [account]);
@@ -86,10 +100,32 @@ export function EditAccountDialog({
     }
 
     // Build payload with only changed fields
-    const payload: Record<string, unknown> = {};
+    const payload: UpdateAccountRequest = {};
     if (trimmedName !== account.name) payload.name = trimmedName;
     const newDesc = description.trim();
     if (newDesc !== (account.description ?? "")) payload.description = newDesc;
+    if (isActive !== account.is_active) payload.is_active = isActive;
+
+    // Investment-specific fields
+    if (account.type === "investment") {
+      if (broker.trim() !== (account.broker ?? ""))
+        payload.broker = broker.trim();
+      if (accountNumber.trim() !== (account.account_number ?? ""))
+        payload.account_number = accountNumber.trim();
+    }
+
+    // Credit card-specific fields
+    if (account.type === "credit_card") {
+      const parsedRate = interestRate ? parseFloat(interestRate) : 0;
+      if (parsedRate !== (account.interest_rate ?? 0))
+        payload.interest_rate = parsedRate;
+      const origDueDate = account.due_date
+        ? account.due_date.split("T")[0]
+        : "";
+      if (dueDate !== origDueDate) payload.due_date = dueDate || undefined;
+      if (creditLimit !== (account.credit_limit ?? 0))
+        payload.credit_limit = creditLimit;
+    }
 
     if (Object.keys(payload).length === 0) {
       onOpenChange(false);
@@ -154,6 +190,85 @@ export function EditAccountDialog({
               maxLength={500}
             />
           </div>
+
+          <div className="flex items-center gap-2">
+            <input
+              id="edit-account-active"
+              type="checkbox"
+              checked={isActive}
+              onChange={(e) => setIsActive(e.target.checked)}
+              disabled={isSubmitting}
+              className="h-4 w-4 rounded border-gray-300"
+            />
+            <Label htmlFor="edit-account-active">Active</Label>
+          </div>
+
+          {account?.type === "investment" && (
+            <>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="edit-account-broker">Broker</Label>
+                <Input
+                  id="edit-account-broker"
+                  placeholder="e.g., Fidelity, Schwab"
+                  value={broker}
+                  onChange={(e) => setBroker(e.target.value)}
+                  disabled={isSubmitting}
+                  maxLength={100}
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="edit-account-number">Account Number</Label>
+                <Input
+                  id="edit-account-number"
+                  placeholder="Optional"
+                  value={accountNumber}
+                  onChange={(e) => setAccountNumber(e.target.value)}
+                  disabled={isSubmitting}
+                  maxLength={50}
+                />
+              </div>
+            </>
+          )}
+
+          {account?.type === "credit_card" && (
+            <>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="edit-account-credit-limit">Credit Limit</Label>
+                <CurrencyInput
+                  id="edit-account-credit-limit"
+                  value={creditLimit}
+                  onChange={setCreditLimit}
+                  disabled={isSubmitting}
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="edit-account-interest-rate">
+                  Interest Rate (%)
+                </Label>
+                <Input
+                  id="edit-account-interest-rate"
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.01"
+                  placeholder="e.g., 19.99"
+                  value={interestRate}
+                  onChange={(e) => setInterestRate(e.target.value)}
+                  disabled={isSubmitting}
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="edit-account-due-date">Due Date</Label>
+                <Input
+                  id="edit-account-due-date"
+                  type="date"
+                  value={dueDate}
+                  onChange={(e) => setDueDate(e.target.value)}
+                  disabled={isSubmitting}
+                />
+              </div>
+            </>
+          )}
 
           <DialogFooter>
             <Button type="submit" disabled={isSubmitting}>

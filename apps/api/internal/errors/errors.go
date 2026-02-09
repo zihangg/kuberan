@@ -64,7 +64,6 @@ var (
 // Account errors.
 var (
 	ErrAccountNotFound = &AppError{Code: "ACCOUNT_NOT_FOUND", Message: "Account not found", StatusCode: http.StatusNotFound}
-	ErrNotCashAccount  = &AppError{Code: "NOT_CASH_ACCOUNT", Message: "Operation only allowed on cash accounts", StatusCode: http.StatusBadRequest}
 )
 
 // Category errors.

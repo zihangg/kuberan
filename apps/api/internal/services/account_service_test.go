@@ -182,15 +182,20 @@ func TestGetAccountByID(t *testing.T) {
 	})
 }
 
-func TestUpdateCashAccount(t *testing.T) {
-	t.Run("valid", func(t *testing.T) {
+func TestUpdateAccount(t *testing.T) {
+	t.Run("updates_cash_account_name_and_description", func(t *testing.T) {
 		db := testutil.SetupTestDB(t)
 		defer testutil.TeardownTestDB(t, db)
 		svc := NewAccountService(db)
 		user := testutil.CreateTestUser(t, db)
 		account := testutil.CreateTestCashAccount(t, db, user.ID)
 
-		updated, err := svc.UpdateCashAccount(user.ID, account.ID, "New Name", "New Description")
+		name := "New Name"
+		desc := "New Description"
+		updated, err := svc.UpdateAccount(user.ID, account.ID, AccountUpdateFields{
+			Name:        &name,
+			Description: &desc,
+		})
 		testutil.AssertNoError(t, err)
 
 		if updated.Name != "New Name" {
@@ -201,15 +206,179 @@ func TestUpdateCashAccount(t *testing.T) {
 		}
 	})
 
-	t.Run("not_cash_account", func(t *testing.T) {
+	t.Run("updates_investment_account_broker", func(t *testing.T) {
 		db := testutil.SetupTestDB(t)
 		defer testutil.TeardownTestDB(t, db)
 		svc := NewAccountService(db)
 		user := testutil.CreateTestUser(t, db)
-		investmentAccount := testutil.CreateTestInvestmentAccount(t, db, user.ID)
+		account := testutil.CreateTestInvestmentAccount(t, db, user.ID)
 
-		_, err := svc.UpdateCashAccount(user.ID, investmentAccount.ID, "Name", "Desc")
-		testutil.AssertAppError(t, err, "NOT_CASH_ACCOUNT")
+		broker := "Schwab"
+		updated, err := svc.UpdateAccount(user.ID, account.ID, AccountUpdateFields{
+			Broker: &broker,
+		})
+		testutil.AssertNoError(t, err)
+
+		if updated.Broker != "Schwab" {
+			t.Errorf("expected broker 'Schwab', got %s", updated.Broker)
+		}
+	})
+
+	t.Run("updates_investment_account_number", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		svc := NewAccountService(db)
+		user := testutil.CreateTestUser(t, db)
+		account := testutil.CreateTestInvestmentAccount(t, db, user.ID)
+
+		acctNum := "XYZ-789"
+		updated, err := svc.UpdateAccount(user.ID, account.ID, AccountUpdateFields{
+			AccountNumber: &acctNum,
+		})
+		testutil.AssertNoError(t, err)
+
+		if updated.AccountNumber != "XYZ-789" {
+			t.Errorf("expected account_number 'XYZ-789', got %s", updated.AccountNumber)
+		}
+	})
+
+	t.Run("updates_credit_card_interest_rate", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		svc := NewAccountService(db)
+		user := testutil.CreateTestUser(t, db)
+		account := testutil.CreateTestCreditCardAccount(t, db, user.ID, 0)
+
+		rate := 22.5
+		updated, err := svc.UpdateAccount(user.ID, account.ID, AccountUpdateFields{
+			InterestRate: &rate,
+		})
+		testutil.AssertNoError(t, err)
+
+		if updated.InterestRate != 22.5 {
+			t.Errorf("expected interest_rate 22.5, got %f", updated.InterestRate)
+		}
+	})
+
+	t.Run("updates_credit_card_credit_limit", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		svc := NewAccountService(db)
+		user := testutil.CreateTestUser(t, db)
+		account := testutil.CreateTestCreditCardAccount(t, db, user.ID, 0)
+
+		limit := int64(1000000)
+		updated, err := svc.UpdateAccount(user.ID, account.ID, AccountUpdateFields{
+			CreditLimit: &limit,
+		})
+		testutil.AssertNoError(t, err)
+
+		if updated.CreditLimit != 1000000 {
+			t.Errorf("expected credit_limit 1000000, got %d", updated.CreditLimit)
+		}
+	})
+
+	t.Run("updates_credit_card_due_date", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		svc := NewAccountService(db)
+		user := testutil.CreateTestUser(t, db)
+		account := testutil.CreateTestCreditCardAccount(t, db, user.ID, 0)
+
+		dueDate := time.Date(2026, 4, 15, 0, 0, 0, 0, time.UTC)
+		updated, err := svc.UpdateAccount(user.ID, account.ID, AccountUpdateFields{
+			DueDate: &dueDate,
+		})
+		testutil.AssertNoError(t, err)
+
+		if updated.DueDate.Year() != 2026 || updated.DueDate.Month() != 4 || updated.DueDate.Day() != 15 {
+			t.Errorf("expected due_date 2026-04-15, got %v", updated.DueDate)
+		}
+	})
+
+	t.Run("ignores_broker_for_cash_account", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		svc := NewAccountService(db)
+		user := testutil.CreateTestUser(t, db)
+		account := testutil.CreateTestCashAccount(t, db, user.ID)
+
+		broker := "Fidelity"
+		updated, err := svc.UpdateAccount(user.ID, account.ID, AccountUpdateFields{
+			Broker: &broker,
+		})
+		testutil.AssertNoError(t, err)
+
+		if updated.Broker != "" {
+			t.Errorf("expected broker to be empty for cash account, got %s", updated.Broker)
+		}
+	})
+
+	t.Run("ignores_credit_limit_for_investment_account", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		svc := NewAccountService(db)
+		user := testutil.CreateTestUser(t, db)
+		account := testutil.CreateTestInvestmentAccount(t, db, user.ID)
+
+		limit := int64(100000)
+		updated, err := svc.UpdateAccount(user.ID, account.ID, AccountUpdateFields{
+			CreditLimit: &limit,
+		})
+		testutil.AssertNoError(t, err)
+
+		if updated.CreditLimit != 0 {
+			t.Errorf("expected credit_limit 0 for investment account, got %d", updated.CreditLimit)
+		}
+	})
+
+	t.Run("toggles_is_active", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		svc := NewAccountService(db)
+		user := testutil.CreateTestUser(t, db)
+		account := testutil.CreateTestCashAccount(t, db, user.ID)
+
+		inactive := false
+		_, err := svc.UpdateAccount(user.ID, account.ID, AccountUpdateFields{
+			IsActive: &inactive,
+		})
+		testutil.AssertNoError(t, err)
+
+		// Verify in DB (GetAccountByID filters active=true, so query directly)
+		var dbAccount models.Account
+		db.First(&dbAccount, account.ID)
+		if dbAccount.IsActive {
+			t.Error("expected account to be inactive")
+		}
+	})
+
+	t.Run("returns_error_for_nonexistent_account", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		svc := NewAccountService(db)
+		user := testutil.CreateTestUser(t, db)
+
+		name := "Test"
+		_, err := svc.UpdateAccount(user.ID, 99999, AccountUpdateFields{
+			Name: &name,
+		})
+		testutil.AssertAppError(t, err, "ACCOUNT_NOT_FOUND")
+	})
+
+	t.Run("returns_error_for_wrong_user", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		svc := NewAccountService(db)
+		user1 := testutil.CreateTestUser(t, db)
+		user2 := testutil.CreateTestUser(t, db)
+		account := testutil.CreateTestCashAccount(t, db, user1.ID)
+
+		name := "Hacked"
+		_, err := svc.UpdateAccount(user2.ID, account.ID, AccountUpdateFields{
+			Name: &name,
+		})
+		testutil.AssertAppError(t, err, "ACCOUNT_NOT_FOUND")
 	})
 }
 

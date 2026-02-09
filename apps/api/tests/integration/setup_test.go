@@ -111,7 +111,7 @@ func setupApp(t *testing.T) *testApp {
 	accounts.POST("/investment", accountHandler.CreateInvestmentAccount)
 	accounts.GET("", accountHandler.GetUserAccounts)
 	accounts.GET("/:id", accountHandler.GetAccountByID)
-	accounts.PUT("/:id", accountHandler.UpdateCashAccount)
+	accounts.PUT("/:id", accountHandler.UpdateAccount)
 	accounts.GET("/:id/transactions", transactionHandler.GetAccountTransactions)
 	accounts.GET("/:id/investments", investmentHandler.GetAccountInvestments)
 
