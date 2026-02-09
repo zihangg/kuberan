@@ -10,6 +10,7 @@ import {
   Plus,
   TrendingUp,
 } from "lucide-react";
+
 import { useAccounts } from "@/hooks/use-accounts";
 import { useTransactions } from "@/hooks/use-transactions";
 import { useCategories } from "@/hooks/use-categories";
@@ -35,7 +36,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { CreateTransactionDialog } from "@/components/transactions/create-transaction-dialog";
-import { CreateTransferDialog } from "@/components/transactions/create-transfer-dialog";
 import { EditTransactionDialog } from "@/components/transactions/edit-transaction-dialog";
 import type { Transaction, TransactionType } from "@/types/models";
 import type { UserTransactionFilters } from "@/types/api";
@@ -125,7 +125,6 @@ export default function TransactionsPage() {
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const [txDialogOpen, setTxDialogOpen] = useState(false);
-  const [transferDialogOpen, setTransferDialogOpen] = useState(false);
   const [editTxOpen, setEditTxOpen] = useState(false);
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
 
@@ -170,20 +169,10 @@ export default function TransactionsPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Transactions</h1>
-        <div className="flex gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setTransferDialogOpen(true)}
-          >
-            <ArrowLeftRight className="mr-2 h-4 w-4" />
-            Transfer
-          </Button>
-          <Button size="sm" onClick={() => setTxDialogOpen(true)}>
-            <Plus className="mr-2 h-4 w-4" />
-            Add Transaction
-          </Button>
-        </div>
+        <Button size="sm" onClick={() => setTxDialogOpen(true)}>
+          <Plus className="mr-2 h-4 w-4" />
+          Add Transaction
+        </Button>
       </div>
 
       {/* Filters */}
@@ -362,10 +351,6 @@ export default function TransactionsPage() {
       <CreateTransactionDialog
         open={txDialogOpen}
         onOpenChange={setTxDialogOpen}
-      />
-      <CreateTransferDialog
-        open={transferDialogOpen}
-        onOpenChange={setTransferDialogOpen}
       />
       <EditTransactionDialog
         open={editTxOpen}

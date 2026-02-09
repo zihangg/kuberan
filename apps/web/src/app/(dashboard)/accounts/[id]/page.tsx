@@ -46,7 +46,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { CreateTransactionDialog } from "@/components/transactions/create-transaction-dialog";
-import { CreateTransferDialog } from "@/components/transactions/create-transfer-dialog";
 import { EditAccountDialog } from "@/components/accounts/edit-account-dialog";
 import { EditTransactionDialog } from "@/components/transactions/edit-transaction-dialog";
 import type { Transaction, TransactionType } from "@/types/models";
@@ -149,7 +148,6 @@ export default function AccountDetailPage() {
   const [page, setPage] = useState(1);
   const [filters, setFilters] = useState<TransactionFilters>({});
   const [txDialogOpen, setTxDialogOpen] = useState(false);
-  const [transferDialogOpen, setTransferDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [editTxOpen, setEditTxOpen] = useState(false);
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
@@ -250,22 +248,10 @@ export default function AccountDetailPage() {
                 </CardDescription>
               )}
             </div>
-            <div className="flex gap-2">
-              {account.type === "cash" && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setTransferDialogOpen(true)}
-                >
-                  <ArrowLeftRight className="mr-2 h-4 w-4" />
-                  Transfer
-                </Button>
-              )}
-              <Button size="sm" onClick={() => setTxDialogOpen(true)}>
-                <Plus className="mr-2 h-4 w-4" />
-                Add Transaction
-              </Button>
-            </div>
+            <Button size="sm" onClick={() => setTxDialogOpen(true)}>
+              <Plus className="mr-2 h-4 w-4" />
+              Add Transaction
+            </Button>
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -447,12 +433,6 @@ export default function AccountDetailPage() {
         open={txDialogOpen}
         onOpenChange={setTxDialogOpen}
         defaultAccountId={accountId}
-      />
-
-      <CreateTransferDialog
-        open={transferDialogOpen}
-        onOpenChange={setTransferDialogOpen}
-        defaultFromAccountId={accountId}
       />
 
       <EditAccountDialog
