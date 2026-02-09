@@ -23,6 +23,7 @@ const ACCOUNT_TYPE_LABELS: Record<AccountType, string> = {
   cash: "Cash",
   investment: "Investment",
   debt: "Debt",
+  credit_card: "Credit Card",
 };
 
 function AccountsTableSkeleton() {

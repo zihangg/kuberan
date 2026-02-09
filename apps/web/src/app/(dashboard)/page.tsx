@@ -11,6 +11,7 @@ import {
   TrendingUp,
   Landmark,
   PiggyBank,
+  CreditCard,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useAccounts } from "@/hooks/use-accounts";
@@ -34,6 +35,7 @@ const ACCOUNT_TYPE_LABELS: Record<string, string> = {
   cash: "Cash",
   investment: "Investment",
   debt: "Debt",
+  credit_card: "Credit Card",
 };
 
 const TRANSACTION_TYPE_CONFIG: Record<
@@ -58,8 +60,8 @@ function DashboardSkeleton() {
   return (
     <div className="space-y-6">
       <Skeleton className="h-8 w-64" />
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {Array.from({ length: 3 }).map((_, i) => (
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {Array.from({ length: 4 }).map((_, i) => (
           <Skeleton key={i} className="h-28" />
         ))}
       </div>
@@ -74,23 +76,30 @@ function DashboardSkeleton() {
 }
 
 function SummaryCards({ accounts }: { accounts: Account[] }) {
-  const total = accounts.reduce((sum, a) => sum + a.balance, 0);
   const cashTotal = accounts
     .filter((a) => a.type === "cash")
     .reduce((sum, a) => sum + a.balance, 0);
   const investmentTotal = accounts
     .filter((a) => a.type === "investment")
     .reduce((sum, a) => sum + a.balance, 0);
+  const creditCardTotal = accounts
+    .filter((a) => a.type === "credit_card")
+    .reduce((sum, a) => sum + a.balance, 0);
+  const netWorth = cashTotal + investmentTotal - creditCardTotal;
+
+  const cashCount = accounts.filter((a) => a.type === "cash").length;
+  const investmentCount = accounts.filter((a) => a.type === "investment").length;
+  const creditCardCount = accounts.filter((a) => a.type === "credit_card").length;
 
   return (
-    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
-            <CardDescription>Total Balance</CardDescription>
+            <CardDescription>Net Worth</CardDescription>
             <Wallet className="h-4 w-4 text-muted-foreground" />
           </div>
-          <CardTitle className="text-3xl">{formatCurrency(total)}</CardTitle>
+          <CardTitle className="text-3xl">{formatCurrency(netWorth)}</CardTitle>
         </CardHeader>
         <CardContent>
           <p className="text-sm text-muted-foreground">
@@ -108,8 +117,7 @@ function SummaryCards({ accounts }: { accounts: Account[] }) {
         </CardHeader>
         <CardContent>
           <p className="text-sm text-muted-foreground">
-            {accounts.filter((a) => a.type === "cash").length} cash account
-            {accounts.filter((a) => a.type === "cash").length !== 1 ? "s" : ""}
+            {cashCount} cash account{cashCount !== 1 ? "s" : ""}
           </p>
         </CardContent>
       </Card>
@@ -125,11 +133,24 @@ function SummaryCards({ accounts }: { accounts: Account[] }) {
         </CardHeader>
         <CardContent>
           <p className="text-sm text-muted-foreground">
-            {accounts.filter((a) => a.type === "investment").length} investment
-            account
-            {accounts.filter((a) => a.type === "investment").length !== 1
-              ? "s"
-              : ""}
+            {investmentCount} investment account
+            {investmentCount !== 1 ? "s" : ""}
+          </p>
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardDescription>Credit Cards</CardDescription>
+            <CreditCard className="h-4 w-4 text-muted-foreground" />
+          </div>
+          <CardTitle className="text-3xl text-orange-600 dark:text-orange-400">
+            {formatCurrency(creditCardTotal)}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground">
+            {creditCardCount} credit card{creditCardCount !== 1 ? "s" : ""}
           </p>
         </CardContent>
       </Card>

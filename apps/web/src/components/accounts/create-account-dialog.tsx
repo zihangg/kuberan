@@ -6,6 +6,7 @@ import { ApiClientError } from "@/lib/api-client";
 import {
   useCreateCashAccount,
   useCreateInvestmentAccount,
+  useCreateCreditCardAccount,
 } from "@/hooks/use-accounts";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -61,12 +62,24 @@ export function CreateAccountDialog({
   const [investBroker, setInvestBroker] = useState("");
   const [investAccountNumber, setInvestAccountNumber] = useState("");
 
+  // Credit card account fields
+  const [ccName, setCcName] = useState("");
+  const [ccDescription, setCcDescription] = useState("");
+  const [ccCurrency, setCcCurrency] = useState("USD");
+  const [ccCreditLimit, setCcCreditLimit] = useState(0);
+  const [ccInterestRate, setCcInterestRate] = useState("");
+  const [ccDueDate, setCcDueDate] = useState("");
+
   const [error, setError] = useState("");
 
   const createCash = useCreateCashAccount();
   const createInvestment = useCreateInvestmentAccount();
+  const createCreditCard = useCreateCreditCardAccount();
 
-  const isSubmitting = createCash.isPending || createInvestment.isPending;
+  const isSubmitting =
+    createCash.isPending ||
+    createInvestment.isPending ||
+    createCreditCard.isPending;
 
   function resetForm() {
     setCashName("");
@@ -78,6 +91,12 @@ export function CreateAccountDialog({
     setInvestCurrency("USD");
     setInvestBroker("");
     setInvestAccountNumber("");
+    setCcName("");
+    setCcDescription("");
+    setCcCurrency("USD");
+    setCcCreditLimit(0);
+    setCcInterestRate("");
+    setCcDueDate("");
     setError("");
     setTab("cash");
   }
@@ -168,13 +187,56 @@ export function CreateAccountDialog({
     );
   }
 
+  async function handleSubmitCreditCard(e: React.FormEvent) {
+    e.preventDefault();
+    setError("");
+
+    const name = ccName.trim();
+    if (!name) {
+      setError("Name is required");
+      return;
+    }
+    if (name.length > 100) {
+      setError("Name must be 100 characters or less");
+      return;
+    }
+    if (ccDescription.length > 500) {
+      setError("Description must be 500 characters or less");
+      return;
+    }
+
+    const interestRate = ccInterestRate ? parseFloat(ccInterestRate) : 0;
+    if (isNaN(interestRate) || interestRate < 0 || interestRate > 100) {
+      setError("Interest rate must be between 0 and 100");
+      return;
+    }
+
+    createCreditCard.mutate(
+      {
+        name,
+        description: ccDescription.trim() || undefined,
+        currency: ccCurrency,
+        credit_limit: ccCreditLimit > 0 ? ccCreditLimit : undefined,
+        interest_rate: interestRate > 0 ? interestRate : undefined,
+        due_date: ccDueDate || undefined,
+      },
+      {
+        onSuccess: (account) => {
+          toast.success(`Account "${account.name}" created`);
+          handleOpenChange(false);
+        },
+        onError: (err) => setError(getErrorMessage(err)),
+      }
+    );
+  }
+
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Create Account</DialogTitle>
           <DialogDescription>
-            Add a new cash or investment account.
+            Add a new cash, investment, or credit card account.
           </DialogDescription>
         </DialogHeader>
 
@@ -187,10 +249,13 @@ export function CreateAccountDialog({
         <Tabs value={tab} onValueChange={setTab}>
           <TabsList className="w-full">
             <TabsTrigger value="cash" className="flex-1">
-              Cash Account
+              Cash
             </TabsTrigger>
             <TabsTrigger value="investment" className="flex-1">
-              Investment Account
+              Investment
+            </TabsTrigger>
+            <TabsTrigger value="credit-card" className="flex-1">
+              Credit Card
             </TabsTrigger>
           </TabsList>
 
@@ -321,6 +386,94 @@ export function CreateAccountDialog({
                   onChange={(e) => setInvestAccountNumber(e.target.value)}
                   disabled={isSubmitting}
                   maxLength={50}
+                />
+              </div>
+              <DialogFooter>
+                <Button type="submit" disabled={isSubmitting}>
+                  {isSubmitting ? "Creating..." : "Create Account"}
+                </Button>
+              </DialogFooter>
+            </form>
+          </TabsContent>
+
+          <TabsContent value="credit-card">
+            <form
+              onSubmit={handleSubmitCreditCard}
+              className="flex flex-col gap-4"
+            >
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="cc-name">Name</Label>
+                <Input
+                  id="cc-name"
+                  placeholder="e.g. Visa Signature"
+                  value={ccName}
+                  onChange={(e) => setCcName(e.target.value)}
+                  disabled={isSubmitting}
+                  maxLength={100}
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="cc-description">Description</Label>
+                <Input
+                  id="cc-description"
+                  placeholder="Optional description"
+                  value={ccDescription}
+                  onChange={(e) => setCcDescription(e.target.value)}
+                  disabled={isSubmitting}
+                  maxLength={500}
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="cc-currency">Currency</Label>
+                <Select
+                  value={ccCurrency}
+                  onValueChange={setCcCurrency}
+                  disabled={isSubmitting}
+                >
+                  <SelectTrigger id="cc-currency" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {CURRENCIES.map((c) => (
+                      <SelectItem key={c} value={c}>
+                        {c}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="cc-credit-limit">Credit Limit</Label>
+                <CurrencyInput
+                  id="cc-credit-limit"
+                  value={ccCreditLimit}
+                  onChange={setCcCreditLimit}
+                  placeholder="0.00"
+                  disabled={isSubmitting}
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="cc-interest-rate">Interest Rate (%)</Label>
+                <Input
+                  id="cc-interest-rate"
+                  type="number"
+                  placeholder="e.g. 24.99"
+                  value={ccInterestRate}
+                  onChange={(e) => setCcInterestRate(e.target.value)}
+                  disabled={isSubmitting}
+                  min={0}
+                  max={100}
+                  step={0.01}
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="cc-due-date">Due Date</Label>
+                <Input
+                  id="cc-due-date"
+                  type="date"
+                  value={ccDueDate}
+                  onChange={(e) => setCcDueDate(e.target.value)}
+                  disabled={isSubmitting}
                 />
               </div>
               <DialogFooter>

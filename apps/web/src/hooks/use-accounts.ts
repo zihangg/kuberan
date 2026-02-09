@@ -7,6 +7,7 @@ import type {
   AccountResponse,
   CreateCashAccountRequest,
   CreateInvestmentAccountRequest,
+  CreateCreditCardAccountRequest,
   UpdateAccountRequest,
 } from "@/types/api";
 
@@ -62,6 +63,22 @@ export function useCreateInvestmentAccount() {
     mutationFn: async (data: CreateInvestmentAccountRequest) => {
       const res = await apiClient.post<AccountResponse>(
         "/api/v1/accounts/investment",
+        data
+      );
+      return res.account;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: accountKeys.lists() });
+    },
+  });
+}
+
+export function useCreateCreditCardAccount() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: CreateCreditCardAccountRequest) => {
+      const res = await apiClient.post<AccountResponse>(
+        "/api/v1/accounts/credit-card",
         data
       );
       return res.account;

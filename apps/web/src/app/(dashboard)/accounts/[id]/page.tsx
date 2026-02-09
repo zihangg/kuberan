@@ -55,6 +55,7 @@ const ACCOUNT_TYPE_LABELS: Record<string, string> = {
   cash: "Cash",
   investment: "Investment",
   debt: "Debt",
+  credit_card: "Credit Card",
 };
 
 const TRANSACTION_TYPE_CONFIG: Record<

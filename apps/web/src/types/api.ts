@@ -94,6 +94,15 @@ export interface CreateInvestmentAccountRequest {
   account_number?: string;
 }
 
+export interface CreateCreditCardAccountRequest {
+  name: string;
+  description?: string;
+  currency?: string;
+  credit_limit?: number;
+  interest_rate?: number;
+  due_date?: string;
+}
+
 export interface UpdateAccountRequest {
   name?: string;
   description?: string;

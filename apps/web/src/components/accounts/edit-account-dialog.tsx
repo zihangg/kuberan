@@ -22,6 +22,7 @@ const ACCOUNT_TYPE_LABELS: Record<string, string> = {
   cash: "Cash",
   investment: "Investment",
   debt: "Debt",
+  credit_card: "Credit Card",
 };
 
 function getErrorMessage(error: unknown): string {

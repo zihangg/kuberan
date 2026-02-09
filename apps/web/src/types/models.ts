@@ -20,7 +20,7 @@ export interface User {
 }
 
 // Account types
-export type AccountType = "cash" | "investment" | "debt";
+export type AccountType = "cash" | "investment" | "debt" | "credit_card";
 
 export interface Account extends BaseModel {
   user_id: number;
@@ -32,8 +32,9 @@ export interface Account extends BaseModel {
   is_active: boolean;
   broker?: string; // investment accounts
   account_number?: string; // investment accounts
-  interest_rate?: number; // debt accounts (float)
-  due_date?: string; // debt accounts, ISO 8601
+  interest_rate?: number; // debt/credit_card accounts (float)
+  due_date?: string; // debt/credit_card accounts, ISO 8601
+  credit_limit?: number; // credit_card accounts (cents)
 }
 
 // Transaction types
