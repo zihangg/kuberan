@@ -405,6 +405,48 @@ func (s *transactionService) DeleteTransaction(userID, transactionID uint) error
 	})
 }
 
+// GetMonthlySummary returns monthly income and expense totals for the last N months.
+func (s *transactionService) GetMonthlySummary(userID uint, months int) ([]MonthlySummaryItem, error) {
+	now := time.Now()
+	startMonth := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC).AddDate(0, -(months - 1), 0)
+
+	items := make([]MonthlySummaryItem, 0, months)
+
+	current := startMonth
+	for i := 0; i < months; i++ {
+		monthStart := current
+		monthEnd := current.AddDate(0, 1, 0).Add(-time.Nanosecond)
+
+		var income int64
+		if err := s.db.Model(&models.Transaction{}).
+			Select("COALESCE(SUM(amount), 0)").
+			Where("user_id = ? AND type = ? AND deleted_at IS NULL AND date BETWEEN ? AND ?",
+				userID, models.TransactionTypeIncome, monthStart, monthEnd).
+			Scan(&income).Error; err != nil {
+			return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
+		}
+
+		var expenses int64
+		if err := s.db.Model(&models.Transaction{}).
+			Select("COALESCE(SUM(amount), 0)").
+			Where("user_id = ? AND type = ? AND deleted_at IS NULL AND date BETWEEN ? AND ?",
+				userID, models.TransactionTypeExpense, monthStart, monthEnd).
+			Scan(&expenses).Error; err != nil {
+			return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
+		}
+
+		items = append(items, MonthlySummaryItem{
+			Month:    monthStart.Format("2006-01"),
+			Income:   income,
+			Expenses: expenses,
+		})
+
+		current = current.AddDate(0, 1, 0)
+	}
+
+	return items, nil
+}
+
 // GetSpendingByCategory returns expense totals grouped by category for a date range.
 func (s *transactionService) GetSpendingByCategory(userID uint, from, to time.Time) (*SpendingByCategory, error) {
 	type categorySpend struct {

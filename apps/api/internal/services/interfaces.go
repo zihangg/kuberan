@@ -94,6 +94,13 @@ type SpendingByCategory struct {
 	ToDate     time.Time                `json:"to_date"`
 }
 
+// MonthlySummaryItem represents income and expense totals for a single month.
+type MonthlySummaryItem struct {
+	Month    string `json:"month"`    // "2026-02" format
+	Income   int64  `json:"income"`   // cents
+	Expenses int64  `json:"expenses"` // cents
+}
+
 // TransactionServicer defines the contract for transaction-related business logic.
 type TransactionServicer interface {
 	CreateTransaction(userID, accountID uint, categoryID *uint, transactionType models.TransactionType, amount int64, description string, date time.Time) (*models.Transaction, error)
@@ -104,6 +111,7 @@ type TransactionServicer interface {
 	UpdateTransaction(userID, transactionID uint, updates TransactionUpdateFields) (*models.Transaction, error)
 	DeleteTransaction(userID, transactionID uint) error
 	GetSpendingByCategory(userID uint, from, to time.Time) (*SpendingByCategory, error)
+	GetMonthlySummary(userID uint, months int) ([]MonthlySummaryItem, error)
 }
 
 // BudgetProgress contains spending vs budget data for a budget's current period.

@@ -555,6 +555,48 @@ func (h *TransactionHandler) GetSpendingByCategory(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
+// GetMonthlySummary handles the retrieval of monthly income and expense totals
+// @Summary     Get monthly income and expense summary
+// @Description Get monthly income and expense totals for the last N months
+// @Tags        transactions
+// @Accept      json
+// @Produce     json
+// @Security    BearerAuth
+// @Param       months query int false "Number of months back (default 6, min 1, max 24)"
+// @Success     200 {object} map[string]interface{} "Monthly summary data"
+// @Failure     401 {object} ErrorResponse "Unauthorized"
+// @Failure     500 {object} ErrorResponse "Server error"
+// @Router      /transactions/monthly-summary [get]
+func (h *TransactionHandler) GetMonthlySummary(c *gin.Context) {
+	userID, err := getUserID(c)
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	months := 6
+	if v := c.Query("months"); v != "" {
+		parsed, parseErr := strconv.Atoi(v)
+		if parseErr == nil {
+			months = parsed
+		}
+	}
+	if months < 1 {
+		months = 1
+	}
+	if months > 24 {
+		months = 24
+	}
+
+	result, err := h.transactionService.GetMonthlySummary(userID, months)
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": result})
+}
+
 // MessageResponse represents a simple message response
 type MessageResponse struct {
 	Message string `json:"message"`

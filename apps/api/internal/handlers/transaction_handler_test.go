@@ -24,6 +24,7 @@ type mockTransactionService struct {
 	updateTransactionFn      func(userID, transactionID uint, updates services.TransactionUpdateFields) (*models.Transaction, error)
 	deleteTransactionFn      func(userID, transactionID uint) error
 	getSpendingByCategoryFn  func(userID uint, from, to time.Time) (*services.SpendingByCategory, error)
+	getMonthlySummaryFn      func(userID uint, months int) ([]services.MonthlySummaryItem, error)
 }
 
 func (m *mockTransactionService) CreateTransaction(userID, accountID uint, categoryID *uint, transactionType models.TransactionType, amount int64, description string, date time.Time) (*models.Transaction, error) {
@@ -84,6 +85,13 @@ func (m *mockTransactionService) GetSpendingByCategory(userID uint, from, to tim
 	return &services.SpendingByCategory{Items: []services.SpendingByCategoryItem{}}, nil
 }
 
+func (m *mockTransactionService) GetMonthlySummary(userID uint, months int) ([]services.MonthlySummaryItem, error) {
+	if m.getMonthlySummaryFn != nil {
+		return m.getMonthlySummaryFn(userID, months)
+	}
+	return []services.MonthlySummaryItem{}, nil
+}
+
 var _ services.TransactionServicer = (*mockTransactionService)(nil)
 
 func setupTransactionRouter(handler *TransactionHandler) *gin.Engine {
@@ -93,6 +101,7 @@ func setupTransactionRouter(handler *TransactionHandler) *gin.Engine {
 	auth.POST("/transactions", handler.CreateTransaction)
 	auth.POST("/transactions/transfer", handler.CreateTransfer)
 	auth.GET("/transactions/spending-by-category", handler.GetSpendingByCategory)
+	auth.GET("/transactions/monthly-summary", handler.GetMonthlySummary)
 	auth.GET("/accounts/:id/transactions", handler.GetAccountTransactions)
 	auth.GET("/transactions/:id", handler.GetTransactionByID)
 	auth.PUT("/transactions/:id", handler.UpdateTransaction)
@@ -742,6 +751,79 @@ func TestTransactionHandler_GetSpendingByCategory(t *testing.T) {
 		items := result["items"].([]interface{})
 		if len(items) != 0 {
 			t.Errorf("expected 0 items, got %d", len(items))
+		}
+	})
+}
+
+func TestTransactionHandler_GetMonthlySummary(t *testing.T) {
+	t.Run("returns_200_with_default_months", func(t *testing.T) {
+		var capturedMonths int
+		txSvc := &mockTransactionService{
+			getMonthlySummaryFn: func(_ uint, months int) ([]services.MonthlySummaryItem, error) {
+				capturedMonths = months
+				return []services.MonthlySummaryItem{
+					{Month: "2025-09", Income: 500000, Expenses: 320000},
+					{Month: "2025-10", Income: 480000, Expenses: 350000},
+				}, nil
+			},
+		}
+		handler := NewTransactionHandler(txSvc, &mockAuditService{})
+		r := setupTransactionRouter(handler)
+
+		rec := doRequest(r, "GET", "/transactions/monthly-summary", "")
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		if capturedMonths != 6 {
+			t.Errorf("expected default months=6, got %d", capturedMonths)
+		}
+		result := parseJSON(t, rec)
+		data := result["data"].([]interface{})
+		if len(data) != 2 {
+			t.Errorf("expected 2 items, got %d", len(data))
+		}
+	})
+
+	t.Run("returns_200_with_custom_months", func(t *testing.T) {
+		var capturedMonths int
+		txSvc := &mockTransactionService{
+			getMonthlySummaryFn: func(_ uint, months int) ([]services.MonthlySummaryItem, error) {
+				capturedMonths = months
+				return []services.MonthlySummaryItem{}, nil
+			},
+		}
+		handler := NewTransactionHandler(txSvc, &mockAuditService{})
+		r := setupTransactionRouter(handler)
+
+		rec := doRequest(r, "GET", "/transactions/monthly-summary?months=3", "")
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		if capturedMonths != 3 {
+			t.Errorf("expected months=3, got %d", capturedMonths)
+		}
+	})
+
+	t.Run("returns_200_empty_data", func(t *testing.T) {
+		txSvc := &mockTransactionService{
+			getMonthlySummaryFn: func(_ uint, _ int) ([]services.MonthlySummaryItem, error) {
+				return []services.MonthlySummaryItem{}, nil
+			},
+		}
+		handler := NewTransactionHandler(txSvc, &mockAuditService{})
+		r := setupTransactionRouter(handler)
+
+		rec := doRequest(r, "GET", "/transactions/monthly-summary", "")
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		result := parseJSON(t, rec)
+		data := result["data"].([]interface{})
+		if len(data) != 0 {
+			t.Errorf("expected 0 items, got %d", len(data))
 		}
 	})
 }

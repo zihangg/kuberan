@@ -1299,3 +1299,131 @@ func TestGetSpendingByCategory(t *testing.T) {
 		}
 	})
 }
+
+func TestGetMonthlySummary(t *testing.T) {
+	now := time.Now()
+
+	t.Run("returns_monthly_totals", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		acctSvc := NewAccountService(db)
+		txSvc := NewTransactionService(db, acctSvc)
+		user := testutil.CreateTestUser(t, db)
+		account := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 100000)
+
+		// Current month: income 10000, expense 5000
+		curMonth := time.Date(now.Year(), now.Month(), 10, 12, 0, 0, 0, time.UTC)
+		_, err := txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeIncome, 10000, "", curMonth)
+		testutil.AssertNoError(t, err)
+		_, err = txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeExpense, 5000, "", curMonth)
+		testutil.AssertNoError(t, err)
+
+		// Previous month: income 8000, expense 3000
+		prevMonth := curMonth.AddDate(0, -1, 0)
+		_, err = txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeIncome, 8000, "", prevMonth)
+		testutil.AssertNoError(t, err)
+		_, err = txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeExpense, 3000, "", prevMonth)
+		testutil.AssertNoError(t, err)
+
+		result, err := txSvc.GetMonthlySummary(user.ID, 2)
+		testutil.AssertNoError(t, err)
+
+		if len(result) != 2 {
+			t.Fatalf("expected 2 items, got %d", len(result))
+		}
+		// First item is previous month (chronological order)
+		if result[0].Income != 8000 {
+			t.Errorf("expected prev month income 8000, got %d", result[0].Income)
+		}
+		if result[0].Expenses != 3000 {
+			t.Errorf("expected prev month expenses 3000, got %d", result[0].Expenses)
+		}
+		// Second item is current month
+		if result[1].Income != 10000 {
+			t.Errorf("expected cur month income 10000, got %d", result[1].Income)
+		}
+		if result[1].Expenses != 5000 {
+			t.Errorf("expected cur month expenses 5000, got %d", result[1].Expenses)
+		}
+	})
+
+	t.Run("returns_zero_for_empty_months", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		acctSvc := NewAccountService(db)
+		txSvc := NewTransactionService(db, acctSvc)
+		user := testutil.CreateTestUser(t, db)
+
+		result, err := txSvc.GetMonthlySummary(user.ID, 3)
+		testutil.AssertNoError(t, err)
+
+		if len(result) != 3 {
+			t.Fatalf("expected 3 items, got %d", len(result))
+		}
+		for i, item := range result {
+			if item.Income != 0 {
+				t.Errorf("item[%d]: expected income 0, got %d", i, item.Income)
+			}
+			if item.Expenses != 0 {
+				t.Errorf("item[%d]: expected expenses 0, got %d", i, item.Expenses)
+			}
+		}
+	})
+
+	t.Run("excludes_transfers_and_investments", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		acctSvc := NewAccountService(db)
+		txSvc := NewTransactionService(db, acctSvc)
+		user := testutil.CreateTestUser(t, db)
+		account := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 100000)
+		account2 := testutil.CreateTestCashAccount(t, db, user.ID)
+
+		curMonth := time.Date(now.Year(), now.Month(), 10, 12, 0, 0, 0, time.UTC)
+
+		// Transfer
+		_, err := txSvc.CreateTransfer(user.ID, account.ID, account2.ID, 2000, "", curMonth)
+		testutil.AssertNoError(t, err)
+
+		result, err := txSvc.GetMonthlySummary(user.ID, 1)
+		testutil.AssertNoError(t, err)
+
+		if len(result) != 1 {
+			t.Fatalf("expected 1 item, got %d", len(result))
+		}
+		if result[0].Income != 0 {
+			t.Errorf("expected income 0, got %d", result[0].Income)
+		}
+		if result[0].Expenses != 0 {
+			t.Errorf("expected expenses 0, got %d", result[0].Expenses)
+		}
+	})
+
+	t.Run("user_isolation", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		acctSvc := NewAccountService(db)
+		txSvc := NewTransactionService(db, acctSvc)
+		userA := testutil.CreateTestUser(t, db)
+		userB := testutil.CreateTestUser(t, db)
+		accountA := testutil.CreateTestCashAccountWithBalance(t, db, userA.ID, 100000)
+		accountB := testutil.CreateTestCashAccountWithBalance(t, db, userB.ID, 100000)
+
+		curMonth := time.Date(now.Year(), now.Month(), 10, 12, 0, 0, 0, time.UTC)
+
+		_, err := txSvc.CreateTransaction(userA.ID, accountA.ID, nil, models.TransactionTypeIncome, 5000, "", curMonth)
+		testutil.AssertNoError(t, err)
+		_, err = txSvc.CreateTransaction(userB.ID, accountB.ID, nil, models.TransactionTypeIncome, 9000, "", curMonth)
+		testutil.AssertNoError(t, err)
+
+		result, err := txSvc.GetMonthlySummary(userA.ID, 1)
+		testutil.AssertNoError(t, err)
+
+		if len(result) != 1 {
+			t.Fatalf("expected 1 item, got %d", len(result))
+		}
+		if result[0].Income != 5000 {
+			t.Errorf("expected income 5000, got %d", result[0].Income)
+		}
+	})
+}
