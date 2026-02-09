@@ -10,6 +10,9 @@ import type {
   CreateTransactionRequest,
   CreateTransferRequest,
   UpdateTransactionRequest,
+  SpendingByCategory,
+  MonthlySummaryItem,
+  DailySpendingItem,
 } from "@/types/api";
 import { accountKeys } from "./use-accounts";
 
@@ -23,6 +26,12 @@ export const transactionKeys = {
     [...transactionKeys.userLists(), filters] as const,
   details: () => [...transactionKeys.all, "detail"] as const,
   detail: (id: number) => [...transactionKeys.details(), id] as const,
+  spendingByCategory: (from: string, to: string) =>
+    [...transactionKeys.all, "spendingByCategory", from, to] as const,
+  monthlySummary: (months: number) =>
+    [...transactionKeys.all, "monthlySummary", months] as const,
+  dailySpending: (from: string, to: string) =>
+    [...transactionKeys.all, "dailySpending", from, to] as const,
 };
 
 export function useAccountTransactions(
@@ -133,5 +142,40 @@ export function useDeleteTransaction() {
       queryClient.invalidateQueries({ queryKey: transactionKeys.all });
       queryClient.invalidateQueries({ queryKey: accountKeys.all });
     },
+  });
+}
+
+export function useSpendingByCategory(from: string, to: string) {
+  return useQuery({
+    queryKey: transactionKeys.spendingByCategory(from, to),
+    queryFn: () =>
+      apiClient.get<SpendingByCategory>(
+        "/api/v1/transactions/spending-by-category",
+        { from_date: from, to_date: to }
+      ),
+  });
+}
+
+export function useMonthlySummary(months = 6) {
+  return useQuery({
+    queryKey: transactionKeys.monthlySummary(months),
+    queryFn: () =>
+      apiClient.get<{ data: MonthlySummaryItem[] }>(
+        "/api/v1/transactions/monthly-summary",
+        { months }
+      ),
+    select: (res) => res.data,
+  });
+}
+
+export function useDailySpending(from: string, to: string) {
+  return useQuery({
+    queryKey: transactionKeys.dailySpending(from, to),
+    queryFn: () =>
+      apiClient.get<{ data: DailySpendingItem[] }>(
+        "/api/v1/transactions/daily-spending",
+        { from_date: from, to_date: to }
+      ),
+    select: (res) => res.data,
   });
 }

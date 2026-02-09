@@ -30,6 +30,9 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { CreateTransactionDialog } from "@/components/transactions/create-transaction-dialog";
 import { EditTransactionDialog } from "@/components/transactions/edit-transaction-dialog";
+import { ExpenditureChart } from "@/components/dashboard/expenditure-chart";
+import { IncomeExpensesChart } from "@/components/dashboard/income-expenses-chart";
+import { SpendingTrendChart } from "@/components/dashboard/spending-trend-chart";
 import type { Account, Budget, Transaction, TransactionType } from "@/types/models";
 
 const ACCOUNT_TYPE_LABELS: Record<string, string> = {
@@ -71,6 +74,11 @@ function DashboardSkeleton() {
           <Skeleton key={i} className="h-28" />
         ))}
       </div>
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Skeleton className="h-[350px]" />
+        <Skeleton className="h-[350px]" />
+      </div>
+      <Skeleton className="h-[250px] w-full" />
       <Skeleton className="h-64 w-full" />
     </div>
   );
@@ -379,6 +387,12 @@ export default function DashboardPage() {
           </div>
 
           <BudgetOverview budgets={activeBudgets} />
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            <ExpenditureChart />
+            <IncomeExpensesChart />
+          </div>
+          <SpendingTrendChart />
 
           <Card>
             <CardHeader>

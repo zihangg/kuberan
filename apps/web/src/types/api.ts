@@ -203,3 +203,30 @@ export interface BudgetFilters extends PaginationParams {
   is_active?: boolean;
   period?: BudgetPeriod;
 }
+
+// Chart/analytics response types
+export interface SpendingByCategoryItem {
+  category_id: number | null;
+  category_name: string;
+  category_color: string;
+  category_icon: string;
+  total: number; // cents
+}
+
+export interface SpendingByCategory {
+  items: SpendingByCategoryItem[];
+  total_spent: number; // cents
+  from_date: string; // ISO 8601
+  to_date: string; // ISO 8601
+}
+
+export interface MonthlySummaryItem {
+  month: string; // "2026-02"
+  income: number; // cents
+  expenses: number; // cents
+}
+
+export interface DailySpendingItem {
+  date: string; // "2026-02-01"
+  total: number; // cents
+}
