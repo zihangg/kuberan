@@ -80,6 +80,8 @@ var (
 	ErrInvalidTransactionType = &AppError{Code: "INVALID_TRANSACTION_TYPE", Message: "Unsupported transaction type", StatusCode: http.StatusBadRequest}
 	ErrInsufficientBalance    = &AppError{Code: "INSUFFICIENT_BALANCE", Message: "Insufficient account balance", StatusCode: http.StatusBadRequest}
 	ErrSameAccountTransfer    = &AppError{Code: "SAME_ACCOUNT_TRANSFER", Message: "Cannot transfer to the same account", StatusCode: http.StatusBadRequest}
+	ErrTransactionNotEditable = &AppError{Code: "TRANSACTION_NOT_EDITABLE", Message: "This transaction type cannot be edited", StatusCode: http.StatusBadRequest}
+	ErrInvalidTypeChange      = &AppError{Code: "INVALID_TYPE_CHANGE", Message: "Cannot change transaction type to or from transfer/investment", StatusCode: http.StatusBadRequest}
 )
 
 // Budget errors.

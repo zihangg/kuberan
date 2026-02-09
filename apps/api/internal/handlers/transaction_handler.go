@@ -380,6 +380,90 @@ func (h *TransactionHandler) GetTransactionByID(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"transaction": transaction})
 }
 
+// UpdateTransactionRequest represents the request payload for updating a transaction.
+type UpdateTransactionRequest struct {
+	AccountID   *uint                   `json:"account_id"`
+	CategoryID  *int64                  `json:"category_id"`
+	Type        *models.TransactionType `json:"type" binding:"omitempty,transaction_type"`
+	Amount      *int64                  `json:"amount" binding:"omitempty,gt=0"`
+	Description *string                 `json:"description" binding:"omitempty,max=500"`
+	Date        *string                 `json:"date"`
+}
+
+// UpdateTransaction handles updating an existing transaction
+// @Summary     Update transaction
+// @Description Update an existing transaction. Only income/expense transactions can be edited. Transfer and investment transactions cannot be modified.
+// @Tags        transactions
+// @Accept      json
+// @Produce     json
+// @Security    BearerAuth
+// @Param       id      path int                     true "Transaction ID"
+// @Param       request body UpdateTransactionRequest true "Fields to update"
+// @Success     200 {object} TransactionResponse "Updated transaction"
+// @Failure     400 {object} ErrorResponse "Invalid input or non-editable transaction"
+// @Failure     401 {object} ErrorResponse "Unauthorized"
+// @Failure     404 {object} ErrorResponse "Transaction not found"
+// @Failure     500 {object} ErrorResponse "Server error"
+// @Router      /transactions/{id} [put]
+func (h *TransactionHandler) UpdateTransaction(c *gin.Context) {
+	userID, err := getUserID(c)
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	txID, err := parsePathID(c, "id")
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	var req UpdateTransactionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, err.Error()))
+		return
+	}
+
+	updateFields := services.TransactionUpdateFields{
+		AccountID:   req.AccountID,
+		Type:        req.Type,
+		Amount:      req.Amount,
+		Description: req.Description,
+	}
+
+	// Handle CategoryID: nil in JSON = don't change; negative/zero = clear; positive = set
+	if req.CategoryID != nil {
+		if *req.CategoryID <= 0 {
+			var nilUint *uint
+			updateFields.CategoryID = &nilUint
+		} else {
+			catID := uint(*req.CategoryID)
+			catIDPtr := &catID
+			updateFields.CategoryID = &catIDPtr
+		}
+	}
+
+	// Parse date if provided
+	if req.Date != nil && *req.Date != "" {
+		parsed, parseErr := parseFlexibleTime(*req.Date)
+		if parseErr != nil {
+			respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, parseErr.Error()))
+			return
+		}
+		updateFields.Date = &parsed
+	}
+
+	transaction, err := h.transactionService.UpdateTransaction(userID, txID, updateFields)
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	h.auditService.Log(userID, "UPDATE_TRANSACTION", "transaction", txID, c.ClientIP(), nil)
+
+	c.JSON(http.StatusOK, gin.H{"transaction": transaction})
+}
+
 // DeleteTransaction handles the deletion of a transaction
 // @Summary     Delete transaction
 // @Description Delete a transaction by ID

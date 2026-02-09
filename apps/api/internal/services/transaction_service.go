@@ -164,6 +164,115 @@ func (s *transactionService) CreateTransfer(
 	return result, nil
 }
 
+// reverseType flips income↔expense for balance reversal.
+func reverseType(t models.TransactionType) models.TransactionType {
+	if t == models.TransactionTypeIncome {
+		return models.TransactionTypeExpense
+	}
+	return models.TransactionTypeIncome
+}
+
+// UpdateTransaction updates an existing income/expense transaction.
+// Transfer and investment transactions cannot be edited.
+func (s *transactionService) UpdateTransaction(userID, transactionID uint, updates TransactionUpdateFields) (*models.Transaction, error) {
+	transaction, err := s.GetTransactionByID(userID, transactionID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Reject transfers and investment transactions
+	if transaction.Type == models.TransactionTypeTransfer || transaction.Type == models.TransactionTypeInvestment {
+		return nil, apperrors.ErrTransactionNotEditable
+	}
+
+	// If type change requested, reject changes to/from transfer or investment
+	if updates.Type != nil {
+		newType := *updates.Type
+		if newType == models.TransactionTypeTransfer || newType == models.TransactionTypeInvestment {
+			return nil, apperrors.ErrInvalidTypeChange
+		}
+	}
+
+	// Capture old values
+	oldAccountID := transaction.AccountID
+	oldType := transaction.Type
+	oldAmount := transaction.Amount
+
+	// Determine new values
+	newAccountID := oldAccountID
+	if updates.AccountID != nil {
+		newAccountID = *updates.AccountID
+	}
+	newType := oldType
+	if updates.Type != nil {
+		newType = *updates.Type
+	}
+	newAmount := oldAmount
+	if updates.Amount != nil {
+		newAmount = *updates.Amount
+	}
+
+	// Fetch old account
+	oldAccount, err := s.accountService.GetAccountByID(userID, oldAccountID)
+	if err != nil {
+		return nil, err
+	}
+
+	// If account is changing, fetch the new account
+	var targetAccount *models.Account
+	if newAccountID != oldAccountID {
+		targetAccount, err = s.accountService.GetAccountByID(userID, newAccountID)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		targetAccount = oldAccount
+	}
+
+	err = s.db.Transaction(func(tx *gorm.DB) error {
+		// Reverse old impact on old account
+		if txErr := s.accountService.UpdateAccountBalance(tx, oldAccount, reverseType(oldType), oldAmount); txErr != nil {
+			return txErr
+		}
+
+		// Apply field updates
+		if updates.AccountID != nil {
+			transaction.AccountID = *updates.AccountID
+		}
+		if updates.Type != nil {
+			transaction.Type = *updates.Type
+		}
+		if updates.Amount != nil {
+			transaction.Amount = *updates.Amount
+		}
+		if updates.Description != nil {
+			transaction.Description = *updates.Description
+		}
+		if updates.Date != nil {
+			transaction.Date = *updates.Date
+		}
+		if updates.CategoryID != nil {
+			transaction.CategoryID = *updates.CategoryID
+		}
+
+		if txErr := tx.Save(transaction).Error; txErr != nil {
+			return apperrors.Wrap(apperrors.ErrInternalServer, txErr)
+		}
+
+		// Apply new impact on target account
+		if txErr := s.accountService.UpdateAccountBalance(tx, targetAccount, newType, newAmount); txErr != nil {
+			return txErr
+		}
+
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return transaction, nil
+}
+
 // GetAccountTransactions retrieves a paginated, filtered list of transactions for a specific account.
 func (s *transactionService) GetAccountTransactions(userID, accountID uint, page pagination.PageRequest, filter TransactionFilter) (*pagination.PageResponse[models.Transaction], error) {
 	// First verify the account belongs to the user

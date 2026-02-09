@@ -803,3 +803,291 @@ func TestDeleteTransaction(t *testing.T) {
 		testutil.AssertAppError(t, err, "TRANSACTION_NOT_FOUND")
 	})
 }
+
+func TestUpdateTransaction(t *testing.T) {
+	t.Run("updates_amount_adjusts_balance", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		acctSvc := NewAccountService(db)
+		txSvc := NewTransactionService(db, acctSvc)
+		user := testutil.CreateTestUser(t, db)
+		account := testutil.CreateTestCashAccount(t, db, user.ID)
+
+		tx, err := txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeIncome, 5000, "Salary", time.Now())
+		testutil.AssertNoError(t, err)
+
+		// Balance should be 5000
+		acct, _ := acctSvc.GetAccountByID(user.ID, account.ID)
+		if acct.Balance != 5000 {
+			t.Fatalf("expected balance 5000, got %d", acct.Balance)
+		}
+
+		// Update amount from 5000 to 3000
+		newAmount := int64(3000)
+		updated, err := txSvc.UpdateTransaction(user.ID, tx.ID, TransactionUpdateFields{Amount: &newAmount})
+		testutil.AssertNoError(t, err)
+
+		if updated.Amount != 3000 {
+			t.Errorf("expected updated amount 3000, got %d", updated.Amount)
+		}
+
+		// Balance should be 3000 (reversed 5000 income, then applied 3000 income)
+		acct, _ = acctSvc.GetAccountByID(user.ID, account.ID)
+		if acct.Balance != 3000 {
+			t.Errorf("expected balance 3000, got %d", acct.Balance)
+		}
+	})
+
+	t.Run("updates_type_income_to_expense", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		acctSvc := NewAccountService(db)
+		txSvc := NewTransactionService(db, acctSvc)
+		user := testutil.CreateTestUser(t, db)
+		account := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 10000)
+
+		tx, err := txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeIncome, 5000, "Income", time.Now())
+		testutil.AssertNoError(t, err)
+
+		// Verify balance is now 15000 (10000 initial + 5000 income)
+		acct, _ := acctSvc.GetAccountByID(user.ID, account.ID)
+		if acct.Balance != 15000 {
+			t.Fatalf("expected balance 15000, got %d", acct.Balance)
+		}
+
+		// Change type to expense
+		expenseType := models.TransactionTypeExpense
+		_, err = txSvc.UpdateTransaction(user.ID, tx.ID, TransactionUpdateFields{Type: &expenseType})
+		testutil.AssertNoError(t, err)
+
+		// Balance: reverse income(5000) → 15000 - 5000 = 10000, then apply expense(5000) → 10000 - 5000 = 5000
+		acct, _ = acctSvc.GetAccountByID(user.ID, account.ID)
+		if acct.Balance != 5000 {
+			t.Errorf("expected balance 5000, got %d", acct.Balance)
+		}
+	})
+
+	t.Run("updates_type_expense_to_income", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		acctSvc := NewAccountService(db)
+		txSvc := NewTransactionService(db, acctSvc)
+		user := testutil.CreateTestUser(t, db)
+		account := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 10000)
+
+		tx, err := txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeExpense, 3000, "Expense", time.Now())
+		testutil.AssertNoError(t, err)
+
+		// Verify balance is now 7000 (10000 initial - 3000 expense)
+		acct, _ := acctSvc.GetAccountByID(user.ID, account.ID)
+		if acct.Balance != 7000 {
+			t.Fatalf("expected balance 7000, got %d", acct.Balance)
+		}
+
+		// Change type to income
+		incomeType := models.TransactionTypeIncome
+		_, err = txSvc.UpdateTransaction(user.ID, tx.ID, TransactionUpdateFields{Type: &incomeType})
+		testutil.AssertNoError(t, err)
+
+		// Balance: reverse expense(3000) → 7000 + 3000 = 10000, then apply income(3000) → 10000 + 3000 = 13000
+		acct, _ = acctSvc.GetAccountByID(user.ID, account.ID)
+		if acct.Balance != 13000 {
+			t.Errorf("expected balance 13000, got %d", acct.Balance)
+		}
+	})
+
+	t.Run("updates_account_id", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		acctSvc := NewAccountService(db)
+		txSvc := NewTransactionService(db, acctSvc)
+		user := testutil.CreateTestUser(t, db)
+		acctA := testutil.CreateTestCashAccount(t, db, user.ID)
+		acctB := testutil.CreateTestCashAccount(t, db, user.ID)
+
+		tx, err := txSvc.CreateTransaction(user.ID, acctA.ID, nil, models.TransactionTypeIncome, 5000, "Income", time.Now())
+		testutil.AssertNoError(t, err)
+
+		// A: 5000, B: 0
+		a, _ := acctSvc.GetAccountByID(user.ID, acctA.ID)
+		b, _ := acctSvc.GetAccountByID(user.ID, acctB.ID)
+		if a.Balance != 5000 || b.Balance != 0 {
+			t.Fatalf("expected A=5000 B=0, got A=%d B=%d", a.Balance, b.Balance)
+		}
+
+		// Move transaction to account B
+		_, err = txSvc.UpdateTransaction(user.ID, tx.ID, TransactionUpdateFields{AccountID: &acctB.ID})
+		testutil.AssertNoError(t, err)
+
+		// A: 0 (reversed), B: 5000 (applied)
+		a, _ = acctSvc.GetAccountByID(user.ID, acctA.ID)
+		b, _ = acctSvc.GetAccountByID(user.ID, acctB.ID)
+		if a.Balance != 0 {
+			t.Errorf("expected A balance 0, got %d", a.Balance)
+		}
+		if b.Balance != 5000 {
+			t.Errorf("expected B balance 5000, got %d", b.Balance)
+		}
+	})
+
+	t.Run("updates_category", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		acctSvc := NewAccountService(db)
+		txSvc := NewTransactionService(db, acctSvc)
+		user := testutil.CreateTestUser(t, db)
+		account := testutil.CreateTestCashAccount(t, db, user.ID)
+		cat1 := testutil.CreateTestCategory(t, db, user.ID, models.CategoryTypeExpense)
+		cat2 := testutil.CreateTestCategory(t, db, user.ID, models.CategoryTypeExpense)
+
+		tx, err := txSvc.CreateTransaction(user.ID, account.ID, &cat1.ID, models.TransactionTypeExpense, 1000, "Expense", time.Now())
+		testutil.AssertNoError(t, err)
+
+		// Update to cat2
+		cat2IDPtr := &cat2.ID
+		updated, err := txSvc.UpdateTransaction(user.ID, tx.ID, TransactionUpdateFields{CategoryID: &cat2IDPtr})
+		testutil.AssertNoError(t, err)
+
+		if updated.CategoryID == nil || *updated.CategoryID != cat2.ID {
+			t.Errorf("expected category_id %d, got %v", cat2.ID, updated.CategoryID)
+		}
+	})
+
+	t.Run("clears_category", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		acctSvc := NewAccountService(db)
+		txSvc := NewTransactionService(db, acctSvc)
+		user := testutil.CreateTestUser(t, db)
+		account := testutil.CreateTestCashAccount(t, db, user.ID)
+		cat := testutil.CreateTestCategory(t, db, user.ID, models.CategoryTypeExpense)
+
+		tx, err := txSvc.CreateTransaction(user.ID, account.ID, &cat.ID, models.TransactionTypeExpense, 1000, "Expense", time.Now())
+		testutil.AssertNoError(t, err)
+
+		// Clear category: double pointer with nil inner
+		var nilUint *uint
+		updated, err := txSvc.UpdateTransaction(user.ID, tx.ID, TransactionUpdateFields{CategoryID: &nilUint})
+		testutil.AssertNoError(t, err)
+
+		if updated.CategoryID != nil {
+			t.Errorf("expected category_id nil, got %v", updated.CategoryID)
+		}
+	})
+
+	t.Run("updates_description_and_date", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		acctSvc := NewAccountService(db)
+		txSvc := NewTransactionService(db, acctSvc)
+		user := testutil.CreateTestUser(t, db)
+		account := testutil.CreateTestCashAccount(t, db, user.ID)
+
+		tx, err := txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeIncome, 1000, "Old desc", time.Now())
+		testutil.AssertNoError(t, err)
+
+		newDesc := "New description"
+		newDate := time.Date(2025, 6, 15, 0, 0, 0, 0, time.UTC)
+		updated, err := txSvc.UpdateTransaction(user.ID, tx.ID, TransactionUpdateFields{
+			Description: &newDesc,
+			Date:        &newDate,
+		})
+		testutil.AssertNoError(t, err)
+
+		if updated.Description != "New description" {
+			t.Errorf("expected description 'New description', got %q", updated.Description)
+		}
+		if !updated.Date.Equal(newDate) {
+			t.Errorf("expected date %v, got %v", newDate, updated.Date)
+		}
+	})
+
+	t.Run("rejects_transfer_transaction", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		acctSvc := NewAccountService(db)
+		txSvc := NewTransactionService(db, acctSvc)
+		user := testutil.CreateTestUser(t, db)
+		from := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 10000)
+		to := testutil.CreateTestCashAccount(t, db, user.ID)
+
+		tx, err := txSvc.CreateTransfer(user.ID, from.ID, to.ID, 3000, "Transfer", time.Now())
+		testutil.AssertNoError(t, err)
+
+		newAmount := int64(5000)
+		_, err = txSvc.UpdateTransaction(user.ID, tx.ID, TransactionUpdateFields{Amount: &newAmount})
+		testutil.AssertAppError(t, err, "TRANSACTION_NOT_EDITABLE")
+	})
+
+	t.Run("rejects_investment_transaction", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		acctSvc := NewAccountService(db)
+		txSvc := NewTransactionService(db, acctSvc)
+		user := testutil.CreateTestUser(t, db)
+		account := testutil.CreateTestCashAccount(t, db, user.ID)
+
+		// Create an investment-type transaction directly in DB
+		investTx := &models.Transaction{
+			UserID:    user.ID,
+			AccountID: account.ID,
+			Type:      models.TransactionTypeInvestment,
+			Amount:    10000,
+			Date:      time.Now(),
+		}
+		db.Create(investTx)
+
+		newAmount := int64(5000)
+		_, err := txSvc.UpdateTransaction(user.ID, investTx.ID, TransactionUpdateFields{Amount: &newAmount})
+		testutil.AssertAppError(t, err, "TRANSACTION_NOT_EDITABLE")
+	})
+
+	t.Run("rejects_type_change_to_transfer", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		acctSvc := NewAccountService(db)
+		txSvc := NewTransactionService(db, acctSvc)
+		user := testutil.CreateTestUser(t, db)
+		account := testutil.CreateTestCashAccount(t, db, user.ID)
+
+		tx, err := txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeIncome, 1000, "", time.Now())
+		testutil.AssertNoError(t, err)
+
+		transferType := models.TransactionTypeTransfer
+		_, err = txSvc.UpdateTransaction(user.ID, tx.ID, TransactionUpdateFields{Type: &transferType})
+		testutil.AssertAppError(t, err, "INVALID_TYPE_CHANGE")
+	})
+
+	t.Run("rejects_type_change_to_investment", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		acctSvc := NewAccountService(db)
+		txSvc := NewTransactionService(db, acctSvc)
+		user := testutil.CreateTestUser(t, db)
+		account := testutil.CreateTestCashAccount(t, db, user.ID)
+
+		tx, err := txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeIncome, 1000, "", time.Now())
+		testutil.AssertNoError(t, err)
+
+		investType := models.TransactionTypeInvestment
+		_, err = txSvc.UpdateTransaction(user.ID, tx.ID, TransactionUpdateFields{Type: &investType})
+		testutil.AssertAppError(t, err, "INVALID_TYPE_CHANGE")
+	})
+
+	t.Run("user_isolation", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		acctSvc := NewAccountService(db)
+		txSvc := NewTransactionService(db, acctSvc)
+		user1 := testutil.CreateTestUser(t, db)
+		user2 := testutil.CreateTestUser(t, db)
+		account := testutil.CreateTestCashAccount(t, db, user1.ID)
+
+		tx, err := txSvc.CreateTransaction(user1.ID, account.ID, nil, models.TransactionTypeIncome, 1000, "", time.Now())
+		testutil.AssertNoError(t, err)
+
+		newAmount := int64(2000)
+		_, err = txSvc.UpdateTransaction(user2.ID, tx.ID, TransactionUpdateFields{Amount: &newAmount})
+		testutil.AssertAppError(t, err, "TRANSACTION_NOT_FOUND")
+	})
+}

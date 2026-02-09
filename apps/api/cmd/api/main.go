@@ -166,6 +166,7 @@ func run() error {
 	transactions.POST("", transactionHandler.CreateTransaction)
 	transactions.POST("/transfer", transactionHandler.CreateTransfer)
 	transactions.GET("/:id", transactionHandler.GetTransactionByID)
+	transactions.PUT("/:id", transactionHandler.UpdateTransaction)
 	transactions.DELETE("/:id", transactionHandler.DeleteTransaction)
 
 	// Budget routes

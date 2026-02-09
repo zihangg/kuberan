@@ -54,6 +54,18 @@ type CategoryServicer interface {
 	DeleteCategory(userID, categoryID uint) error
 }
 
+// TransactionUpdateFields holds optional fields for updating a transaction.
+// Nil pointer means "don't change"; non-nil means "set to this value".
+// CategoryID uses a double pointer: nil=no change, *nil=clear, *value=set.
+type TransactionUpdateFields struct {
+	AccountID   *uint
+	CategoryID  **uint
+	Type        *models.TransactionType
+	Amount      *int64
+	Description *string
+	Date        *time.Time
+}
+
 // TransactionFilter holds optional filter parameters for listing transactions.
 type TransactionFilter struct {
 	FromDate   *time.Time
@@ -72,6 +84,7 @@ type TransactionServicer interface {
 	GetAccountTransactions(userID, accountID uint, page pagination.PageRequest, filter TransactionFilter) (*pagination.PageResponse[models.Transaction], error)
 	GetUserTransactions(userID uint, page pagination.PageRequest, filter TransactionFilter) (*pagination.PageResponse[models.Transaction], error)
 	GetTransactionByID(userID, transactionID uint) (*models.Transaction, error)
+	UpdateTransaction(userID, transactionID uint, updates TransactionUpdateFields) (*models.Transaction, error)
 	DeleteTransaction(userID, transactionID uint) error
 }
 
