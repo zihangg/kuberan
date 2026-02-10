@@ -95,23 +95,50 @@ export interface BudgetProgress {
 // Asset types
 export type AssetType = "stock" | "etf" | "bond" | "crypto" | "reit";
 
-export interface Investment extends BaseModel {
-  account_id: number;
+// Security — shared entity for financial instruments
+export interface Security extends BaseModel {
   symbol: string;
-  asset_type: AssetType;
   name: string;
-  quantity: number; // float
-  cost_basis: number; // cents
-  current_price: number; // cents per unit
-  last_updated: string; // ISO 8601
+  asset_type: AssetType;
   currency: string; // ISO 4217
-  exchange?: string; // stock/etf
+  exchange?: string;
   maturity_date?: string | null; // bonds, ISO 8601
   yield_to_maturity?: number; // bonds, float
   coupon_rate?: number; // bonds, float
   network?: string; // crypto
-  wallet_address?: string; // crypto
   property_type?: string; // REITs
+}
+
+// Security price (time-series, no soft deletes)
+export interface SecurityPrice {
+  id: number;
+  security_id: number;
+  price: number; // cents
+  recorded_at: string; // ISO 8601
+  security?: Security;
+}
+
+// Portfolio snapshot (time-series, no soft deletes)
+export interface PortfolioSnapshot {
+  id: number;
+  user_id: number;
+  recorded_at: string; // ISO 8601
+  total_net_worth: number; // cents
+  cash_balance: number; // cents
+  investment_value: number; // cents
+  debt_balance: number; // cents
+}
+
+export interface Investment extends BaseModel {
+  account_id: number;
+  security_id: number;
+  quantity: number; // float
+  cost_basis: number; // cents
+  current_price: number; // cents per unit
+  last_updated: string; // ISO 8601
+  wallet_address?: string; // crypto
+  security: Security; // preloaded relation
+  account?: Account; // preloaded relation
 }
 
 // Investment transaction types
@@ -133,6 +160,7 @@ export interface InvestmentTransaction extends BaseModel {
   notes: string;
   split_ratio?: number; // float, for splits
   dividend_type?: string; // for dividends
+  investment?: Investment; // preloaded relation
 }
 
 export interface PortfolioSummary {

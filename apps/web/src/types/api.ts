@@ -4,6 +4,10 @@ import type {
   BudgetPeriod,
   BudgetProgress,
   Category,
+  Investment,
+  InvestmentTransaction,
+  PortfolioSummary,
+  Security,
   Transaction,
   User,
   TransactionType,
@@ -229,4 +233,74 @@ export interface MonthlySummaryItem {
 export interface DailySpendingItem {
   date: string; // "2026-02-01"
   total: number; // cents
+}
+
+// Investment response wrappers
+export interface InvestmentResponse {
+  investment: Investment;
+}
+
+export interface InvestmentTransactionResponse {
+  transaction: InvestmentTransaction;
+}
+
+export interface SecurityResponse {
+  security: Security;
+}
+
+export interface PortfolioResponse {
+  portfolio: PortfolioSummary;
+}
+
+// Investment requests
+export interface AddInvestmentRequest {
+  account_id: number;
+  security_id: number;
+  quantity: number; // float, > 0
+  purchase_price: number; // cents, > 0
+  wallet_address?: string;
+}
+
+export interface RecordBuyRequest {
+  date: string; // ISO 8601
+  quantity: number; // float, > 0
+  price_per_unit: number; // cents, > 0
+  fee?: number; // cents, >= 0
+  notes?: string;
+}
+
+export interface RecordSellRequest {
+  date: string; // ISO 8601
+  quantity: number; // float, > 0
+  price_per_unit: number; // cents, > 0
+  fee?: number; // cents, >= 0
+  notes?: string;
+}
+
+export interface RecordDividendRequest {
+  date: string; // ISO 8601
+  amount: number; // cents, > 0
+  dividend_type?: string;
+  notes?: string;
+}
+
+export interface RecordSplitRequest {
+  date: string; // ISO 8601
+  split_ratio: number; // float, > 0
+  notes?: string;
+}
+
+export interface UpdatePriceRequest {
+  current_price: number; // cents, > 0
+}
+
+// Security filters
+export interface SecurityFilters extends PaginationParams {
+  search?: string;
+}
+
+// Portfolio snapshot filters
+export interface PortfolioSnapshotFilters extends PaginationParams {
+  from_date: string;
+  to_date: string;
 }
