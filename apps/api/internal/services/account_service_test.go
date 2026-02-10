@@ -530,6 +530,136 @@ func TestCreateCreditCardAccount(t *testing.T) {
 	})
 }
 
+func TestGetUserAccountsInvestmentBalance(t *testing.T) {
+	t.Run("enriches_investment_account_balance", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		svc := NewAccountService(db)
+		user := testutil.CreateTestUser(t, db)
+		account := testutil.CreateTestInvestmentAccount(t, db, user.ID)
+		sec := testutil.CreateTestSecurity(t, db)
+
+		// Create investment: 10 shares, cost basis $1000
+		testutil.CreateTestInvestment(t, db, account.ID, sec.ID)
+
+		// Create security price: $150.00 per share
+		testutil.CreateTestSecurityPrice(t, db, sec.ID, 15000, time.Now())
+
+		page := pagination.PageRequest{Page: 1, PageSize: 20}
+		result, err := svc.GetUserAccounts(user.ID, page)
+		testutil.AssertNoError(t, err)
+
+		if len(result.Data) != 1 {
+			t.Fatalf("expected 1 account, got %d", len(result.Data))
+		}
+		// Expected balance = 10 shares * $150.00 = $1500.00 = 150000 cents
+		if result.Data[0].Balance != 150000 {
+			t.Errorf("expected balance 150000, got %d", result.Data[0].Balance)
+		}
+	})
+
+	t.Run("leaves_cash_account_balance_unchanged", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		svc := NewAccountService(db)
+		user := testutil.CreateTestUser(t, db)
+		testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 5000)
+
+		page := pagination.PageRequest{Page: 1, PageSize: 20}
+		result, err := svc.GetUserAccounts(user.ID, page)
+		testutil.AssertNoError(t, err)
+
+		if len(result.Data) != 1 {
+			t.Fatalf("expected 1 account, got %d", len(result.Data))
+		}
+		if result.Data[0].Balance != 5000 {
+			t.Errorf("expected cash balance 5000, got %d", result.Data[0].Balance)
+		}
+	})
+
+	t.Run("handles_investment_account_with_no_investments", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		svc := NewAccountService(db)
+		user := testutil.CreateTestUser(t, db)
+		testutil.CreateTestInvestmentAccount(t, db, user.ID)
+
+		page := pagination.PageRequest{Page: 1, PageSize: 20}
+		result, err := svc.GetUserAccounts(user.ID, page)
+		testutil.AssertNoError(t, err)
+
+		if len(result.Data) != 1 {
+			t.Fatalf("expected 1 account, got %d", len(result.Data))
+		}
+		if result.Data[0].Balance != 0 {
+			t.Errorf("expected balance 0 for account with no investments, got %d", result.Data[0].Balance)
+		}
+	})
+
+	t.Run("handles_investment_with_no_security_price", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		svc := NewAccountService(db)
+		user := testutil.CreateTestUser(t, db)
+		account := testutil.CreateTestInvestmentAccount(t, db, user.ID)
+		sec := testutil.CreateTestSecurity(t, db)
+
+		// Create investment but no security price
+		testutil.CreateTestInvestment(t, db, account.ID, sec.ID)
+
+		page := pagination.PageRequest{Page: 1, PageSize: 20}
+		result, err := svc.GetUserAccounts(user.ID, page)
+		testutil.AssertNoError(t, err)
+
+		if len(result.Data) != 1 {
+			t.Fatalf("expected 1 account, got %d", len(result.Data))
+		}
+		if result.Data[0].Balance != 0 {
+			t.Errorf("expected balance 0 for investment with no price, got %d", result.Data[0].Balance)
+		}
+	})
+}
+
+func TestGetAccountByIDInvestmentBalance(t *testing.T) {
+	t.Run("enriches_investment_account_balance", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		svc := NewAccountService(db)
+		user := testutil.CreateTestUser(t, db)
+		account := testutil.CreateTestInvestmentAccount(t, db, user.ID)
+		sec := testutil.CreateTestSecurity(t, db)
+
+		// Create investment: 10 shares, cost basis $1000
+		testutil.CreateTestInvestment(t, db, account.ID, sec.ID)
+
+		// Create security price: $150.00 per share
+		testutil.CreateTestSecurityPrice(t, db, sec.ID, 15000, time.Now())
+
+		result, err := svc.GetAccountByID(user.ID, account.ID)
+		testutil.AssertNoError(t, err)
+
+		// Expected balance = 10 shares * $150.00 = $1500.00 = 150000 cents
+		if result.Balance != 150000 {
+			t.Errorf("expected balance 150000, got %d", result.Balance)
+		}
+	})
+
+	t.Run("leaves_cash_account_unchanged", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		svc := NewAccountService(db)
+		user := testutil.CreateTestUser(t, db)
+		account := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 5000)
+
+		result, err := svc.GetAccountByID(user.ID, account.ID)
+		testutil.AssertNoError(t, err)
+
+		if result.Balance != 5000 {
+			t.Errorf("expected cash balance 5000, got %d", result.Balance)
+		}
+	})
+}
+
 func TestUpdateAccountBalance_CreditCard(t *testing.T) {
 	t.Run("expense_increases_credit_card_balance", func(t *testing.T) {
 		db := testutil.SetupTestDB(t)
