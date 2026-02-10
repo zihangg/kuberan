@@ -106,6 +106,25 @@ func CreateTestCreditCardAccount(t *testing.T, db *gorm.DB, userID uint, balance
 	return account
 }
 
+// CreateTestDebtAccount creates a debt account with the given balance.
+func CreateTestDebtAccount(t *testing.T, db *gorm.DB, userID uint, balance int64) *models.Account {
+	t.Helper()
+
+	account := &models.Account{
+		UserID:       userID,
+		Name:         fmt.Sprintf("Test Debt Account %d", nextID()),
+		Type:         models.AccountTypeDebt,
+		Balance:      balance,
+		Currency:     "USD",
+		IsActive:     true,
+		InterestRate: 5.0,
+	}
+	if err := db.Create(account).Error; err != nil {
+		t.Fatalf("failed to create test debt account: %v", err)
+	}
+	return account
+}
+
 // CreateTestCategory creates a category of the given type.
 func CreateTestCategory(t *testing.T, db *gorm.DB, userID uint, categoryType models.CategoryType) *models.Category {
 	t.Helper()
