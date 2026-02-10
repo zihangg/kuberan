@@ -55,13 +55,13 @@ type RecordPriceEntry struct {
 // @Tags        pipeline
 // @Accept      json
 // @Produce     json
-// @Param       X-API-Key header   string                true "Pipeline API key"
-// @Param       request   body     CreateSecurityRequest true "Security details"
-// @Success     201       {object} models.Security       "Security created"
-// @Failure     400       {object} ErrorResponse         "Invalid input"
-// @Failure     401       {object} ErrorResponse         "Invalid API key"
-// @Failure     409       {object} ErrorResponse         "Duplicate security"
-// @Failure     503       {object} ErrorResponse         "Pipeline not configured"
+// @Security    ApiKeyAuth
+// @Param       request body CreateSecurityRequest true "Security details"
+// @Success     201 {object} models.Security "Security created"
+// @Failure     400 {object} ErrorResponse "Invalid input"
+// @Failure     401 {object} ErrorResponse "Invalid API key"
+// @Failure     409 {object} ErrorResponse "Duplicate security"
+// @Failure     503 {object} ErrorResponse "Pipeline not configured"
 // @Router      /pipeline/securities [post]
 func (h *SecurityHandler) CreateSecurity(c *gin.Context) {
 	var req CreateSecurityRequest
@@ -150,12 +150,12 @@ func (h *SecurityHandler) GetSecurity(c *gin.Context) {
 // @Tags        pipeline
 // @Accept      json
 // @Produce     json
-// @Param       X-API-Key header   string              true "Pipeline API key"
-// @Param       request   body     RecordPricesRequest  true "Price entries"
-// @Success     200       {object} map[string]int       "Prices recorded count"
-// @Failure     400       {object} ErrorResponse        "Invalid input"
-// @Failure     401       {object} ErrorResponse        "Invalid API key"
-// @Failure     503       {object} ErrorResponse        "Pipeline not configured"
+// @Security    ApiKeyAuth
+// @Param       request body RecordPricesRequest true "Price entries"
+// @Success     200 {object} map[string]int "Prices recorded count"
+// @Failure     400 {object} ErrorResponse "Invalid input"
+// @Failure     401 {object} ErrorResponse "Invalid API key"
+// @Failure     503 {object} ErrorResponse "Pipeline not configured"
 // @Router      /pipeline/securities/prices [post]
 func (h *SecurityHandler) RecordPrices(c *gin.Context) {
 	var req RecordPricesRequest

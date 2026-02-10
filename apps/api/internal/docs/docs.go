@@ -127,6 +127,63 @@ const docTemplate = `{
                 }
             }
         },
+        "/accounts/credit-card": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Create a new credit card account for the authenticated user",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "accounts"
+                ],
+                "summary": "Create a credit card account",
+                "parameters": [
+                    {
+                        "description": "Credit card account details",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.CreateCreditCardAccountRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Account created",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.AccountResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid input",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/accounts/investment": {
             "post": {
                 "security": [
@@ -250,7 +307,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Update an existing cash account for the authenticated user",
+                "description": "Update an existing account for the authenticated user. Accepts common fields for all account types and type-specific fields.",
                 "consumes": [
                     "application/json"
                 ],
@@ -260,7 +317,7 @@ const docTemplate = `{
                 "tags": [
                     "accounts"
                 ],
-                "summary": "Update cash account",
+                "summary": "Update account",
                 "parameters": [
                     {
                         "type": "integer",
@@ -275,7 +332,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/internal_handlers.UpdateCashAccountRequest"
+                            "$ref": "#/definitions/internal_handlers.UpdateAccountRequest"
                         }
                     }
                 ],
@@ -426,13 +483,13 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "Filter by start date (RFC3339, e.g. 2024-01-01T00:00:00Z)",
+                        "description": "Filter by start date (RFC3339 e.g. 2024-01-01T00:00:00Z, or YYYY-MM-DD)",
                         "name": "from_date",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "Filter by end date (RFC3339)",
+                        "description": "Filter by end date (RFC3339 or YYYY-MM-DD)",
                         "name": "to_date",
                         "in": "query"
                     },
@@ -1445,6 +1502,74 @@ const docTemplate = `{
                 }
             }
         },
+        "/investments/snapshots": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get paginated portfolio snapshots for a date range",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "investments"
+                ],
+                "summary": "Get portfolio snapshots",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Start date (RFC3339 or YYYY-MM-DD)",
+                        "name": "from_date",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "End date (RFC3339 or YYYY-MM-DD)",
+                        "name": "to_date",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page number (default 1)",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Items per page (default 20, max 100)",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Paginated snapshots",
+                        "schema": {
+                            "$ref": "#/definitions/kuberan_internal_pagination.PageResponse-kuberan_internal_models_PortfolioSnapshot"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid input",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/investments/{id}": {
             "get": {
                 "security": [
@@ -1929,6 +2054,189 @@ const docTemplate = `{
                 }
             }
         },
+        "/pipeline/securities": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Create a new security (pipeline endpoint)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "pipeline"
+                ],
+                "summary": "Create security",
+                "parameters": [
+                    {
+                        "description": "Security details",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.CreateSecurityRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Security created",
+                        "schema": {
+                            "$ref": "#/definitions/kuberan_internal_models.Security"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid input",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Invalid API key",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Duplicate security",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Pipeline not configured",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/pipeline/securities/prices": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Bulk record prices for securities (pipeline endpoint)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "pipeline"
+                ],
+                "summary": "Record prices",
+                "parameters": [
+                    {
+                        "description": "Price entries",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.RecordPricesRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Prices recorded count",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "integer"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid input",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Invalid API key",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Pipeline not configured",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/pipeline/snapshots": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Compute and record portfolio snapshots for all users (pipeline endpoint)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "pipeline"
+                ],
+                "summary": "Compute portfolio snapshots",
+                "parameters": [
+                    {
+                        "description": "Snapshot parameters",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ComputeSnapshotsRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Snapshots recorded count",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "integer"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid input",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Invalid API key",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Pipeline not configured",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/profile": {
             "get": {
                 "security": [
@@ -1969,7 +2277,291 @@ const docTemplate = `{
                 }
             }
         },
+        "/securities": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get a paginated list of all securities",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "securities"
+                ],
+                "summary": "List securities",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Page number (default 1)",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Items per page (default 20, max 100)",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Paginated securities",
+                        "schema": {
+                            "$ref": "#/definitions/kuberan_internal_pagination.PageResponse-kuberan_internal_models_Security"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/securities/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get a specific security by ID",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "securities"
+                ],
+                "summary": "Get security by ID",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Security ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Security details",
+                        "schema": {
+                            "$ref": "#/definitions/kuberan_internal_models.Security"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid security ID",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Security not found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/securities/{id}/prices": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get price history for a security (paginated)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "securities"
+                ],
+                "summary": "Get price history",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Security ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Start date (RFC3339 or YYYY-MM-DD)",
+                        "name": "from_date",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "End date (RFC3339 or YYYY-MM-DD)",
+                        "name": "to_date",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page number (default 1)",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Items per page (default 20, max 100)",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Paginated prices",
+                        "schema": {
+                            "$ref": "#/definitions/kuberan_internal_pagination.PageResponse-kuberan_internal_models_SecurityPrice"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid input",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/transactions": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get a paginated list of all transactions for the authenticated user with optional filters",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "transactions"
+                ],
+                "summary": "Get user transactions",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Page number (default 1)",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Items per page (default 20, max 100)",
+                        "name": "page_size",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Filter by account ID",
+                        "name": "account_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by start date (RFC3339 e.g. 2024-01-01T00:00:00Z, or YYYY-MM-DD)",
+                        "name": "from_date",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by end date (RFC3339 or YYYY-MM-DD)",
+                        "name": "to_date",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by transaction type (income, expense, transfer, investment)",
+                        "name": "type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Filter by category ID",
+                        "name": "category_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Filter by minimum amount (cents)",
+                        "name": "min_amount",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Filter by maximum amount (cents)",
+                        "name": "max_amount",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Paginated transactions",
+                        "schema": {
+                            "$ref": "#/definitions/kuberan_internal_pagination.PageResponse-kuberan_internal_models_Transaction"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid input",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            },
             "post": {
                 "security": [
                     {
@@ -2003,6 +2595,180 @@ const docTemplate = `{
                         "description": "Transaction created",
                         "schema": {
                             "$ref": "#/definitions/internal_handlers.TransactionResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid input",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/transactions/daily-spending": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get daily expense totals for a date range",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "transactions"
+                ],
+                "summary": "Get daily spending",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Start date (RFC3339 or YYYY-MM-DD)",
+                        "name": "from_date",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "End date (RFC3339 or YYYY-MM-DD)",
+                        "name": "to_date",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Daily spending data",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid input",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/transactions/monthly-summary": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get monthly income and expense totals for the last N months",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "transactions"
+                ],
+                "summary": "Get monthly income and expense summary",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Number of months back (default 6, min 1, max 24)",
+                        "name": "months",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Monthly summary data",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/transactions/spending-by-category": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get expense totals grouped by category for a date range",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "transactions"
+                ],
+                "summary": "Get spending by category",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Start date (RFC3339 or YYYY-MM-DD)",
+                        "name": "from_date",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "End date (RFC3339 or YYYY-MM-DD)",
+                        "name": "to_date",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Spending breakdown by category",
+                        "schema": {
+                            "$ref": "#/definitions/kuberan_internal_services.SpendingByCategory"
                         }
                     },
                     "400": {
@@ -2149,6 +2915,74 @@ const docTemplate = `{
                     }
                 }
             },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Update an existing transaction. Only income/expense transactions can be edited. Transfer and investment transactions cannot be modified.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "transactions"
+                ],
+                "summary": "Update transaction",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Transaction ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Fields to update",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.UpdateTransactionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Updated transaction",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.TransactionResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid input or non-editable transaction",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Transaction not found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            },
             "delete": {
                 "security": [
                     {
@@ -2256,42 +3090,13 @@ const docTemplate = `{
             "type": "object",
             "required": [
                 "account_id",
-                "asset_type",
-                "name",
                 "purchase_price",
                 "quantity",
-                "symbol"
+                "security_id"
             ],
             "properties": {
                 "account_id": {
                     "type": "integer"
-                },
-                "asset_type": {
-                    "$ref": "#/definitions/kuberan_internal_models.AssetType"
-                },
-                "coupon_rate": {
-                    "type": "number"
-                },
-                "currency": {
-                    "type": "string"
-                },
-                "exchange": {
-                    "description": "Asset-type-specific optional fields",
-                    "type": "string"
-                },
-                "maturity_date": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string",
-                    "maxLength": 200,
-                    "minLength": 1
-                },
-                "network": {
-                    "type": "string"
-                },
-                "property_type": {
-                    "type": "string"
                 },
                 "purchase_price": {
                     "type": "integer"
@@ -2299,16 +3104,11 @@ const docTemplate = `{
                 "quantity": {
                     "type": "number"
                 },
-                "symbol": {
-                    "type": "string",
-                    "maxLength": 20,
-                    "minLength": 1
+                "security_id": {
+                    "type": "integer"
                 },
                 "wallet_address": {
                     "type": "string"
-                },
-                "yield_to_maturity": {
-                    "type": "number"
                 }
             }
         },
@@ -2352,6 +3152,17 @@ const docTemplate = `{
                 },
                 "user_id": {
                     "type": "integer"
+                }
+            }
+        },
+        "internal_handlers.ComputeSnapshotsRequest": {
+            "type": "object",
+            "required": [
+                "recorded_at"
+            ],
+            "properties": {
+                "recorded_at": {
+                    "type": "string"
                 }
             }
         },
@@ -2442,6 +3253,38 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_handlers.CreateCreditCardAccountRequest": {
+            "type": "object",
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "credit_limit": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "currency": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string",
+                    "maxLength": 500
+                },
+                "due_date": {
+                    "type": "string"
+                },
+                "interest_rate": {
+                    "type": "number",
+                    "maximum": 100,
+                    "minimum": 0
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 100,
+                    "minLength": 1
+                }
+            }
+        },
         "internal_handlers.CreateInvestmentAccountRequest": {
             "type": "object",
             "required": [
@@ -2467,6 +3310,50 @@ const docTemplate = `{
                     "type": "string",
                     "maxLength": 100,
                     "minLength": 1
+                }
+            }
+        },
+        "internal_handlers.CreateSecurityRequest": {
+            "type": "object",
+            "required": [
+                "asset_type",
+                "name",
+                "symbol"
+            ],
+            "properties": {
+                "asset_type": {
+                    "$ref": "#/definitions/kuberan_internal_models.AssetType"
+                },
+                "coupon_rate": {
+                    "type": "number"
+                },
+                "currency": {
+                    "type": "string"
+                },
+                "exchange": {
+                    "type": "string"
+                },
+                "maturity_date": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 200,
+                    "minLength": 1
+                },
+                "network": {
+                    "type": "string"
+                },
+                "property_type": {
+                    "type": "string"
+                },
+                "symbol": {
+                    "type": "string",
+                    "maxLength": 20,
+                    "minLength": 1
+                },
+                "yield_to_maturity": {
+                    "type": "number"
                 }
             }
         },
@@ -2617,6 +3504,40 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_handlers.RecordPriceEntry": {
+            "type": "object",
+            "required": [
+                "price",
+                "recorded_at",
+                "security_id"
+            ],
+            "properties": {
+                "price": {
+                    "type": "integer"
+                },
+                "recorded_at": {
+                    "type": "string"
+                },
+                "security_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_handlers.RecordPricesRequest": {
+            "type": "object",
+            "required": [
+                "prices"
+            ],
+            "properties": {
+                "prices": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "$ref": "#/definitions/internal_handlers.RecordPriceEntry"
+                    }
+                }
+            }
+        },
         "internal_handlers.RecordSellRequest": {
             "type": "object",
             "required": [
@@ -2729,6 +3650,43 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_handlers.UpdateAccountRequest": {
+            "type": "object",
+            "properties": {
+                "account_number": {
+                    "type": "string",
+                    "maxLength": 50
+                },
+                "broker": {
+                    "type": "string",
+                    "maxLength": 100
+                },
+                "credit_limit": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "description": {
+                    "type": "string",
+                    "maxLength": 500
+                },
+                "due_date": {
+                    "type": "string"
+                },
+                "interest_rate": {
+                    "type": "number",
+                    "maximum": 100,
+                    "minimum": 0
+                },
+                "is_active": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 100,
+                    "minLength": 1
+                }
+            }
+        },
         "internal_handlers.UpdateBudgetRequest": {
             "type": "object",
             "properties": {
@@ -2745,20 +3703,6 @@ const docTemplate = `{
                 },
                 "period": {
                     "$ref": "#/definitions/kuberan_internal_models.BudgetPeriod"
-                }
-            }
-        },
-        "internal_handlers.UpdateCashAccountRequest": {
-            "type": "object",
-            "properties": {
-                "description": {
-                    "type": "string",
-                    "maxLength": 500
-                },
-                "name": {
-                    "type": "string",
-                    "maxLength": 100,
-                    "minLength": 1
                 }
             }
         },
@@ -2797,6 +3741,30 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_handlers.UpdateTransactionRequest": {
+            "type": "object",
+            "properties": {
+                "account_id": {
+                    "type": "integer"
+                },
+                "amount": {
+                    "type": "integer"
+                },
+                "category_id": {
+                    "type": "integer"
+                },
+                "date": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string",
+                    "maxLength": 500
+                },
+                "type": {
+                    "$ref": "#/definitions/kuberan_internal_models.TransactionType"
+                }
+            }
+        },
         "internal_handlers.UserResponse": {
             "type": "object",
             "properties": {
@@ -2830,6 +3798,9 @@ const docTemplate = `{
                 "created_at": {
                     "type": "string"
                 },
+                "credit_limit": {
+                    "type": "integer"
+                },
                 "currency": {
                     "type": "string"
                 },
@@ -2846,7 +3817,7 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "interest_rate": {
-                    "description": "For debt accounts",
+                    "description": "For debt and credit card accounts",
                     "type": "number"
                 },
                 "investments": {
@@ -2884,12 +3855,14 @@ const docTemplate = `{
             "enum": [
                 "cash",
                 "investment",
-                "debt"
+                "debt",
+                "credit_card"
             ],
             "x-enum-varnames": [
                 "AccountTypeCash",
                 "AccountTypeInvestment",
-                "AccountTypeDebt"
+                "AccountTypeDebt",
+                "AccountTypeCreditCard"
             ]
         },
         "kuberan_internal_models.AssetType": {
@@ -3048,73 +4021,42 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "account": {
-                    "description": "Relationships",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/kuberan_internal_models.Account"
-                        }
-                    ]
+                    "$ref": "#/definitions/kuberan_internal_models.Account"
                 },
                 "account_id": {
                     "type": "integer"
                 },
-                "asset_type": {
-                    "$ref": "#/definitions/kuberan_internal_models.AssetType"
-                },
                 "cost_basis": {
-                    "description": "Total cost basis in cents",
                     "type": "integer"
-                },
-                "coupon_rate": {
-                    "type": "number"
                 },
                 "created_at": {
                     "type": "string"
                 },
-                "currency": {
-                    "type": "string"
-                },
                 "current_price": {
-                    "description": "Current market price per unit in cents",
                     "type": "integer"
                 },
                 "deleted_at": {
                     "$ref": "#/definitions/gorm.DeletedAt"
                 },
-                "exchange": {
-                    "description": "Stock/ETF specific fields",
-                    "type": "string"
-                },
                 "id": {
                     "type": "integer"
                 },
                 "last_updated": {
-                    "description": "Last time the price was updated",
-                    "type": "string"
-                },
-                "maturity_date": {
-                    "description": "Bond specific fields",
-                    "type": "string"
-                },
-                "name": {
-                    "description": "Full name of the investment",
-                    "type": "string"
-                },
-                "network": {
-                    "description": "Crypto specific fields",
-                    "type": "string"
-                },
-                "property_type": {
-                    "description": "REIT specific fields",
                     "type": "string"
                 },
                 "quantity": {
-                    "description": "Number of shares/units held",
                     "type": "number"
                 },
-                "symbol": {
-                    "description": "Stock/ETF symbol or unique identifier",
-                    "type": "string"
+                "security": {
+                    "description": "Relationships",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/kuberan_internal_models.Security"
+                        }
+                    ]
+                },
+                "security_id": {
+                    "type": "integer"
                 },
                 "transactions": {
                     "type": "array",
@@ -3127,9 +4069,6 @@ const docTemplate = `{
                 },
                 "wallet_address": {
                     "type": "string"
-                },
-                "yield_to_maturity": {
-                    "type": "number"
                 }
             }
         },
@@ -3206,6 +4145,99 @@ const docTemplate = `{
                 "InvestmentTransactionSplit",
                 "InvestmentTransactionTransfer"
             ]
+        },
+        "kuberan_internal_models.PortfolioSnapshot": {
+            "type": "object",
+            "properties": {
+                "cash_balance": {
+                    "type": "integer"
+                },
+                "debt_balance": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "investment_value": {
+                    "type": "integer"
+                },
+                "recorded_at": {
+                    "type": "string"
+                },
+                "total_net_worth": {
+                    "type": "integer"
+                },
+                "user_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "kuberan_internal_models.Security": {
+            "type": "object",
+            "properties": {
+                "asset_type": {
+                    "$ref": "#/definitions/kuberan_internal_models.AssetType"
+                },
+                "coupon_rate": {
+                    "type": "number"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "currency": {
+                    "type": "string"
+                },
+                "deleted_at": {
+                    "$ref": "#/definitions/gorm.DeletedAt"
+                },
+                "exchange": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "maturity_date": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "network": {
+                    "type": "string"
+                },
+                "property_type": {
+                    "type": "string"
+                },
+                "symbol": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "yield_to_maturity": {
+                    "type": "number"
+                }
+            }
+        },
+        "kuberan_internal_models.SecurityPrice": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "integer"
+                },
+                "price": {
+                    "type": "integer"
+                },
+                "recorded_at": {
+                    "type": "string"
+                },
+                "security": {
+                    "$ref": "#/definitions/kuberan_internal_models.Security"
+                },
+                "security_id": {
+                    "type": "integer"
+                }
+            }
         },
         "kuberan_internal_models.Transaction": {
             "type": "object",
@@ -3393,6 +4425,75 @@ const docTemplate = `{
                 }
             }
         },
+        "kuberan_internal_pagination.PageResponse-kuberan_internal_models_PortfolioSnapshot": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/kuberan_internal_models.PortfolioSnapshot"
+                    }
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "page_size": {
+                    "type": "integer"
+                },
+                "total_items": {
+                    "type": "integer"
+                },
+                "total_pages": {
+                    "type": "integer"
+                }
+            }
+        },
+        "kuberan_internal_pagination.PageResponse-kuberan_internal_models_Security": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/kuberan_internal_models.Security"
+                    }
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "page_size": {
+                    "type": "integer"
+                },
+                "total_items": {
+                    "type": "integer"
+                },
+                "total_pages": {
+                    "type": "integer"
+                }
+            }
+        },
+        "kuberan_internal_pagination.PageResponse-kuberan_internal_models_SecurityPrice": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/kuberan_internal_models.SecurityPrice"
+                    }
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "page_size": {
+                    "type": "integer"
+                },
+                "total_items": {
+                    "type": "integer"
+                },
+                "total_pages": {
+                    "type": "integer"
+                }
+            }
+        },
         "kuberan_internal_pagination.PageResponse-kuberan_internal_models_Transaction": {
             "type": "object",
             "properties": {
@@ -3459,6 +4560,46 @@ const docTemplate = `{
                 }
             }
         },
+        "kuberan_internal_services.SpendingByCategory": {
+            "type": "object",
+            "properties": {
+                "from_date": {
+                    "type": "string"
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/kuberan_internal_services.SpendingByCategoryItem"
+                    }
+                },
+                "to_date": {
+                    "type": "string"
+                },
+                "total_spent": {
+                    "type": "integer"
+                }
+            }
+        },
+        "kuberan_internal_services.SpendingByCategoryItem": {
+            "type": "object",
+            "properties": {
+                "category_color": {
+                    "type": "string"
+                },
+                "category_icon": {
+                    "type": "string"
+                },
+                "category_id": {
+                    "type": "integer"
+                },
+                "category_name": {
+                    "type": "string"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
         "kuberan_internal_services.TypeSummary": {
             "type": "object",
             "properties": {
@@ -3472,6 +4613,12 @@ const docTemplate = `{
         }
     },
     "securityDefinitions": {
+        "ApiKeyAuth": {
+            "description": "Pipeline API key for service-to-service authentication.",
+            "type": "apiKey",
+            "name": "X-API-Key",
+            "in": "header"
+        },
         "BearerAuth": {
             "description": "Type \"Bearer\" followed by a space and JWT token.",
             "type": "apiKey",

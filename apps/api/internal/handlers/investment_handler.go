@@ -7,6 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	apperrors "kuberan/internal/errors"
+	_ "kuberan/internal/models" // swagger type references
 	"kuberan/internal/pagination"
 	"kuberan/internal/services"
 )

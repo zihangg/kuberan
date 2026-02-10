@@ -7,6 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	apperrors "kuberan/internal/errors"
+	_ "kuberan/internal/models" // swagger type references
 	"kuberan/internal/pagination"
 	"kuberan/internal/services"
 )
@@ -33,12 +34,12 @@ type ComputeSnapshotsRequest struct {
 // @Tags        pipeline
 // @Accept      json
 // @Produce     json
-// @Param       X-API-Key  header   string                   true "Pipeline API key"
-// @Param       request    body     ComputeSnapshotsRequest  true "Snapshot parameters"
-// @Success     200        {object} map[string]int           "Snapshots recorded count"
-// @Failure     400        {object} ErrorResponse            "Invalid input"
-// @Failure     401        {object} ErrorResponse            "Invalid API key"
-// @Failure     503        {object} ErrorResponse            "Pipeline not configured"
+// @Security    ApiKeyAuth
+// @Param       request body ComputeSnapshotsRequest true "Snapshot parameters"
+// @Success     200 {object} map[string]int "Snapshots recorded count"
+// @Failure     400 {object} ErrorResponse "Invalid input"
+// @Failure     401 {object} ErrorResponse "Invalid API key"
+// @Failure     503 {object} ErrorResponse "Pipeline not configured"
 // @Router      /pipeline/snapshots [post]
 func (h *PortfolioSnapshotHandler) ComputeSnapshots(c *gin.Context) {
 	var req ComputeSnapshotsRequest

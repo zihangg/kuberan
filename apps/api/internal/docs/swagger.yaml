@@ -31,44 +31,19 @@ definitions:
     properties:
       account_id:
         type: integer
-      asset_type:
-        $ref: '#/definitions/kuberan_internal_models.AssetType'
-      coupon_rate:
-        type: number
-      currency:
-        type: string
-      exchange:
-        description: Asset-type-specific optional fields
-        type: string
-      maturity_date:
-        type: string
-      name:
-        maxLength: 200
-        minLength: 1
-        type: string
-      network:
-        type: string
-      property_type:
-        type: string
       purchase_price:
         type: integer
       quantity:
         type: number
-      symbol:
-        maxLength: 20
-        minLength: 1
-        type: string
+      security_id:
+        type: integer
       wallet_address:
         type: string
-      yield_to_maturity:
-        type: number
     required:
     - account_id
-    - asset_type
-    - name
     - purchase_price
     - quantity
-    - symbol
+    - security_id
     type: object
   internal_handlers.AuthResponse:
     properties:
@@ -97,6 +72,13 @@ definitions:
         $ref: '#/definitions/kuberan_internal_models.CategoryType'
       user_id:
         type: integer
+    type: object
+  internal_handlers.ComputeSnapshotsRequest:
+    properties:
+      recorded_at:
+        type: string
+    required:
+    - recorded_at
     type: object
   internal_handlers.CreateBudgetRequest:
     properties:
@@ -160,6 +142,29 @@ definitions:
     - name
     - type
     type: object
+  internal_handlers.CreateCreditCardAccountRequest:
+    properties:
+      credit_limit:
+        minimum: 0
+        type: integer
+      currency:
+        type: string
+      description:
+        maxLength: 500
+        type: string
+      due_date:
+        type: string
+      interest_rate:
+        maximum: 100
+        minimum: 0
+        type: number
+      name:
+        maxLength: 100
+        minLength: 1
+        type: string
+    required:
+    - name
+    type: object
   internal_handlers.CreateInvestmentAccountRequest:
     properties:
       account_number:
@@ -179,6 +184,37 @@ definitions:
         type: string
     required:
     - name
+    type: object
+  internal_handlers.CreateSecurityRequest:
+    properties:
+      asset_type:
+        $ref: '#/definitions/kuberan_internal_models.AssetType'
+      coupon_rate:
+        type: number
+      currency:
+        type: string
+      exchange:
+        type: string
+      maturity_date:
+        type: string
+      name:
+        maxLength: 200
+        minLength: 1
+        type: string
+      network:
+        type: string
+      property_type:
+        type: string
+      symbol:
+        maxLength: 20
+        minLength: 1
+        type: string
+      yield_to_maturity:
+        type: number
+    required:
+    - asset_type
+    - name
+    - symbol
     type: object
   internal_handlers.CreateTransactionRequest:
     properties:
@@ -280,6 +316,29 @@ definitions:
     - amount
     - date
     type: object
+  internal_handlers.RecordPriceEntry:
+    properties:
+      price:
+        type: integer
+      recorded_at:
+        type: string
+      security_id:
+        type: integer
+    required:
+    - price
+    - recorded_at
+    - security_id
+    type: object
+  internal_handlers.RecordPricesRequest:
+    properties:
+      prices:
+        items:
+          $ref: '#/definitions/internal_handlers.RecordPriceEntry'
+        minItems: 1
+        type: array
+    required:
+    - prices
+    type: object
   internal_handlers.RecordSellRequest:
     properties:
       date:
@@ -357,6 +416,33 @@ definitions:
       user_id:
         type: integer
     type: object
+  internal_handlers.UpdateAccountRequest:
+    properties:
+      account_number:
+        maxLength: 50
+        type: string
+      broker:
+        maxLength: 100
+        type: string
+      credit_limit:
+        minimum: 0
+        type: integer
+      description:
+        maxLength: 500
+        type: string
+      due_date:
+        type: string
+      interest_rate:
+        maximum: 100
+        minimum: 0
+        type: number
+      is_active:
+        type: boolean
+      name:
+        maxLength: 100
+        minLength: 1
+        type: string
+    type: object
   internal_handlers.UpdateBudgetRequest:
     properties:
       amount:
@@ -369,16 +455,6 @@ definitions:
         type: string
       period:
         $ref: '#/definitions/kuberan_internal_models.BudgetPeriod'
-    type: object
-  internal_handlers.UpdateCashAccountRequest:
-    properties:
-      description:
-        maxLength: 500
-        type: string
-      name:
-        maxLength: 100
-        minLength: 1
-        type: string
     type: object
   internal_handlers.UpdateCategoryRequest:
     properties:
@@ -404,6 +480,22 @@ definitions:
     required:
     - current_price
     type: object
+  internal_handlers.UpdateTransactionRequest:
+    properties:
+      account_id:
+        type: integer
+      amount:
+        type: integer
+      category_id:
+        type: integer
+      date:
+        type: string
+      description:
+        maxLength: 500
+        type: string
+      type:
+        $ref: '#/definitions/kuberan_internal_models.TransactionType'
+    type: object
   internal_handlers.UserResponse:
     properties:
       email:
@@ -426,6 +518,8 @@ definitions:
         type: string
       created_at:
         type: string
+      credit_limit:
+        type: integer
       currency:
         type: string
       deleted_at:
@@ -437,7 +531,7 @@ definitions:
       id:
         type: integer
       interest_rate:
-        description: For debt accounts
+        description: For debt and credit card accounts
         type: number
       investments:
         items:
@@ -464,11 +558,13 @@ definitions:
     - cash
     - investment
     - debt
+    - credit_card
     type: string
     x-enum-varnames:
     - AccountTypeCash
     - AccountTypeInvestment
     - AccountTypeDebt
+    - AccountTypeCreditCard
   kuberan_internal_models.AssetType:
     enum:
     - stock
@@ -574,53 +670,29 @@ definitions:
   kuberan_internal_models.Investment:
     properties:
       account:
-        allOf:
-        - $ref: '#/definitions/kuberan_internal_models.Account'
-        description: Relationships
+        $ref: '#/definitions/kuberan_internal_models.Account'
       account_id:
         type: integer
-      asset_type:
-        $ref: '#/definitions/kuberan_internal_models.AssetType'
       cost_basis:
-        description: Total cost basis in cents
         type: integer
-      coupon_rate:
-        type: number
       created_at:
         type: string
-      currency:
-        type: string
       current_price:
-        description: Current market price per unit in cents
         type: integer
       deleted_at:
         $ref: '#/definitions/gorm.DeletedAt'
-      exchange:
-        description: Stock/ETF specific fields
-        type: string
       id:
         type: integer
       last_updated:
-        description: Last time the price was updated
-        type: string
-      maturity_date:
-        description: Bond specific fields
-        type: string
-      name:
-        description: Full name of the investment
-        type: string
-      network:
-        description: Crypto specific fields
-        type: string
-      property_type:
-        description: REIT specific fields
         type: string
       quantity:
-        description: Number of shares/units held
         type: number
-      symbol:
-        description: Stock/ETF symbol or unique identifier
-        type: string
+      security:
+        allOf:
+        - $ref: '#/definitions/kuberan_internal_models.Security'
+        description: Relationships
+      security_id:
+        type: integer
       transactions:
         items:
           $ref: '#/definitions/kuberan_internal_models.InvestmentTransaction'
@@ -629,8 +701,6 @@ definitions:
         type: string
       wallet_address:
         type: string
-      yield_to_maturity:
-        type: number
     type: object
   kuberan_internal_models.InvestmentTransaction:
     properties:
@@ -683,6 +753,67 @@ definitions:
     - InvestmentTransactionDividend
     - InvestmentTransactionSplit
     - InvestmentTransactionTransfer
+  kuberan_internal_models.PortfolioSnapshot:
+    properties:
+      cash_balance:
+        type: integer
+      debt_balance:
+        type: integer
+      id:
+        type: integer
+      investment_value:
+        type: integer
+      recorded_at:
+        type: string
+      total_net_worth:
+        type: integer
+      user_id:
+        type: integer
+    type: object
+  kuberan_internal_models.Security:
+    properties:
+      asset_type:
+        $ref: '#/definitions/kuberan_internal_models.AssetType'
+      coupon_rate:
+        type: number
+      created_at:
+        type: string
+      currency:
+        type: string
+      deleted_at:
+        $ref: '#/definitions/gorm.DeletedAt'
+      exchange:
+        type: string
+      id:
+        type: integer
+      maturity_date:
+        type: string
+      name:
+        type: string
+      network:
+        type: string
+      property_type:
+        type: string
+      symbol:
+        type: string
+      updated_at:
+        type: string
+      yield_to_maturity:
+        type: number
+    type: object
+  kuberan_internal_models.SecurityPrice:
+    properties:
+      id:
+        type: integer
+      price:
+        type: integer
+      recorded_at:
+        type: string
+      security:
+        $ref: '#/definitions/kuberan_internal_models.Security'
+      security_id:
+        type: integer
+    type: object
   kuberan_internal_models.Transaction:
     properties:
       account:
@@ -806,6 +937,51 @@ definitions:
       total_pages:
         type: integer
     type: object
+  kuberan_internal_pagination.PageResponse-kuberan_internal_models_PortfolioSnapshot:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/kuberan_internal_models.PortfolioSnapshot'
+        type: array
+      page:
+        type: integer
+      page_size:
+        type: integer
+      total_items:
+        type: integer
+      total_pages:
+        type: integer
+    type: object
+  kuberan_internal_pagination.PageResponse-kuberan_internal_models_Security:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/kuberan_internal_models.Security'
+        type: array
+      page:
+        type: integer
+      page_size:
+        type: integer
+      total_items:
+        type: integer
+      total_pages:
+        type: integer
+    type: object
+  kuberan_internal_pagination.PageResponse-kuberan_internal_models_SecurityPrice:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/kuberan_internal_models.SecurityPrice'
+        type: array
+      page:
+        type: integer
+      page_size:
+        type: integer
+      total_items:
+        type: integer
+      total_pages:
+        type: integer
+    type: object
   kuberan_internal_pagination.PageResponse-kuberan_internal_models_Transaction:
     properties:
       data:
@@ -847,6 +1023,32 @@ definitions:
       total_gain_loss:
         type: integer
       total_value:
+        type: integer
+    type: object
+  kuberan_internal_services.SpendingByCategory:
+    properties:
+      from_date:
+        type: string
+      items:
+        items:
+          $ref: '#/definitions/kuberan_internal_services.SpendingByCategoryItem'
+        type: array
+      to_date:
+        type: string
+      total_spent:
+        type: integer
+    type: object
+  kuberan_internal_services.SpendingByCategoryItem:
+    properties:
+      category_color:
+        type: string
+      category_icon:
+        type: string
+      category_id:
+        type: integer
+      category_name:
+        type: string
+      total:
         type: integer
     type: object
   kuberan_internal_services.TypeSummary:
@@ -941,7 +1143,8 @@ paths:
     put:
       consumes:
       - application/json
-      description: Update an existing cash account for the authenticated user
+      description: Update an existing account for the authenticated user. Accepts
+        common fields for all account types and type-specific fields.
       parameters:
       - description: Account ID
         in: path
@@ -953,7 +1156,7 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/internal_handlers.UpdateCashAccountRequest'
+          $ref: '#/definitions/internal_handlers.UpdateAccountRequest'
       produces:
       - application/json
       responses:
@@ -979,7 +1182,7 @@ paths:
             $ref: '#/definitions/internal_handlers.ErrorResponse'
       security:
       - BearerAuth: []
-      summary: Update cash account
+      summary: Update account
       tags:
       - accounts
   /accounts/{id}/investments:
@@ -1048,11 +1251,11 @@ paths:
         in: query
         name: page_size
         type: integer
-      - description: Filter by start date (RFC3339, e.g. 2024-01-01T00:00:00Z)
+      - description: Filter by start date (RFC3339 e.g. 2024-01-01T00:00:00Z, or YYYY-MM-DD)
         in: query
         name: from_date
         type: string
-      - description: Filter by end date (RFC3339)
+      - description: Filter by end date (RFC3339 or YYYY-MM-DD)
         in: query
         name: to_date
         type: string
@@ -1135,6 +1338,42 @@ paths:
       security:
       - BearerAuth: []
       summary: Create a cash account
+      tags:
+      - accounts
+  /accounts/credit-card:
+    post:
+      consumes:
+      - application/json
+      description: Create a new credit card account for the authenticated user
+      parameters:
+      - description: Credit card account details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handlers.CreateCreditCardAccountRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Account created
+          schema:
+            $ref: '#/definitions/internal_handlers.AccountResponse'
+        "400":
+          description: Invalid input
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create a credit card account
       tags:
       - accounts
   /accounts/investment:
@@ -2095,6 +2334,167 @@ paths:
       summary: Get portfolio summary
       tags:
       - investments
+  /investments/snapshots:
+    get:
+      consumes:
+      - application/json
+      description: Get paginated portfolio snapshots for a date range
+      parameters:
+      - description: Start date (RFC3339 or YYYY-MM-DD)
+        in: query
+        name: from_date
+        required: true
+        type: string
+      - description: End date (RFC3339 or YYYY-MM-DD)
+        in: query
+        name: to_date
+        required: true
+        type: string
+      - description: Page number (default 1)
+        in: query
+        name: page
+        type: integer
+      - description: Items per page (default 20, max 100)
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Paginated snapshots
+          schema:
+            $ref: '#/definitions/kuberan_internal_pagination.PageResponse-kuberan_internal_models_PortfolioSnapshot'
+        "400":
+          description: Invalid input
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get portfolio snapshots
+      tags:
+      - investments
+  /pipeline/securities:
+    post:
+      consumes:
+      - application/json
+      description: Create a new security (pipeline endpoint)
+      parameters:
+      - description: Security details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handlers.CreateSecurityRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Security created
+          schema:
+            $ref: '#/definitions/kuberan_internal_models.Security'
+        "400":
+          description: Invalid input
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "401":
+          description: Invalid API key
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "409":
+          description: Duplicate security
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "503":
+          description: Pipeline not configured
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Create security
+      tags:
+      - pipeline
+  /pipeline/securities/prices:
+    post:
+      consumes:
+      - application/json
+      description: Bulk record prices for securities (pipeline endpoint)
+      parameters:
+      - description: Price entries
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handlers.RecordPricesRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Prices recorded count
+          schema:
+            additionalProperties:
+              type: integer
+            type: object
+        "400":
+          description: Invalid input
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "401":
+          description: Invalid API key
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "503":
+          description: Pipeline not configured
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Record prices
+      tags:
+      - pipeline
+  /pipeline/snapshots:
+    post:
+      consumes:
+      - application/json
+      description: Compute and record portfolio snapshots for all users (pipeline
+        endpoint)
+      parameters:
+      - description: Snapshot parameters
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handlers.ComputeSnapshotsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Snapshots recorded count
+          schema:
+            additionalProperties:
+              type: integer
+            type: object
+        "400":
+          description: Invalid input
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "401":
+          description: Invalid API key
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "503":
+          description: Pipeline not configured
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Compute portfolio snapshots
+      tags:
+      - pipeline
   /profile:
     get:
       consumes:
@@ -2120,7 +2520,191 @@ paths:
       summary: Get user profile
       tags:
       - user
+  /securities:
+    get:
+      consumes:
+      - application/json
+      description: Get a paginated list of all securities
+      parameters:
+      - description: Page number (default 1)
+        in: query
+        name: page
+        type: integer
+      - description: Items per page (default 20, max 100)
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Paginated securities
+          schema:
+            $ref: '#/definitions/kuberan_internal_pagination.PageResponse-kuberan_internal_models_Security'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List securities
+      tags:
+      - securities
+  /securities/{id}:
+    get:
+      consumes:
+      - application/json
+      description: Get a specific security by ID
+      parameters:
+      - description: Security ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Security details
+          schema:
+            $ref: '#/definitions/kuberan_internal_models.Security'
+        "400":
+          description: Invalid security ID
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "404":
+          description: Security not found
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get security by ID
+      tags:
+      - securities
+  /securities/{id}/prices:
+    get:
+      consumes:
+      - application/json
+      description: Get price history for a security (paginated)
+      parameters:
+      - description: Security ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Start date (RFC3339 or YYYY-MM-DD)
+        in: query
+        name: from_date
+        required: true
+        type: string
+      - description: End date (RFC3339 or YYYY-MM-DD)
+        in: query
+        name: to_date
+        required: true
+        type: string
+      - description: Page number (default 1)
+        in: query
+        name: page
+        type: integer
+      - description: Items per page (default 20, max 100)
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Paginated prices
+          schema:
+            $ref: '#/definitions/kuberan_internal_pagination.PageResponse-kuberan_internal_models_SecurityPrice'
+        "400":
+          description: Invalid input
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get price history
+      tags:
+      - securities
   /transactions:
+    get:
+      consumes:
+      - application/json
+      description: Get a paginated list of all transactions for the authenticated
+        user with optional filters
+      parameters:
+      - description: Page number (default 1)
+        in: query
+        name: page
+        type: integer
+      - description: Items per page (default 20, max 100)
+        in: query
+        name: page_size
+        type: integer
+      - description: Filter by account ID
+        in: query
+        name: account_id
+        type: integer
+      - description: Filter by start date (RFC3339 e.g. 2024-01-01T00:00:00Z, or YYYY-MM-DD)
+        in: query
+        name: from_date
+        type: string
+      - description: Filter by end date (RFC3339 or YYYY-MM-DD)
+        in: query
+        name: to_date
+        type: string
+      - description: Filter by transaction type (income, expense, transfer, investment)
+        in: query
+        name: type
+        type: string
+      - description: Filter by category ID
+        in: query
+        name: category_id
+        type: integer
+      - description: Filter by minimum amount (cents)
+        in: query
+        name: min_amount
+        type: integer
+      - description: Filter by maximum amount (cents)
+        in: query
+        name: max_amount
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Paginated transactions
+          schema:
+            $ref: '#/definitions/kuberan_internal_pagination.PageResponse-kuberan_internal_models_Transaction'
+        "400":
+          description: Invalid input
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get user transactions
+      tags:
+      - transactions
     post:
       consumes:
       - application/json
@@ -2233,6 +2817,163 @@ paths:
       summary: Get transaction by ID
       tags:
       - transactions
+    put:
+      consumes:
+      - application/json
+      description: Update an existing transaction. Only income/expense transactions
+        can be edited. Transfer and investment transactions cannot be modified.
+      parameters:
+      - description: Transaction ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Fields to update
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handlers.UpdateTransactionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Updated transaction
+          schema:
+            $ref: '#/definitions/internal_handlers.TransactionResponse'
+        "400":
+          description: Invalid input or non-editable transaction
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "404":
+          description: Transaction not found
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update transaction
+      tags:
+      - transactions
+  /transactions/daily-spending:
+    get:
+      consumes:
+      - application/json
+      description: Get daily expense totals for a date range
+      parameters:
+      - description: Start date (RFC3339 or YYYY-MM-DD)
+        in: query
+        name: from_date
+        required: true
+        type: string
+      - description: End date (RFC3339 or YYYY-MM-DD)
+        in: query
+        name: to_date
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Daily spending data
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Invalid input
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get daily spending
+      tags:
+      - transactions
+  /transactions/monthly-summary:
+    get:
+      consumes:
+      - application/json
+      description: Get monthly income and expense totals for the last N months
+      parameters:
+      - description: Number of months back (default 6, min 1, max 24)
+        in: query
+        name: months
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Monthly summary data
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get monthly income and expense summary
+      tags:
+      - transactions
+  /transactions/spending-by-category:
+    get:
+      consumes:
+      - application/json
+      description: Get expense totals grouped by category for a date range
+      parameters:
+      - description: Start date (RFC3339 or YYYY-MM-DD)
+        in: query
+        name: from_date
+        required: true
+        type: string
+      - description: End date (RFC3339 or YYYY-MM-DD)
+        in: query
+        name: to_date
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Spending breakdown by category
+          schema:
+            $ref: '#/definitions/kuberan_internal_services.SpendingByCategory'
+        "400":
+          description: Invalid input
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get spending by category
+      tags:
+      - transactions
   /transactions/transfer:
     post:
       consumes:
@@ -2274,6 +3015,11 @@ paths:
       tags:
       - transactions
 securityDefinitions:
+  ApiKeyAuth:
+    description: Pipeline API key for service-to-service authentication.
+    in: header
+    name: X-API-Key
+    type: apiKey
   BearerAuth:
     description: Type "Bearer" followed by a space and JWT token.
     in: header

@@ -36,6 +36,11 @@ import (
 // @name Authorization
 // @description Type "Bearer" followed by a space and JWT token.
 
+// @securityDefinitions.apikey ApiKeyAuth
+// @in header
+// @name X-API-Key
+// @description Pipeline API key for service-to-service authentication.
+
 func main() {
 	// Initialize logger (use ENV var if available, default to development)
 	logger.Init(os.Getenv("ENV"))
