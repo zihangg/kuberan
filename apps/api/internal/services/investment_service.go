@@ -28,6 +28,9 @@ func (s *investmentService) AddInvestment(
 	quantity float64,
 	purchasePrice int64,
 	walletAddress string,
+	date *time.Time,
+	fee int64,
+	notes string,
 ) (*models.Investment, error) {
 	// Verify account exists, belongs to user, and is an investment account
 	account, err := s.accountService.GetAccountByID(userID, accountID)
@@ -47,7 +50,17 @@ func (s *investmentService) AddInvestment(
 		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
 
-	costBasis := int64(quantity * float64(purchasePrice))
+	// Apply defaults for optional fields
+	txDate := time.Now()
+	if date != nil {
+		txDate = *date
+	}
+	txNotes := "Initial purchase"
+	if notes != "" {
+		txNotes = notes
+	}
+
+	costBasis := int64(quantity*float64(purchasePrice)) + fee
 
 	investment := &models.Investment{
 		AccountID:     accountID,
@@ -68,12 +81,12 @@ func (s *investmentService) AddInvestment(
 		invTx := &models.InvestmentTransaction{
 			InvestmentID: investment.ID,
 			Type:         models.InvestmentTransactionBuy,
-			Date:         time.Now(),
+			Date:         txDate,
 			Quantity:     quantity,
 			PricePerUnit: purchasePrice,
 			TotalAmount:  costBasis,
-			Fee:          0,
-			Notes:        "Initial purchase",
+			Fee:          fee,
+			Notes:        txNotes,
 		}
 		if txErr := tx.Create(invTx).Error; txErr != nil {
 			return apperrors.Wrap(apperrors.ErrInternalServer, txErr)

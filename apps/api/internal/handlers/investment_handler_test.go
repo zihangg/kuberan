@@ -16,7 +16,7 @@ import (
 // --- mock investment service ---
 
 type mockInvestmentService struct {
-	addInvestmentFn             func(userID, accountID, securityID uint, quantity float64, purchasePrice int64, walletAddress string) (*models.Investment, error)
+	addInvestmentFn             func(userID, accountID, securityID uint, quantity float64, purchasePrice int64, walletAddress string, date *time.Time, fee int64, notes string) (*models.Investment, error)
 	getAccountInvestmentsFn     func(userID, accountID uint, page pagination.PageRequest) (*pagination.PageResponse[models.Investment], error)
 	getInvestmentByIDFn         func(userID, investmentID uint) (*models.Investment, error)
 	updateInvestmentPriceFn     func(userID, investmentID uint, currentPrice int64) (*models.Investment, error)
@@ -28,9 +28,9 @@ type mockInvestmentService struct {
 	getInvestmentTransactionsFn func(userID, investmentID uint, page pagination.PageRequest) (*pagination.PageResponse[models.InvestmentTransaction], error)
 }
 
-func (m *mockInvestmentService) AddInvestment(userID, accountID, securityID uint, quantity float64, purchasePrice int64, walletAddress string) (*models.Investment, error) {
+func (m *mockInvestmentService) AddInvestment(userID, accountID, securityID uint, quantity float64, purchasePrice int64, walletAddress string, date *time.Time, fee int64, notes string) (*models.Investment, error) {
 	if m.addInvestmentFn != nil {
-		return m.addInvestmentFn(userID, accountID, securityID, quantity, purchasePrice, walletAddress)
+		return m.addInvestmentFn(userID, accountID, securityID, quantity, purchasePrice, walletAddress, date, fee, notes)
 	}
 	return &models.Investment{}, nil
 }
@@ -121,7 +121,7 @@ func setupInvestmentRouter(handler *InvestmentHandler) *gin.Engine {
 func TestInvestmentHandler_AddInvestment(t *testing.T) {
 	t.Run("returns 201 on success", func(t *testing.T) {
 		svc := &mockInvestmentService{
-			addInvestmentFn: func(_ uint, accountID, securityID uint, quantity float64, price int64, _ string) (*models.Investment, error) {
+			addInvestmentFn: func(_ uint, accountID, securityID uint, quantity float64, price int64, _ string, _ *time.Time, _ int64, _ string) (*models.Investment, error) {
 				return &models.Investment{
 					Base:         models.Base{ID: 1},
 					AccountID:    accountID,
@@ -175,7 +175,7 @@ func TestInvestmentHandler_AddInvestment(t *testing.T) {
 
 	t.Run("returns 404 on invalid account", func(t *testing.T) {
 		svc := &mockInvestmentService{
-			addInvestmentFn: func(_, _, _ uint, _ float64, _ int64, _ string) (*models.Investment, error) {
+			addInvestmentFn: func(_, _, _ uint, _ float64, _ int64, _ string, _ *time.Time, _ int64, _ string) (*models.Investment, error) {
 				return nil, apperrors.ErrAccountNotFound
 			},
 		}
@@ -201,6 +201,80 @@ func TestInvestmentHandler_AddInvestment(t *testing.T) {
 
 		if rec.Code != http.StatusUnauthorized {
 			t.Fatalf("expected 401, got %d", rec.Code)
+		}
+	})
+
+	t.Run("passes date fee notes to service", func(t *testing.T) {
+		var capturedDate *time.Time
+		var capturedFee int64
+		var capturedNotes string
+		svc := &mockInvestmentService{
+			addInvestmentFn: func(_ uint, accountID, securityID uint, quantity float64, price int64, _ string, date *time.Time, fee int64, notes string) (*models.Investment, error) {
+				capturedDate = date
+				capturedFee = fee
+				capturedNotes = notes
+				return &models.Investment{
+					Base:         models.Base{ID: 1},
+					AccountID:    accountID,
+					SecurityID:   securityID,
+					Quantity:     quantity,
+					CurrentPrice: price,
+				}, nil
+			},
+		}
+		handler := NewInvestmentHandler(svc, &mockAuditService{})
+		r := setupInvestmentRouter(handler)
+
+		rec := doRequest(r, "POST", "/investments",
+			`{"account_id":1,"security_id":1,"quantity":10,"purchase_price":15000,"date":"2025-06-15T00:00:00Z","fee":999,"notes":"Backdated purchase"}`)
+
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
+		}
+		if capturedDate == nil {
+			t.Fatal("expected date to be passed to service")
+		}
+		expectedDate := time.Date(2025, 6, 15, 0, 0, 0, 0, time.UTC)
+		if !capturedDate.Equal(expectedDate) {
+			t.Errorf("expected date %v, got %v", expectedDate, *capturedDate)
+		}
+		if capturedFee != 999 {
+			t.Errorf("expected fee 999, got %d", capturedFee)
+		}
+		if capturedNotes != "Backdated purchase" {
+			t.Errorf("expected notes 'Backdated purchase', got %q", capturedNotes)
+		}
+	})
+
+	t.Run("omitted date fee notes default to zero values", func(t *testing.T) {
+		var capturedDate *time.Time
+		var capturedFee int64
+		var capturedNotes string
+		svc := &mockInvestmentService{
+			addInvestmentFn: func(_ uint, _, _ uint, _ float64, _ int64, _ string, date *time.Time, fee int64, notes string) (*models.Investment, error) {
+				capturedDate = date
+				capturedFee = fee
+				capturedNotes = notes
+				return &models.Investment{Base: models.Base{ID: 1}}, nil
+			},
+		}
+		handler := NewInvestmentHandler(svc, &mockAuditService{})
+		r := setupInvestmentRouter(handler)
+
+		rec := doRequest(r, "POST", "/investments",
+			`{"account_id":1,"security_id":1,"quantity":10,"purchase_price":15000}`)
+
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
+		}
+		if capturedDate != nil {
+			t.Errorf("expected date nil when omitted, got %v", *capturedDate)
+		}
+		if capturedFee != 0 {
+			t.Errorf("expected fee 0, got %d", capturedFee)
+		}
+		if capturedNotes != "" {
+			t.Errorf("expected notes empty, got %q", capturedNotes)
 		}
 	})
 }

@@ -25,11 +25,14 @@ func NewInvestmentHandler(investmentService services.InvestmentServicer, auditSe
 
 // AddInvestmentRequest represents the request payload for adding an investment.
 type AddInvestmentRequest struct {
-	AccountID     uint    `json:"account_id" binding:"required"`
-	SecurityID    uint    `json:"security_id" binding:"required"`
-	Quantity      float64 `json:"quantity" binding:"required,gt=0"`
-	PurchasePrice int64   `json:"purchase_price" binding:"required,gt=0"`
-	WalletAddress string  `json:"wallet_address,omitempty"`
+	AccountID     uint       `json:"account_id" binding:"required"`
+	SecurityID    uint       `json:"security_id" binding:"required"`
+	Quantity      float64    `json:"quantity" binding:"required,gt=0"`
+	PurchasePrice int64      `json:"purchase_price" binding:"required,gt=0"`
+	WalletAddress string     `json:"wallet_address,omitempty"`
+	Date          *time.Time `json:"date"`                    // optional, defaults to now
+	Fee           int64      `json:"fee" binding:"gte=0"`     // optional, defaults to 0
+	Notes         string     `json:"notes" binding:"max=500"` // optional, defaults to "Initial purchase"
 }
 
 // UpdatePriceRequest represents the request payload for updating an investment price.
@@ -98,7 +101,7 @@ func (h *InvestmentHandler) AddInvestment(c *gin.Context) {
 	}
 
 	investment, err := h.investmentService.AddInvestment(
-		userID, req.AccountID, req.SecurityID, req.Quantity, req.PurchasePrice, req.WalletAddress,
+		userID, req.AccountID, req.SecurityID, req.Quantity, req.PurchasePrice, req.WalletAddress, req.Date, req.Fee, req.Notes,
 	)
 	if err != nil {
 		respondWithError(c, err)

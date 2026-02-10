@@ -4,12 +4,14 @@ import { useState, useEffect } from "react";
 import { Check, ChevronsUpDown } from "lucide-react";
 import { toast } from "sonner";
 import { ApiClientError } from "@/lib/api-client";
+import { toRFC3339 } from "@/lib/format";
 import { useAddInvestment } from "@/hooks/use-investments";
 import { useSecurities } from "@/hooks/use-securities";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Textarea } from "@/components/ui/textarea";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import {
   Dialog,
@@ -62,6 +64,9 @@ export function AddInvestmentDialog({
   const [quantity, setQuantity] = useState("");
   const [purchasePrice, setPurchasePrice] = useState(0);
   const [walletAddress, setWalletAddress] = useState("");
+  const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
+  const [fee, setFee] = useState(0);
+  const [notes, setNotes] = useState("");
   const [error, setError] = useState("");
 
   const addInvestment = useAddInvestment();
@@ -90,6 +95,9 @@ export function AddInvestmentDialog({
     setQuantity("");
     setPurchasePrice(0);
     setWalletAddress("");
+    setDate(new Date().toISOString().split("T")[0]);
+    setFee(0);
+    setNotes("");
     setError("");
   }
 
@@ -127,6 +135,9 @@ export function AddInvestmentDialog({
         quantity: qty,
         purchase_price: purchasePrice,
         wallet_address: isCrypto && walletAddress.trim() ? walletAddress.trim() : undefined,
+        date: date ? toRFC3339(date) : undefined,
+        fee: fee > 0 ? fee : undefined,
+        notes: notes.trim() || undefined,
       },
       {
         onSuccess: () => {
@@ -262,6 +273,43 @@ export function AddInvestmentDialog({
               onChange={setPurchasePrice}
               placeholder="0.00"
               disabled={isSubmitting}
+            />
+          </div>
+
+          {/* Date */}
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="inv-date">Date</Label>
+            <Input
+              id="inv-date"
+              type="date"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              disabled={isSubmitting}
+            />
+          </div>
+
+          {/* Fee (optional) */}
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="inv-fee">Fee (optional)</Label>
+            <CurrencyInput
+              id="inv-fee"
+              value={fee}
+              onChange={setFee}
+              placeholder="0.00"
+              disabled={isSubmitting}
+            />
+          </div>
+
+          {/* Notes (optional) */}
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="inv-notes">Notes (optional)</Label>
+            <Textarea
+              id="inv-notes"
+              placeholder="e.g., Initial purchase"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              disabled={isSubmitting}
+              rows={2}
             />
           </div>
 

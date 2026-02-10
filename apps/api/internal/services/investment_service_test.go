@@ -19,7 +19,7 @@ func TestAddInvestment(t *testing.T) {
 		account := testutil.CreateTestInvestmentAccount(t, db, user.ID)
 		sec := testutil.CreateTestSecurityWithParams(t, db, "AAPL", "Apple Inc", models.AssetTypeStock, "NASDAQ")
 
-		inv, err := svc.AddInvestment(user.ID, account.ID, sec.ID, 10.0, 15000, "")
+		inv, err := svc.AddInvestment(user.ID, account.ID, sec.ID, 10.0, 15000, "", nil, 0, "")
 		testutil.AssertNoError(t, err)
 
 		if inv.ID == 0 {
@@ -68,7 +68,7 @@ func TestAddInvestment(t *testing.T) {
 		cashAcct := testutil.CreateTestCashAccount(t, db, user.ID)
 		sec := testutil.CreateTestSecurity(t, db)
 
-		_, err := svc.AddInvestment(user.ID, cashAcct.ID, sec.ID, 10.0, 15000, "")
+		_, err := svc.AddInvestment(user.ID, cashAcct.ID, sec.ID, 10.0, 15000, "", nil, 0, "")
 		testutil.AssertAppError(t, err, "INVALID_INPUT")
 	})
 
@@ -80,7 +80,7 @@ func TestAddInvestment(t *testing.T) {
 		user := testutil.CreateTestUser(t, db)
 		sec := testutil.CreateTestSecurity(t, db)
 
-		_, err := svc.AddInvestment(user.ID, 9999, sec.ID, 10.0, 15000, "")
+		_, err := svc.AddInvestment(user.ID, 9999, sec.ID, 10.0, 15000, "", nil, 0, "")
 		testutil.AssertAppError(t, err, "ACCOUNT_NOT_FOUND")
 	})
 
@@ -92,8 +92,97 @@ func TestAddInvestment(t *testing.T) {
 		user := testutil.CreateTestUser(t, db)
 		account := testutil.CreateTestInvestmentAccount(t, db, user.ID)
 
-		_, err := svc.AddInvestment(user.ID, account.ID, 9999, 10.0, 15000, "")
+		_, err := svc.AddInvestment(user.ID, account.ID, 9999, 10.0, 15000, "", nil, 0, "")
 		testutil.AssertAppError(t, err, "SECURITY_NOT_FOUND")
+	})
+
+	t.Run("custom_date", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		acctSvc := NewAccountService(db)
+		svc := NewInvestmentService(db, acctSvc)
+		user := testutil.CreateTestUser(t, db)
+		account := testutil.CreateTestInvestmentAccount(t, db, user.ID)
+		sec := testutil.CreateTestSecurity(t, db)
+
+		customDate := time.Date(2025, 6, 15, 0, 0, 0, 0, time.UTC)
+		inv, err := svc.AddInvestment(user.ID, account.ID, sec.ID, 5.0, 20000, "", &customDate, 0, "")
+		testutil.AssertNoError(t, err)
+
+		// Verify initial buy transaction uses the custom date
+		var buyTx models.InvestmentTransaction
+		db.Where("investment_id = ?", inv.ID).First(&buyTx)
+		if !buyTx.Date.Equal(customDate) {
+			t.Errorf("expected buy date %v, got %v", customDate, buyTx.Date)
+		}
+		if buyTx.Notes != "Initial purchase" {
+			t.Errorf("expected default notes 'Initial purchase', got %q", buyTx.Notes)
+		}
+	})
+
+	t.Run("custom_fee_and_notes", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		acctSvc := NewAccountService(db)
+		svc := NewInvestmentService(db, acctSvc)
+		user := testutil.CreateTestUser(t, db)
+		account := testutil.CreateTestInvestmentAccount(t, db, user.ID)
+		sec := testutil.CreateTestSecurity(t, db)
+
+		inv, err := svc.AddInvestment(user.ID, account.ID, sec.ID, 10.0, 15000, "", nil, 500, "Bought via broker")
+		testutil.AssertNoError(t, err)
+
+		// CostBasis should include fee: 10 * 15000 + 500 = 150500
+		if inv.CostBasis != 150500 {
+			t.Errorf("expected cost basis 150500, got %d", inv.CostBasis)
+		}
+
+		// Verify buy transaction has custom fee and notes
+		var buyTx models.InvestmentTransaction
+		db.Where("investment_id = ?", inv.ID).First(&buyTx)
+		if buyTx.Fee != 500 {
+			t.Errorf("expected fee 500, got %d", buyTx.Fee)
+		}
+		if buyTx.Notes != "Bought via broker" {
+			t.Errorf("expected notes 'Bought via broker', got %q", buyTx.Notes)
+		}
+		// TotalAmount should also include fee: 10 * 15000 + 500 = 150500
+		if buyTx.TotalAmount != 150500 {
+			t.Errorf("expected total amount 150500, got %d", buyTx.TotalAmount)
+		}
+	})
+
+	t.Run("defaults_when_omitted", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		acctSvc := NewAccountService(db)
+		svc := NewInvestmentService(db, acctSvc)
+		user := testutil.CreateTestUser(t, db)
+		account := testutil.CreateTestInvestmentAccount(t, db, user.ID)
+		sec := testutil.CreateTestSecurity(t, db)
+
+		beforeCreate := time.Now().Add(-time.Second)
+		inv, err := svc.AddInvestment(user.ID, account.ID, sec.ID, 10.0, 15000, "", nil, 0, "")
+		testutil.AssertNoError(t, err)
+		afterCreate := time.Now().Add(time.Second)
+
+		// CostBasis = 10 * 15000 + 0 = 150000
+		if inv.CostBasis != 150000 {
+			t.Errorf("expected cost basis 150000, got %d", inv.CostBasis)
+		}
+
+		// Verify buy transaction has defaults
+		var buyTx models.InvestmentTransaction
+		db.Where("investment_id = ?", inv.ID).First(&buyTx)
+		if buyTx.Fee != 0 {
+			t.Errorf("expected fee 0, got %d", buyTx.Fee)
+		}
+		if buyTx.Notes != "Initial purchase" {
+			t.Errorf("expected notes 'Initial purchase', got %q", buyTx.Notes)
+		}
+		if buyTx.Date.Before(beforeCreate) || buyTx.Date.After(afterCreate) {
+			t.Errorf("expected date near now, got %v", buyTx.Date)
+		}
 	})
 }
 

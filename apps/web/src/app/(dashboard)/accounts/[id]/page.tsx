@@ -157,8 +157,9 @@ export default function AccountDetailPage() {
   const [investmentPage, setInvestmentPage] = useState(1);
 
   const { data: account, isLoading: accountLoading } = useAccount(accountId);
+  const isInvestmentAccount = account?.type === "investment";
   const { data: transactionsData, isLoading: transactionsLoading } =
-    useAccountTransactions(accountId, {
+    useAccountTransactions(isInvestmentAccount ? 0 : accountId, {
       ...filters,
       page,
       page_size: PAGE_SIZE,
@@ -166,7 +167,7 @@ export default function AccountDetailPage() {
   const { data: categoriesData } = useCategories({ page_size: 100 });
   const { data: investmentsData, isLoading: investmentsLoading } =
     useAccountInvestments(
-      account?.type === "investment" ? accountId : 0,
+      isInvestmentAccount ? accountId : 0,
       { page: investmentPage, page_size: PAGE_SIZE }
     );
 
@@ -238,7 +239,7 @@ export default function AccountDetailPage() {
             {account.description}
           </p>
         )}
-        {account.type === "investment" && (
+        {isInvestmentAccount && (
           <div className="mt-2 flex gap-4 text-sm text-muted-foreground">
             {account.broker && <span>Broker: {account.broker}</span>}
             {account.account_number && (
@@ -248,189 +249,191 @@ export default function AccountDetailPage() {
         )}
       </div>
 
-      {/* Transactions section */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle>Transactions</CardTitle>
-              {totalItems > 0 && (
-                <CardDescription>
-                  {totalItems} transaction{totalItems !== 1 ? "s" : ""}
-                </CardDescription>
-              )}
+      {/* Transactions section — hidden for investment accounts */}
+      {!isInvestmentAccount && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle>Transactions</CardTitle>
+                {totalItems > 0 && (
+                  <CardDescription>
+                    {totalItems} transaction{totalItems !== 1 ? "s" : ""}
+                  </CardDescription>
+                )}
+              </div>
+              <Button size="sm" onClick={() => setTxDialogOpen(true)}>
+                <Plus className="mr-2 h-4 w-4" />
+                Add Transaction
+              </Button>
             </div>
-            <Button size="sm" onClick={() => setTxDialogOpen(true)}>
-              <Plus className="mr-2 h-4 w-4" />
-              Add Transaction
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {/* Filters */}
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <div className="space-y-1">
-              <Label className="text-xs">From Date</Label>
-              <Input
-                type="date"
-                value={filters.from_date ?? ""}
-                onChange={(e) => {
-                  setFilters((f) => ({
-                    ...f,
-                    from_date: e.target.value || undefined,
-                  }));
-                  setPage(1);
-                }}
-              />
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* Filters */}
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="space-y-1">
+                <Label className="text-xs">From Date</Label>
+                <Input
+                  type="date"
+                  value={filters.from_date ?? ""}
+                  onChange={(e) => {
+                    setFilters((f) => ({
+                      ...f,
+                      from_date: e.target.value || undefined,
+                    }));
+                    setPage(1);
+                  }}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">To Date</Label>
+                <Input
+                  type="date"
+                  value={filters.to_date ?? ""}
+                  onChange={(e) => {
+                    setFilters((f) => ({
+                      ...f,
+                      to_date: e.target.value || undefined,
+                    }));
+                    setPage(1);
+                  }}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Type</Label>
+                <Select
+                  value={filters.type ?? "all"}
+                  onValueChange={(val) => {
+                    setFilters((f) => ({
+                      ...f,
+                      type:
+                        val === "all"
+                          ? undefined
+                          : (val as TransactionType),
+                    }));
+                    setPage(1);
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Types</SelectItem>
+                    <SelectItem value="income">Income</SelectItem>
+                    <SelectItem value="expense">Expense</SelectItem>
+                    <SelectItem value="transfer">Transfer</SelectItem>
+                    <SelectItem value="investment">Investment</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Category</Label>
+                <Select
+                  value={
+                    filters.category_id ? String(filters.category_id) : "all"
+                  }
+                  onValueChange={(val) => {
+                    setFilters((f) => ({
+                      ...f,
+                      category_id:
+                        val === "all" ? undefined : Number(val),
+                    }));
+                    setPage(1);
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Categories</SelectItem>
+                    {categories.map((cat) => (
+                      <SelectItem key={cat.id} value={String(cat.id)}>
+                        {cat.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
-            <div className="space-y-1">
-              <Label className="text-xs">To Date</Label>
-              <Input
-                type="date"
-                value={filters.to_date ?? ""}
-                onChange={(e) => {
-                  setFilters((f) => ({
-                    ...f,
-                    to_date: e.target.value || undefined,
-                  }));
-                  setPage(1);
-                }}
-              />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs">Type</Label>
-              <Select
-                value={filters.type ?? "all"}
-                onValueChange={(val) => {
-                  setFilters((f) => ({
-                    ...f,
-                    type:
-                      val === "all"
-                        ? undefined
-                        : (val as TransactionType),
-                  }));
-                  setPage(1);
-                }}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Types</SelectItem>
-                  <SelectItem value="income">Income</SelectItem>
-                  <SelectItem value="expense">Expense</SelectItem>
-                  <SelectItem value="transfer">Transfer</SelectItem>
-                  <SelectItem value="investment">Investment</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs">Category</Label>
-              <Select
-                value={
-                  filters.category_id ? String(filters.category_id) : "all"
-                }
-                onValueChange={(val) => {
-                  setFilters((f) => ({
-                    ...f,
-                    category_id:
-                      val === "all" ? undefined : Number(val),
-                  }));
-                  setPage(1);
-                }}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Categories</SelectItem>
-                  {categories.map((cat) => (
-                    <SelectItem key={cat.id} value={String(cat.id)}>
-                      {cat.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
 
-          {/* Transactions table */}
-          {transactionsLoading ? (
-            <div className="space-y-3">
-              {Array.from({ length: 5 }).map((_, i) => (
-                <Skeleton key={i} className="h-12 w-full" />
-              ))}
-            </div>
-          ) : transactions.length === 0 ? (
-            <div className="flex flex-col items-center justify-center rounded-lg border border-dashed p-8 text-center">
-              <h3 className="text-lg font-semibold">No transactions yet</h3>
-              <p className="mt-1 text-sm text-muted-foreground">
-                {Object.values(filters).some((v) => v !== undefined)
-                  ? "No transactions match your filters. Try adjusting them."
-                  : "Add your first transaction to get started."}
-              </p>
-            </div>
-          ) : (
-            <>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Date</TableHead>
-                    <TableHead>Description</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Category</TableHead>
-                    <TableHead className="text-right">Amount</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {transactions.map((tx) => (
-                    <TransactionsTableRow
-                      key={tx.id}
-                      transaction={tx}
-                      onClick={() => {
-                        setSelectedTransaction(tx);
-                        setEditTxOpen(true);
-                      }}
-                    />
-                  ))}
-                </TableBody>
-              </Table>
+            {/* Transactions table */}
+            {transactionsLoading ? (
+              <div className="space-y-3">
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <Skeleton key={i} className="h-12 w-full" />
+                ))}
+              </div>
+            ) : transactions.length === 0 ? (
+              <div className="flex flex-col items-center justify-center rounded-lg border border-dashed p-8 text-center">
+                <h3 className="text-lg font-semibold">No transactions yet</h3>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {Object.values(filters).some((v) => v !== undefined)
+                    ? "No transactions match your filters. Try adjusting them."
+                    : "Add your first transaction to get started."}
+                </p>
+              </div>
+            ) : (
+              <>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Date</TableHead>
+                      <TableHead>Description</TableHead>
+                      <TableHead>Type</TableHead>
+                      <TableHead>Category</TableHead>
+                      <TableHead className="text-right">Amount</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {transactions.map((tx) => (
+                      <TransactionsTableRow
+                        key={tx.id}
+                        transaction={tx}
+                        onClick={() => {
+                          setSelectedTransaction(tx);
+                          setEditTxOpen(true);
+                        }}
+                      />
+                    ))}
+                  </TableBody>
+                </Table>
 
-              {/* Pagination */}
-              {totalPages > 1 && (
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">
-                    Page {page} of {totalPages}
-                  </span>
-                  <div className="flex gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={page <= 1}
-                      onClick={() => setPage((p) => p - 1)}
-                    >
-                      <ChevronLeft className="h-4 w-4" />
-                      Previous
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={page >= totalPages}
-                      onClick={() => setPage((p) => p + 1)}
-                    >
-                      Next
-                      <ChevronRight className="h-4 w-4" />
-                    </Button>
+                {/* Pagination */}
+                {totalPages > 1 && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-muted-foreground">
+                      Page {page} of {totalPages}
+                    </span>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={page <= 1}
+                        onClick={() => setPage((p) => p - 1)}
+                      >
+                        <ChevronLeft className="h-4 w-4" />
+                        Previous
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={page >= totalPages}
+                        onClick={() => setPage((p) => p + 1)}
+                      >
+                        Next
+                        <ChevronRight className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </div>
-                </div>
-              )}
-            </>
-          )}
-        </CardContent>
-      </Card>
+                )}
+              </>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Investment holdings */}
-      {account.type === "investment" && (
+      {isInvestmentAccount && (
         <Card>
           <CardHeader>
             <div className="flex items-center justify-between">
@@ -562,24 +565,28 @@ export default function AccountDetailPage() {
         </Card>
       )}
 
-      <CreateTransactionDialog
-        open={txDialogOpen}
-        onOpenChange={setTxDialogOpen}
-        defaultAccountId={accountId}
-      />
+      {!isInvestmentAccount && (
+        <>
+          <CreateTransactionDialog
+            open={txDialogOpen}
+            onOpenChange={setTxDialogOpen}
+            defaultAccountId={accountId}
+          />
+          <EditTransactionDialog
+            open={editTxOpen}
+            onOpenChange={setEditTxOpen}
+            transaction={selectedTransaction}
+          />
+        </>
+      )}
 
       <EditAccountDialog
         open={editDialogOpen}
         onOpenChange={setEditDialogOpen}
         account={account}
       />
-      <EditTransactionDialog
-        open={editTxOpen}
-        onOpenChange={setEditTxOpen}
-        transaction={selectedTransaction}
-      />
 
-      {account.type === "investment" && (
+      {isInvestmentAccount && (
         <AddInvestmentDialog
           accountId={accountId}
           open={addInvestmentOpen}

@@ -259,6 +259,9 @@ export interface AddInvestmentRequest {
   quantity: number; // float, > 0
   purchase_price: number; // cents, > 0
   wallet_address?: string;
+  date?: string; // ISO 8601, defaults to now
+  fee?: number; // cents, >= 0, defaults to 0
+  notes?: string; // max 500, defaults to "Initial purchase"
 }
 
 export interface RecordBuyRequest {
