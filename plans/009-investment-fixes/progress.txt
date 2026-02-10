@@ -1,0 +1,86 @@
+## Iteration 1 — Phases 1-2: Migration + Model Changes
+- PRD items: 1.1, 2.1, 2.2, 2.3
+- Created migration 000016_add_realized_gain_loss (up + down SQL)
+- Added RealizedGainLoss int64 field to Investment model (after CostBasis)
+- Added RealizedGainLoss int64 field to InvestmentTransaction model (after Notes)
+- Removed dead CalculateInvestmentBalance method from Account model (was never called)
+- Kept gorm + time imports in account.go (still used by BeforeCreate hook and DueDate field)
+- All checks passed: build, vet, lint, test, test -race
+- Files changed: models/investment.go, models/account.go, migrations/000016_*.sql
+
+## Iteration 2 — Phase 3: Enrich Investment Account Balances
+- PRD items: 3.1, 3.2, 3.3
+- Added enrichInvestmentBalances() helper to accountService — queries investments + security prices, computes market value per account
+- GetUserAccounts: calls enrichInvestmentBalances after paginated query; investment accounts get computed balance, cash/credit untouched
+- GetAccountByID: wraps single account in slice, calls enrichInvestmentBalances if type is investment
+- Uses getLatestPrices (package-level from investment_service.go) for batch price fetch
+- Balance is transient — never written back to DB, follows CurrentPrice pattern from Plan 008
+- All checks passed: build, vet, lint, test, test -race
+- Files changed: services/account_service.go
+
+## Iteration 3 — Phases 4, 7.2, 8.1-8.2: GET /api/v1/investments endpoint
+- PRD items: 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 7.2, 8.1, 8.2, 8.3
+- Added GetAllInvestments to InvestmentServicer interface
+- Implemented GetAllInvestments on investmentService: finds active investment account IDs, queries investments with Preload("Security") + Preload("Account"), batch-populates CurrentPrice, returns paginated response
+- Added GetAllInvestments handler with swagger annotations
+- Registered GET "" route in main.go and integration test setup (before /:id to avoid Gin conflict)
+- Updated mockInvestmentService with getAllInvestmentsFn field + GetAllInvestments method
+- Added GET /investments to setupInvestmentRouter in handler tests
+- Handler tests: returns_200_with_investments, returns_200_empty_list, returns_500_on_service_error
+- Service tests: returns_investments_across_accounts (verifies CurrentPrice/Security/Account preloaded), returns_empty_for_no_investments, paginates_results, excludes_inactive_accounts
+- All checks passed: build, vet, lint, test, test -race
+- Files changed: services/interfaces.go, services/investment_service.go, services/investment_service_test.go, handlers/investment_handler.go, handlers/investment_handler_test.go, cmd/api/main.go, tests/integration/setup_test.go
+
+## Iteration 4 — Phase 5: Realized Gain/Loss in RecordSell
+- PRD items: 5.1, 5.2, 5.3, 5.4
+- RecordSell: computes realizedGainLoss = totalAmount - costBasisReduction; stores on InvestmentTransaction and accumulates on Investment.RealizedGainLoss
+- Added TotalRealizedGainLoss int64 to PortfolioSummary struct
+- GetPortfolio: sums inv.RealizedGainLoss across all investments into summary.TotalRealizedGainLoss
+- All checks passed: build, vet, lint, test, test -race
+- Files changed: services/investment_service.go, services/interfaces.go
+
+## Iteration 5 — Phase 7.3: Realized Gain/Loss Service Tests
+- PRD items: 7.3
+- Added TestRecordSell subtests: computes_realized_gain_loss_on_sell, accumulates_realized_gain_loss_on_investment, realized_gain_loss_for_losing_trade
+- Updated existing sell_all_shares subtest to verify RealizedGainLoss on tx and investment
+- Added TestGetPortfolio/includes_realized_gain_loss: verifies TotalRealizedGainLoss sums across investments with profit/loss sells
+- Added TotalRealizedGainLoss assertion to existing aggregation subtest (0 when no sells)
+- All checks passed: build, vet, lint, test, test -race
+- Files changed: services/investment_service_test.go
+
+## Iteration 6 — Phase 7.1: Account Service Tests for Balance Enrichment
+- PRD items: 7.1
+- Added TestGetUserAccountsInvestmentBalance with 4 subtests: enriches_investment_account_balance, leaves_cash_account_balance_unchanged, handles_investment_account_with_no_investments, handles_investment_with_no_security_price
+- Added TestGetAccountByIDInvestmentBalance with 2 subtests: enriches_investment_account_balance, leaves_cash_account_unchanged
+- Tests verify: market value = qty * latestPrice, cash accounts unaffected, no-investment accounts = 0, no-price investments = 0
+- All checks passed: build, vet, lint, test, test -race
+- Files changed: services/account_service_test.go
+
+## Iteration 7 — Phases 10-11: Frontend Types + useAllInvestments Hook
+- PRD items: 10.1, 10.2, 10.3, 11.1
+- Added realized_gain_loss to Investment type (after cost_basis)
+- Added realized_gain_loss to InvestmentTransaction type (after notes)
+- Added total_realized_gain_loss to PortfolioSummary type (after gain_loss_pct)
+- Added allList query key to investmentKeys
+- Added useAllInvestments hook: calls GET /api/v1/investments with pagination
+- npm run build + npm run lint both pass
+- Files changed: types/models.ts, hooks/use-investments.ts
+
+## Iteration 8 — Phase 12: All Holdings Table on Investments Page
+- PRD items: 12.1
+- Added AllHoldingsTable component to /investments page below Holdings by Asset Type card
+- Table columns: Symbol (mono), Name, Account (link to /accounts/:id with stopPropagation), Qty (6dp for fractional), Price, Market Value (bold), Gain/Loss (green/red)
+- Clickable rows navigate to /investments/:id via router.push
+- Pagination with prev/next buttons, page info, matching existing patterns (securities/transactions pages)
+- Skeleton loading state (5 rows) and empty state with dashed border
+- Uses useAllInvestments hook from iteration 7
+- npm run build + npm run lint pass; full backend check.sh passes
+- Files changed: app/(dashboard)/investments/page.tsx
+
+## Iteration 9 — Phase 13: Investment Detail Page Improvements
+- PRD items: 13.1, 13.2, 13.3, 13.4
+- Position Closed: when quantity === 0, shows "Position Closed" badge, simplified stat cards (Realized G/L primary, Current Price, Account), Sell/Split buttons disabled
+- Active positions with partial sells: Gain/Loss card relabeled to "Unrealized Gain / Loss", new "Realized Gain / Loss" card appears when realized_gain_loss !== 0
+- Transaction history: added "Realized P&L" column after Fee; shows green/red formatted amount for sell txs, "-" for others
+- npm run build + npm run lint pass; full backend check.sh passes
+- Files changed: app/(dashboard)/investments/[id]/page.tsx

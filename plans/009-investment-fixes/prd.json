@@ -1,0 +1,494 @@
+[
+  {
+    "id": "1.1",
+    "category": "migration",
+    "passes": true,
+    "description": "Create migration 000016: add realized_gain_loss columns to investments and investment_transactions tables",
+    "steps": [
+      "Create apps/api/migrations/000016_add_realized_gain_loss.up.sql",
+      "ALTER TABLE investments ADD COLUMN realized_gain_loss BIGINT NOT NULL DEFAULT 0;",
+      "ALTER TABLE investment_transactions ADD COLUMN realized_gain_loss BIGINT NOT NULL DEFAULT 0;",
+      "Create apps/api/migrations/000016_add_realized_gain_loss.down.sql",
+      "ALTER TABLE investment_transactions DROP COLUMN IF EXISTS realized_gain_loss;",
+      "ALTER TABLE investments DROP COLUMN IF EXISTS realized_gain_loss;",
+      "Run go build ./... from apps/api/ to confirm no compilation impact"
+    ]
+  },
+  {
+    "id": "2.1",
+    "category": "model",
+    "passes": true,
+    "description": "Add RealizedGainLoss field to Investment model",
+    "steps": [
+      "Open apps/api/internal/models/investment.go",
+      "Add RealizedGainLoss int64 `gorm:\"type:bigint;not null;default:0\" json:\"realized_gain_loss\"` to Investment struct after CostBasis",
+      "Run go build ./... from apps/api/"
+    ]
+  },
+  {
+    "id": "2.2",
+    "category": "model",
+    "passes": true,
+    "description": "Add RealizedGainLoss field to InvestmentTransaction model",
+    "steps": [
+      "Open apps/api/internal/models/investment.go",
+      "Add RealizedGainLoss int64 `gorm:\"type:bigint;not null;default:0\" json:\"realized_gain_loss\"` to InvestmentTransaction struct after Notes",
+      "Run go build ./... from apps/api/"
+    ]
+  },
+  {
+    "id": "2.3",
+    "category": "model",
+    "passes": true,
+    "description": "Remove dead CalculateInvestmentBalance method from Account model",
+    "steps": [
+      "Open apps/api/internal/models/account.go",
+      "Remove the entire CalculateInvestmentBalance method (lines 63-75)",
+      "Verify the gorm import is still needed by BeforeCreate hook — keep it if so",
+      "Run go build ./... from apps/api/"
+    ]
+  },
+  {
+    "id": "3.1",
+    "category": "service",
+    "passes": true,
+    "description": "Modify GetUserAccounts to compute investment account balances at query time",
+    "steps": [
+      "Open apps/api/internal/services/account_service.go",
+      "After the existing paginated query in GetUserAccounts (line 148), add enrichment logic",
+      "Collect IDs of investment-type accounts from result set; if none, return as-is",
+      "Query investments for those account IDs: SELECT account_id, security_id, quantity FROM investments WHERE account_id IN (?) AND deleted_at IS NULL",
+      "Collect distinct security IDs from the investments",
+      "Call getLatestPrices(s.db, securityIDs) to batch-fetch latest prices",
+      "For each investment, compute value = int64(quantity * float64(price)) and accumulate by account ID into a map[uint]int64",
+      "Set account.Balance on each investment account in the result set to the computed total",
+      "Run go build ./... from apps/api/"
+    ]
+  },
+  {
+    "id": "3.2",
+    "category": "service",
+    "passes": true,
+    "description": "Modify GetAccountByID to compute investment account balance at query time",
+    "steps": [
+      "Open apps/api/internal/services/account_service.go",
+      "After fetching the account in GetAccountByID (line 163), add enrichment for investment accounts",
+      "If account.Type != AccountTypeInvestment, return as-is (no enrichment for cash/credit card)",
+      "Query investments for this account: SELECT security_id, quantity FROM investments WHERE account_id = ? AND deleted_at IS NULL",
+      "Collect security IDs, call getLatestPrices, compute total value, set account.Balance",
+      "Run go build ./... from apps/api/"
+    ]
+  },
+  {
+    "id": "3.3",
+    "category": "service",
+    "passes": true,
+    "description": "Verification — build and lint after account balance enrichment changes",
+    "steps": [
+      "Run go build ./... from apps/api/",
+      "Run make check-fast from apps/api/ (build + vet + lint)"
+    ]
+  },
+  {
+    "id": "4.1",
+    "category": "service",
+    "passes": true,
+    "description": "Add GetAllInvestments method to investment service",
+    "steps": [
+      "Open apps/api/internal/services/investment_service.go",
+      "Add new method: func (s *investmentService) GetAllInvestments(userID uint, page pagination.PageRequest) (*pagination.PageResponse[models.Investment], error)",
+      "Find all active investment account IDs for user: SELECT id FROM accounts WHERE user_id = ? AND type = 'investment' AND is_active = true",
+      "If no accounts, return empty paginated response with zero total",
+      "Count total investments across those accounts",
+      "Query investments with Preload(\"Security\") and Preload(\"Account\"), WHERE account_id IN (?), with pagination scope applied",
+      "Collect distinct SecurityID values from results",
+      "Call getLatestPrices with the batch to populate CurrentPrice on each investment",
+      "Return paginated response",
+      "Run go build ./... from apps/api/"
+    ]
+  },
+  {
+    "id": "4.2",
+    "category": "service",
+    "passes": true,
+    "description": "Add GetAllInvestments to InvestmentServicer interface",
+    "steps": [
+      "Open apps/api/internal/services/interfaces.go",
+      "Add GetAllInvestments(userID uint, page pagination.PageRequest) (*pagination.PageResponse[models.Investment], error) to InvestmentServicer interface",
+      "Run go build ./... from apps/api/ — expect failure until handler mock is updated"
+    ]
+  },
+  {
+    "id": "4.3",
+    "category": "handler",
+    "passes": true,
+    "description": "Add GetAllInvestments handler for GET /api/v1/investments",
+    "steps": [
+      "Open apps/api/internal/handlers/investment_handler.go",
+      "Add new handler method: func (h *investmentHandler) GetAllInvestments(c *gin.Context)",
+      "Extract user ID from context using existing pattern",
+      "Parse pagination query params (page, page_size) using existing pagination helper",
+      "Call h.investmentService.GetAllInvestments(userID, pageReq)",
+      "On error, use AbortWithError pattern; on success, return JSON with investments",
+      "Add Swagger annotations for the endpoint",
+      "Run go build ./... from apps/api/"
+    ]
+  },
+  {
+    "id": "4.4",
+    "category": "handler",
+    "passes": true,
+    "description": "Register GET /api/v1/investments route in main.go",
+    "steps": [
+      "Open apps/api/cmd/api/main.go",
+      "In the investments route group (around line 194), add: investments.GET(\"\", investmentHandler.GetAllInvestments)",
+      "Place it alongside the existing POST \"\" route and before GET \"/:id\" to avoid Gin route conflict",
+      "Run go build ./... from apps/api/"
+    ]
+  },
+  {
+    "id": "4.5",
+    "category": "integration-test",
+    "passes": true,
+    "description": "Register GET /api/v1/investments route in integration test setup",
+    "steps": [
+      "Open apps/api/tests/integration/setup_test.go",
+      "Add investments.GET(\"\", investmentHandler.GetAllInvestments) to the test router setup in the investments group",
+      "Run go build ./... from apps/api/"
+    ]
+  },
+  {
+    "id": "4.6",
+    "category": "service",
+    "passes": true,
+    "description": "Verification — build and lint after GET /api/v1/investments endpoint changes",
+    "steps": [
+      "Run go build ./... from apps/api/",
+      "Run make check-fast from apps/api/ (build + vet + lint)"
+    ]
+  },
+  {
+    "id": "5.1",
+    "category": "service",
+    "passes": true,
+    "description": "Modify RecordSell to compute and store realized gain/loss on both transaction and investment",
+    "steps": [
+      "Open apps/api/internal/services/investment_service.go",
+      "In RecordSell, after computing costBasisReduction (existing line 336), compute: realizedGainLoss := totalAmount - costBasisReduction",
+      "Set RealizedGainLoss: realizedGainLoss on the InvestmentTransaction struct literal",
+      "In the DB transaction, update the investment's accumulated realized gain/loss: add realized_gain_loss to the Updates map as investment.RealizedGainLoss + realizedGainLoss",
+      "Run go build ./... from apps/api/"
+    ]
+  },
+  {
+    "id": "5.2",
+    "category": "service",
+    "passes": true,
+    "description": "Add TotalRealizedGainLoss to PortfolioSummary struct",
+    "steps": [
+      "Open apps/api/internal/services/interfaces.go",
+      "Add TotalRealizedGainLoss int64 `json:\"total_realized_gain_loss\"` to PortfolioSummary struct",
+      "Run go build ./... from apps/api/"
+    ]
+  },
+  {
+    "id": "5.3",
+    "category": "service",
+    "passes": true,
+    "description": "Update GetPortfolio to include total realized gain/loss from all investments",
+    "steps": [
+      "Open apps/api/internal/services/investment_service.go",
+      "In the GetPortfolio method, inside the loop that iterates investments (around line 244), add: summary.TotalRealizedGainLoss += inv.RealizedGainLoss",
+      "Run go build ./... from apps/api/"
+    ]
+  },
+  {
+    "id": "5.4",
+    "category": "service",
+    "passes": true,
+    "description": "Verification — build and lint after realized gain/loss changes",
+    "steps": [
+      "Run go build ./... from apps/api/",
+      "Run make check-fast from apps/api/ (build + vet + lint)"
+    ]
+  },
+  {
+    "id": "7.1",
+    "category": "service-tests",
+    "passes": true,
+    "description": "Add account service tests for investment balance enrichment in GetUserAccounts and GetAccountByID",
+    "steps": [
+      "Open apps/api/internal/services/account_service_test.go",
+      "Add TestGetUserAccountsInvestmentBalance with subtests:",
+      "  enriches_investment_account_balance: create investment account, add investment via DB, create security price; call GetUserAccounts; verify balance = quantity * latestPrice",
+      "  leaves_cash_account_balance_unchanged: create cash account with known balance; call GetUserAccounts; verify balance is original value",
+      "  handles_investment_account_with_no_investments: create empty investment account; verify balance = 0",
+      "  handles_investment_with_no_security_price: create investment account with investment but no security price; verify balance = 0",
+      "Add TestGetAccountByIDInvestmentBalance with subtests:",
+      "  enriches_investment_account_balance: same pattern for single account",
+      "  leaves_cash_account_unchanged: verify cash account balance unaffected",
+      "Run go test ./internal/services/ -v -run TestGetUserAccountsInvestmentBalance from apps/api/",
+      "Run go test ./internal/services/ -v -run TestGetAccountByIDInvestmentBalance from apps/api/"
+    ]
+  },
+  {
+    "id": "7.2",
+    "category": "service-tests",
+    "passes": true,
+    "description": "Add investment service tests for GetAllInvestments",
+    "steps": [
+      "Open apps/api/internal/services/investment_service_test.go",
+      "Add TestGetAllInvestments with subtests:",
+      "  returns_investments_across_accounts: create 2 investment accounts, add investments to each, create security prices; call GetAllInvestments; verify all investments returned with correct CurrentPrice, Security.Symbol, and Account.Name preloaded",
+      "  returns_empty_for_no_investments: user with no investment accounts; verify empty data array and total_items = 0",
+      "  paginates_results: create enough investments to span 2 pages; verify page 1 and page 2 return correct subsets",
+      "  excludes_inactive_accounts: create inactive investment account with investments; verify those investments are excluded from results",
+      "Run go test ./internal/services/ -v -run TestGetAllInvestments from apps/api/"
+    ]
+  },
+  {
+    "id": "7.3",
+    "category": "service-tests",
+    "passes": true,
+    "description": "Update investment service tests for realized gain/loss in RecordSell and GetPortfolio",
+    "steps": [
+      "Open apps/api/internal/services/investment_service_test.go",
+      "In TestRecordSell (or add new subtests):",
+      "  computes_realized_gain_loss_on_sell: buy 100 shares at $10 ($1000 cost basis), sell 50 at $15 ($750 proceeds); verify tx.RealizedGainLoss = $750 - $500 = $250",
+      "  accumulates_realized_gain_loss_on_investment: perform two sells; verify investment.RealizedGainLoss is the sum of both",
+      "  full_sell_zeroes_quantity_and_tracks_realized: sell entire position; verify quantity = 0, costBasis = 0, and realizedGainLoss is correct total",
+      "  realized_gain_loss_for_losing_trade: buy at $15, sell at $10; verify realizedGainLoss is negative",
+      "In TestGetPortfolio, add assertion that TotalRealizedGainLoss sums correctly across investments with sells",
+      "Run go test ./internal/services/ -v -run TestRecordSell from apps/api/",
+      "Run go test ./internal/services/ -v -run TestGetPortfolio from apps/api/"
+    ]
+  },
+  {
+    "id": "7.4",
+    "category": "service-tests",
+    "passes": true,
+    "description": "Verification — run all service tests",
+    "steps": [
+      "Run go test ./internal/services/ -v from apps/api/",
+      "All tests must pass"
+    ]
+  },
+  {
+    "id": "8.1",
+    "category": "handler-tests",
+    "passes": true,
+    "description": "Update mockInvestmentService with GetAllInvestments method",
+    "steps": [
+      "Open apps/api/internal/handlers/investment_handler_test.go",
+      "Add getAllInvestmentsFn func(userID uint, page pagination.PageRequest) (*pagination.PageResponse[models.Investment], error) field to mockInvestmentService struct",
+      "Add GetAllInvestments method to mockInvestmentService that delegates to getAllInvestmentsFn",
+      "Verify var _ services.InvestmentServicer = (*mockInvestmentService)(nil) still compiles",
+      "Run go build ./... from apps/api/"
+    ]
+  },
+  {
+    "id": "8.2",
+    "category": "handler-tests",
+    "passes": true,
+    "description": "Add handler tests for GetAllInvestments endpoint",
+    "steps": [
+      "Open apps/api/internal/handlers/investment_handler_test.go",
+      "Add GET /investments to setupInvestmentRouter",
+      "Add TestInvestmentHandler_GetAllInvestments with subtests:",
+      "  returns_200_with_investments: mock returns paginated investments; verify JSON structure with data array, page info",
+      "  returns_200_empty_list: mock returns empty; verify empty data array",
+      "  returns_500_on_service_error: mock returns error; verify error response",
+      "Run go test ./internal/handlers/ -v -run TestInvestmentHandler_GetAllInvestments from apps/api/"
+    ]
+  },
+  {
+    "id": "8.3",
+    "category": "handler-tests",
+    "passes": true,
+    "description": "Verification — run all handler tests",
+    "steps": [
+      "Run go test ./internal/handlers/ -v from apps/api/",
+      "All tests must pass"
+    ]
+  },
+  {
+    "id": "9.1",
+    "category": "integration-tests",
+    "passes": true,
+    "description": "Verification — run all integration tests with updated route setup",
+    "steps": [
+      "Run go test ./tests/integration/ -v from apps/api/",
+      "All tests must pass"
+    ]
+  },
+  {
+    "id": "10.1",
+    "category": "frontend",
+    "passes": true,
+    "description": "Add realized_gain_loss to Investment type in models.ts",
+    "steps": [
+      "Open apps/web/src/types/models.ts",
+      "Add realized_gain_loss: number; to the Investment interface after cost_basis",
+      "Keep all other fields unchanged",
+      "Run npm run build from apps/web/"
+    ]
+  },
+  {
+    "id": "10.2",
+    "category": "frontend",
+    "passes": true,
+    "description": "Add realized_gain_loss to InvestmentTransaction type in models.ts",
+    "steps": [
+      "Open apps/web/src/types/models.ts",
+      "Add realized_gain_loss: number; to the InvestmentTransaction interface after notes",
+      "Run npm run build from apps/web/"
+    ]
+  },
+  {
+    "id": "10.3",
+    "category": "frontend",
+    "passes": true,
+    "description": "Add total_realized_gain_loss to PortfolioSummary type in models.ts",
+    "steps": [
+      "Open apps/web/src/types/models.ts",
+      "Add total_realized_gain_loss: number; to the PortfolioSummary interface after gain_loss_pct",
+      "Run npm run build from apps/web/"
+    ]
+  },
+  {
+    "id": "11.1",
+    "category": "frontend",
+    "passes": true,
+    "description": "Add useAllInvestments hook to use-investments.ts",
+    "steps": [
+      "Open apps/web/src/hooks/use-investments.ts",
+      "Add new exported function useAllInvestments that accepts optional PaginationParams",
+      "Use useQuery with queryKey [\"investments\", \"all\", params]",
+      "Call api.get<PaginatedResponse<Investment>>(\"/investments\", { params })",
+      "Follow the same pattern as existing usePortfolio and useAccountInvestments hooks",
+      "Run npm run build from apps/web/"
+    ]
+  },
+  {
+    "id": "12.1",
+    "category": "frontend",
+    "passes": true,
+    "description": "Add all holdings table to investments page with clickable rows linking to individual investments",
+    "steps": [
+      "Open apps/web/src/app/(dashboard)/investments/page.tsx",
+      "Import useAllInvestments hook, useRouter from next/navigation, Table components, and pagination components",
+      "Add a new component or section below the Holdings by Asset Type card",
+      "Add Card with header 'All Holdings' showing total count from pagination",
+      "Add Table with columns: Symbol (mono font), Name, Account (as link), Qty (right-aligned, 6dp), Price (right-aligned), Market Value (right-aligned, bold), Gain/Loss (right-aligned, green/red)",
+      "Market value computed as Math.round(inv.quantity * inv.current_price)",
+      "Gain/loss computed as marketValue - inv.cost_basis",
+      "Each TableRow has cursor-pointer class and onClick handler that calls router.push(`/investments/${inv.id}`)",
+      "Account column is a Link to /accounts/${inv.account_id} showing inv.account?.name",
+      "Add pagination controls (prev/next buttons with page info) matching existing pattern in the codebase",
+      "Add skeleton loading state and empty state message",
+      "Add page state management with useState for the holdings table pagination",
+      "Run npm run build from apps/web/"
+    ]
+  },
+  {
+    "id": "13.1",
+    "category": "frontend",
+    "passes": true,
+    "description": "Add 'Position Closed' treatment for fully liquidated investments on investment detail page",
+    "steps": [
+      "Open apps/web/src/app/(dashboard)/investments/[id]/page.tsx",
+      "Check if investment.quantity === 0 to determine if position is closed",
+      "When closed: add a Badge with 'Position Closed' text next to the symbol in the header",
+      "When closed: show stat cards for Realized Gain/Loss (primary, large, green/red), Current Price (security latest price), and Account (link)",
+      "When closed: hide or simplify Market Value and Cost Basis cards (both are 0)",
+      "When closed: disable Sell button (can't sell 0 quantity), disable Split button, keep Buy enabled, keep Dividend enabled",
+      "Run npm run build from apps/web/"
+    ]
+  },
+  {
+    "id": "13.2",
+    "category": "frontend",
+    "passes": true,
+    "description": "Show realized gain/loss for active positions with partial sells on investment detail page",
+    "steps": [
+      "Open apps/web/src/app/(dashboard)/investments/[id]/page.tsx",
+      "When investment.quantity > 0 and investment.realized_gain_loss !== 0:",
+      "  Modify the existing Gain/Loss stat card to show 'Unrealized' label with the current marketValue - costBasis calculation",
+      "  Add a new stat card for 'Realized Gain/Loss' showing investment.realized_gain_loss with green/red coloring",
+      "When investment.realized_gain_loss === 0, keep existing layout unchanged (no partial sells have occurred)",
+      "Run npm run build from apps/web/"
+    ]
+  },
+  {
+    "id": "13.3",
+    "category": "frontend",
+    "passes": true,
+    "description": "Show realized gain/loss in transaction history for sell transactions",
+    "steps": [
+      "Open apps/web/src/app/(dashboard)/investments/[id]/page.tsx",
+      "In the transaction history table, add a 'Realized P&L' column after the Total column",
+      "For sell transactions (tx.type === 'sell'), display formatCurrency(tx.realized_gain_loss) with green/red coloring based on positive/negative",
+      "For non-sell transactions, show '-' in the column",
+      "Run npm run build from apps/web/"
+    ]
+  },
+  {
+    "id": "13.4",
+    "category": "frontend",
+    "passes": true,
+    "description": "Verification — full frontend build and lint after investment detail page changes",
+    "steps": [
+      "Run npm run build from apps/web/",
+      "Run npm run lint from apps/web/",
+      "Both must pass"
+    ]
+  },
+  {
+    "id": "14.1",
+    "category": "verification",
+    "passes": true,
+    "description": "Run full backend verification — all 5 check.sh steps must pass",
+    "steps": [
+      "Run ./scripts/check.sh from apps/api/",
+      "All 5 steps must pass: go build, go vet, golangci-lint, go test, go test -race",
+      "If any step fails, fix the issues and re-run"
+    ]
+  },
+  {
+    "id": "14.2",
+    "category": "verification",
+    "passes": true,
+    "description": "Run full frontend verification — build and lint must pass",
+    "steps": [
+      "Run npm run build from apps/web/",
+      "Run npm run lint from apps/web/",
+      "Verify all routes compile without errors"
+    ]
+  },
+  {
+    "id": "14.3",
+    "category": "verification",
+    "passes": true,
+    "description": "Final verification checklist — all items must be confirmed",
+    "steps": [
+      "Verify investment account cards on dashboard show computed market value (not 0)",
+      "Verify accounts list page shows computed market value for investment accounts",
+      "Verify account detail page header shows computed market value for investment accounts",
+      "Verify CalculateInvestmentBalance dead code removed from Account model",
+      "Verify GET /api/v1/investments endpoint returns all investments across accounts with pagination",
+      "Verify GET /api/v1/investments responses include Security, Account, and CurrentPrice",
+      "Verify investments page has a clickable holdings table",
+      "Verify clicking a holding row navigates to /investments/{id}",
+      "Verify investments table has realized_gain_loss column (migration applied)",
+      "Verify investment_transactions table has realized_gain_loss column (migration applied)",
+      "Verify RecordSell computes and stores realized_gain_loss on both transaction and investment",
+      "Verify GetPortfolio includes total_realized_gain_loss in response",
+      "Verify fully closed positions show Position Closed badge and realized P&L",
+      "Verify active positions with partial sells show both unrealized and realized P&L",
+      "Verify sell transactions in history show realized P&L",
+      "Verify all backend tests pass including race detection",
+      "Verify all frontend builds and lints pass",
+      "Verify no //nolint directives without justification"
+    ]
+  }
+]
