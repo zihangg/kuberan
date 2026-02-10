@@ -5,12 +5,13 @@ import "time"
 // Investment represents a holding of a specific investment asset.
 type Investment struct {
 	Base
-	AccountID     uint    `gorm:"not null" json:"account_id"`
-	SecurityID    uint    `gorm:"not null" json:"security_id"`
-	Quantity      float64 `gorm:"not null" json:"quantity"`
-	CostBasis     int64   `gorm:"type:bigint;not null" json:"cost_basis"`
-	CurrentPrice  int64   `gorm:"-" json:"current_price"` // Populated at query time from security_prices
-	WalletAddress string  `json:"wallet_address,omitempty"`
+	AccountID        uint    `gorm:"not null" json:"account_id"`
+	SecurityID       uint    `gorm:"not null" json:"security_id"`
+	Quantity         float64 `gorm:"not null" json:"quantity"`
+	CostBasis        int64   `gorm:"type:bigint;not null" json:"cost_basis"`
+	RealizedGainLoss int64   `gorm:"type:bigint;not null;default:0" json:"realized_gain_loss"`
+	CurrentPrice     int64   `gorm:"-" json:"current_price"` // Populated at query time from security_prices
+	WalletAddress    string  `json:"wallet_address,omitempty"`
 
 	// Relationships
 	Security     Security                `gorm:"foreignKey:SecurityID" json:"security"`
@@ -32,14 +33,15 @@ const (
 // InvestmentTransaction represents a transaction for an investment.
 type InvestmentTransaction struct {
 	Base
-	InvestmentID uint                      `gorm:"not null" json:"investment_id"`
-	Type         InvestmentTransactionType `gorm:"not null" json:"type"`
-	Date         time.Time                 `gorm:"not null" json:"date"`
-	Quantity     float64                   `gorm:"not null" json:"quantity"`
-	PricePerUnit int64                     `gorm:"type:bigint;not null" json:"price_per_unit"`
-	TotalAmount  int64                     `gorm:"type:bigint;not null" json:"total_amount"`
-	Fee          int64                     `gorm:"type:bigint" json:"fee"`
-	Notes        string                    `json:"notes"`
+	InvestmentID     uint                      `gorm:"not null" json:"investment_id"`
+	Type             InvestmentTransactionType `gorm:"not null" json:"type"`
+	Date             time.Time                 `gorm:"not null" json:"date"`
+	Quantity         float64                   `gorm:"not null" json:"quantity"`
+	PricePerUnit     int64                     `gorm:"type:bigint;not null" json:"price_per_unit"`
+	TotalAmount      int64                     `gorm:"type:bigint;not null" json:"total_amount"`
+	Fee              int64                     `gorm:"type:bigint" json:"fee"`
+	Notes            string                    `json:"notes"`
+	RealizedGainLoss int64                     `gorm:"type:bigint;not null;default:0" json:"realized_gain_loss"`
 
 	// For splits
 	SplitRatio float64 `json:"split_ratio,omitempty"`

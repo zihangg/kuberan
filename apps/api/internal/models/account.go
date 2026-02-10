@@ -59,17 +59,3 @@ func (a *Account) BeforeCreate(tx *gorm.DB) error {
 	}
 	return nil
 }
-
-// CalculateInvestmentBalance calculates the total value of all investments in the account
-func (a *Account) CalculateInvestmentBalance(tx *gorm.DB) error {
-	if a.Type != AccountTypeInvestment {
-		return nil
-	}
-
-	var total int64
-	for i := range a.Investments {
-		total += int64(a.Investments[i].Quantity * float64(a.Investments[i].CurrentPrice))
-	}
-	a.Balance = total
-	return tx.Save(a).Error
-}
