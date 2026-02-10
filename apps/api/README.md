@@ -113,6 +113,7 @@ GET    /api/v1/profile
 # Accounts
 POST   /api/v1/accounts/cash
 POST   /api/v1/accounts/investment
+POST   /api/v1/accounts/credit-card
 GET    /api/v1/accounts
 GET    /api/v1/accounts/:id
 PUT    /api/v1/accounts/:id
@@ -120,9 +121,14 @@ GET    /api/v1/accounts/:id/transactions
 GET    /api/v1/accounts/:id/investments
 
 # Transactions
+GET    /api/v1/transactions
 POST   /api/v1/transactions
 POST   /api/v1/transactions/transfer
+GET    /api/v1/transactions/spending-by-category
+GET    /api/v1/transactions/monthly-summary
+GET    /api/v1/transactions/daily-spending
 GET    /api/v1/transactions/:id
+PUT    /api/v1/transactions/:id
 DELETE /api/v1/transactions/:id
 
 # Categories
@@ -142,14 +148,28 @@ GET    /api/v1/budgets/:id/progress
 
 # Investments
 POST   /api/v1/investments
+GET    /api/v1/investments
 GET    /api/v1/investments/portfolio
+GET    /api/v1/investments/snapshots
 GET    /api/v1/investments/:id
-PUT    /api/v1/investments/:id/price
 POST   /api/v1/investments/:id/buy
 POST   /api/v1/investments/:id/sell
 POST   /api/v1/investments/:id/dividend
 POST   /api/v1/investments/:id/split
 GET    /api/v1/investments/:id/transactions
+
+# Securities
+GET    /api/v1/securities
+GET    /api/v1/securities/:id
+GET    /api/v1/securities/:id/prices
+```
+
+### Pipeline (require API key via X-API-Key header)
+
+```
+POST   /api/v1/pipeline/securities          # Create security
+POST   /api/v1/pipeline/securities/prices   # Record security prices
+POST   /api/v1/pipeline/snapshots           # Compute portfolio snapshots for all users
 ```
 
 ## Key Design Decisions
@@ -185,7 +205,12 @@ Migrations live in `migrations/` as numbered SQL pairs:
 000001_create_users.up.sql / .down.sql
 000002_create_accounts.up.sql / .down.sql
 ...
-000009_add_performance_indexes.up.sql / .down.sql
+000010_add_credit_card_support.up.sql / .down.sql
+000011_create_securities.up.sql / .down.sql
+000012_create_security_prices.up.sql / .down.sql
+000013_create_portfolio_snapshots.up.sql / .down.sql
+...
+000016_add_realized_gain_loss.up.sql / .down.sql
 ```
 
 ```bash

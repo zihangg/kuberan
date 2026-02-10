@@ -6,11 +6,15 @@ Built with a Go backend and Next.js frontend, organized as a monorepo.
 
 ## Features
 
-- **Account Management** -- Cash and investment accounts with multi-currency support
-- **Transaction Tracking** -- Income, expenses, and account-to-account transfers
+- **Account Management** -- Cash, investment, credit card, and debt accounts with multi-currency support
+- **Transaction Tracking** -- Income, expenses, and account-to-account transfers with editing support
+- **Analytics & Charts** -- Spending by category, monthly income/expenses summary, daily spending trends
 - **Budgets** -- Monthly/yearly budgets with spending progress tracking
-- **Investment Portfolio** -- Track stocks, ETFs, bonds, crypto, and REITs with buy/sell/dividend/split transactions
+- **Investment Portfolio** -- Track stocks, ETFs, bonds, crypto, and REITs with buy/sell/dividend/split transactions and realized gain/loss tracking
+- **Securities & Pricing** -- Browse securities, view price history, pipeline API for automated price ingestion
+- **Portfolio Snapshots** -- Historical net worth tracking (cash + investments - debt) with time-series charts
 - **Categories** -- Hierarchical income/expense categories with icons and colors
+- **Dark Mode** -- Light, dark, and system theme support
 - **Audit Logging** -- All sensitive operations are logged for accountability
 
 ## Tech Stack
@@ -18,7 +22,7 @@ Built with a Go backend and Next.js frontend, organized as a monorepo.
 | Layer        | Technology                                        |
 |--------------|---------------------------------------------------|
 | Backend      | Go 1.24, Gin, GORM, PostgreSQL 16                |
-| Frontend     | Next.js 15 (App Router), React 19, Tailwind CSS v4 |
+| Frontend     | Next.js 15 (App Router), React 19, Tailwind CSS v4, ShadCN UI, react-query, Recharts |
 | Auth         | JWT (access + refresh tokens), bcrypt             |
 | Logging      | Zap (structured)                                  |
 | Migrations   | golang-migrate (SQL-based)                        |
@@ -67,7 +71,7 @@ This starts:
 cd apps/api && air
 
 # Frontend only
-cd apps/web && npm run dev
+cd apps/web && pnpm dev
 ```
 
 ### Common Commands
@@ -105,7 +109,9 @@ All endpoints are prefixed with `/api/v1/`. Authentication uses Bearer JWT token
 
 **Public:** Register, login, token refresh, health check, Swagger docs.
 
-**Protected:** CRUD for accounts, transactions, categories, budgets, and investments. Includes transfer support, budget progress tracking, and portfolio summary.
+**Protected:** CRUD for accounts (cash, investment, credit card), transactions, categories, budgets, and investments. Includes transfer support, budget progress tracking, portfolio summary, spending analytics (by category, monthly summary, daily trends), securities browsing, and portfolio snapshots.
+
+**Pipeline (API key auth):** Security creation, price recording, and portfolio snapshot computation for automated data ingestion.
 
 See the [Swagger UI](http://localhost:8080/swagger/index.html) for full API documentation or refer to `CLAUDE.md` for the complete endpoint listing.
 

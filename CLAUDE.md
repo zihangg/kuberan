@@ -37,12 +37,15 @@ Monorepo with two main applications:
 - **Language**: TypeScript (strict mode, never use `any`)
 - **React**: 19
 - **Styling**: Tailwind CSS v4
-- **Status**: Scaffolded via `create-next-app`, no custom UI implemented yet
-
-Planned (not yet installed/implemented):
-- **Data Fetching**: @tanstack/react-query
-- **Components**: ShadCN UI, atomic design (atoms/molecules/organisms/templates/pages)
-- **API Layer**: Service files (e.g., `auth.service.ts`) called from hooks in `src/hooks/`
+- **Components**: ShadCN UI (`new-york` style, built on Radix UI + Lucide icons)
+- **Data Fetching**: @tanstack/react-query v5 (query key factories, smart cache invalidation)
+- **Forms**: react-hook-form + zod schema validation
+- **Charts**: Recharts (pie, bar, area charts on dashboard)
+- **Theming**: next-themes (light/dark/system)
+- **Notifications**: Sonner (toast notifications)
+- **Auth**: JWT token management with auto-refresh, cookie-based route protection via Next.js middleware
+- **API Layer**: Typed HTTP client (`lib/api-client.ts`) consumed by React Query hooks in `src/hooks/`
+- **Package Manager**: pnpm
 
 ### Infrastructure
 - **Database**: PostgreSQL 16 (Alpine)
@@ -83,10 +86,65 @@ apps/api/
 - **Custom error types**: `AppError` with error codes, HTTP status, and internal error wrapping
 - **Dependency injection**: Services injected into handlers via constructors
 
+## Frontend Architecture (`apps/web/`)
+
+```
+apps/web/src/
+├── app/
+│   ├── (auth)/                   # Auth route group (login, register)
+│   │   └── layout.tsx            # Centered card layout, redirects authenticated users
+│   ├── (dashboard)/              # Dashboard route group (all protected pages)
+│   │   ├── layout.tsx            # Sidebar + header layout, auth guard
+│   │   ├── page.tsx              # Dashboard home
+│   │   ├── accounts/             # Accounts list + [id] detail
+│   │   ├── transactions/         # Cross-account transactions
+│   │   ├── categories/           # Category management
+│   │   ├── budgets/              # Budget cards with progress
+│   │   ├── investments/          # Portfolio overview + [id] detail
+│   │   └── securities/           # Securities browse + [id] detail
+│   └── layout.tsx                # Root layout (providers chain)
+├── components/
+│   ├── ui/                       # ShadCN UI primitives (24 components)
+│   ├── layout/                   # App sidebar, header
+│   ├── accounts/                 # Account dialogs (create, edit)
+│   ├── transactions/             # Transaction dialogs (create, edit)
+│   ├── categories/               # Category dialogs (create, edit, delete)
+│   ├── budgets/                  # Budget dialogs (create, edit, delete)
+│   ├── investments/              # Investment action dialogs (add, buy, sell, dividend, split)
+│   └── dashboard/                # Dashboard charts (expenditure, income/expenses, spending trend)
+├── hooks/                        # React Query hooks (one per domain, with query key factories)
+├── providers/                    # ThemeProvider, QueryProvider, AuthProvider
+├── lib/
+│   ├── api-client.ts             # HTTP client with auto token refresh
+│   ├── auth.ts                   # JWT parsing, token storage, auth cookies
+│   ├── format.ts                 # Currency (cents->display), date, percentage formatters
+│   └── utils.ts                  # cn() Tailwind utility
+├── types/
+│   ├── models.ts                 # Domain model types matching backend
+│   └── api.ts                    # API request/response DTOs
+└── middleware.ts                  # Next.js middleware for cookie-based route protection
+```
+
+### Frontend Patterns
+- **Route groups**: `(auth)` for public pages, `(dashboard)` for protected pages with sidebar layout
+- **Provider chain**: Root layout wraps `ThemeProvider` > `QueryProvider` > `AuthProvider` > `Toaster`
+- **Data fetching**: All API calls go through `lib/api-client.ts`, consumed by React Query hooks in `src/hooks/`. Each hook file exports a query key factory for structured cache management
+- **Auth flow**: JWT access tokens (localStorage) + auth flag cookie (for middleware). Auto-refresh on 401 with concurrent request deduplication
+- **Component organization**: ShadCN primitives in `ui/`, feature-specific dialogs in domain folders (`accounts/`, `transactions/`, etc.)
+- **Forms**: react-hook-form with zod schemas for validation, ShadCN Form components for UI
+
+## Data Model & Conventions
+
+### Account Types
+Four account types are supported: `cash`, `investment`, `credit_card`, and `debt`. Each type has specific fields:
+- **Cash**: Basic accounts with balance tracking
+- **Investment**: Adds `Broker`, `AccountNumber`, and related `Investments` (holdings)
+- **Credit Card / Debt**: Adds `InterestRate`, `DueDate`, `CreditLimit`. Balance semantics are inverted — expenses increase the balance (debt goes up), payments decrease it. Credit card balances count toward `DebtBalance` in portfolio snapshots and are subtracted from net worth.
+
 ### Monetary Values
 All monetary values are stored and transmitted as **int64 cents** (not float64). `$10.50` = `1050`. This eliminates floating-point rounding errors. The frontend is responsible for display formatting.
 
-Non-monetary floats that remain as float64: `Investment.Quantity`, `SplitRatio`, `InterestRate`, `YieldToMaturity`, `CouponRate`.
+Non-monetary floats that remain as float64: `Investment.Quantity`, `SplitRatio`, `InterestRate`, `YieldToMaturity`, `CouponRate`. `CreditLimit` is int64 cents (not a float).
 
 ### Database Migrations
 - Managed by golang-migrate, NOT GORM AutoMigrate
@@ -130,7 +188,7 @@ npm run dev
 cd apps/api && air
 
 # Frontend only
-cd apps/web && npm run dev
+cd apps/web && pnpm dev
 
 # Run backend tests
 cd apps/api && go test ./... -v
@@ -196,6 +254,7 @@ GET    /api/v1/profile
 # Accounts
 POST   /api/v1/accounts/cash
 POST   /api/v1/accounts/investment
+POST   /api/v1/accounts/credit-card
 GET    /api/v1/accounts
 GET    /api/v1/accounts/:id
 PUT    /api/v1/accounts/:id
@@ -203,9 +262,14 @@ GET    /api/v1/accounts/:id/transactions
 GET    /api/v1/accounts/:id/investments
 
 # Transactions
+GET    /api/v1/transactions
 POST   /api/v1/transactions
 POST   /api/v1/transactions/transfer
+GET    /api/v1/transactions/spending-by-category
+GET    /api/v1/transactions/monthly-summary
+GET    /api/v1/transactions/daily-spending
 GET    /api/v1/transactions/:id
+PUT    /api/v1/transactions/:id
 DELETE /api/v1/transactions/:id
 
 # Categories
@@ -225,14 +289,27 @@ GET    /api/v1/budgets/:id/progress
 
 # Investments
 POST   /api/v1/investments
+GET    /api/v1/investments
 GET    /api/v1/investments/portfolio
+GET    /api/v1/investments/snapshots
 GET    /api/v1/investments/:id
-PUT    /api/v1/investments/:id/price
 POST   /api/v1/investments/:id/buy
 POST   /api/v1/investments/:id/sell
 POST   /api/v1/investments/:id/dividend
 POST   /api/v1/investments/:id/split
 GET    /api/v1/investments/:id/transactions
+
+# Securities
+GET    /api/v1/securities
+GET    /api/v1/securities/:id
+GET    /api/v1/securities/:id/prices
+```
+
+### Pipeline (require API key via X-API-Key header)
+```
+POST   /api/v1/pipeline/securities          # Create security
+POST   /api/v1/pipeline/securities/prices   # Record security prices
+POST   /api/v1/pipeline/snapshots           # Compute portfolio snapshots for all users
 ```
 
 ## Testing Strategy
