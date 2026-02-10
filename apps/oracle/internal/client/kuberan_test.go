@@ -22,7 +22,7 @@ func TestGetSecurities_Success(t *testing.T) {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"securities": []map[string]any{
 				{"id": 1, "symbol": "AAPL", "name": "Apple Inc.", "asset_type": "stock", "currency": "USD", "exchange": "NASDAQ", "network": ""},
 				{"id": 2, "symbol": "BTC", "name": "Bitcoin", "asset_type": "crypto", "currency": "USD", "exchange": "", "network": "bitcoin"},
@@ -55,7 +55,7 @@ func TestGetSecurities_Success(t *testing.T) {
 func TestGetSecurities_Unauthorized(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
-		json.NewEncoder(w).Encode(map[string]string{"error": "unauthorized"})
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "unauthorized"})
 	}))
 	defer server.Close()
 
@@ -95,7 +95,7 @@ func TestRecordPrices_Success(t *testing.T) {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]int{"prices_recorded": 5})
+		_ = json.NewEncoder(w).Encode(map[string]int{"prices_recorded": 5})
 	}))
 	defer server.Close()
 
@@ -134,7 +134,7 @@ func TestRecordPrices_ValidatesRequestBody(t *testing.T) {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]int{"prices_recorded": 2})
+		_ = json.NewEncoder(w).Encode(map[string]int{"prices_recorded": 2})
 	}))
 	defer server.Close()
 
@@ -203,7 +203,7 @@ func TestComputeSnapshots_Success(t *testing.T) {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]int{"snapshots_recorded": 3})
+		_ = json.NewEncoder(w).Encode(map[string]int{"snapshots_recorded": 3})
 	}))
 	defer server.Close()
 

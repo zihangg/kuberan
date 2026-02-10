@@ -56,7 +56,7 @@ func (c *KuberanClient) GetSecurities(ctx context.Context) ([]Security, error) {
 	if err != nil {
 		return nil, fmt.Errorf("fetching securities: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("fetching securities: unexpected status %d", resp.StatusCode)
@@ -93,7 +93,7 @@ func (c *KuberanClient) RecordPrices(ctx context.Context, prices []RecordPriceEn
 	if err != nil {
 		return 0, fmt.Errorf("recording prices: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return 0, fmt.Errorf("recording prices: unexpected status %d", resp.StatusCode)
@@ -130,7 +130,7 @@ func (c *KuberanClient) ComputeSnapshots(ctx context.Context) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("computing snapshots: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return 0, fmt.Errorf("computing snapshots: unexpected status %d", resp.StatusCode)

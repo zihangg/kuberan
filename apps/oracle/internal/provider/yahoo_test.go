@@ -37,7 +37,7 @@ func TestYahooProvider_FetchPrices_Success(t *testing.T) {
 			{Symbol: "GOOGL", RegularMarketPrice: 175.03},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer server.Close()
 
@@ -82,7 +82,7 @@ func TestYahooProvider_FetchPrices_PartialFailure(t *testing.T) {
 			// MISSING: no result for FAKESYM
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer server.Close()
 
@@ -114,7 +114,7 @@ func TestYahooProvider_FetchPrices_ExchangeSuffix(t *testing.T) {
 			{Symbol: "SHOP.TO", RegularMarketPrice: 100.00},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer server.Close()
 
@@ -148,7 +148,7 @@ func TestYahooProvider_FetchPrices_BatchSplit(t *testing.T) {
 			})
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer server.Close()
 
@@ -206,7 +206,7 @@ func TestYahooProvider_FetchPrices_ZeroPrice(t *testing.T) {
 			{Symbol: "DEAD", RegularMarketPrice: 0},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer server.Close()
 

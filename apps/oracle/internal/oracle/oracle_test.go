@@ -34,8 +34,8 @@ func (m *mockClient) ComputeSnapshots(ctx context.Context) (int, error) {
 
 // mockProvider implements provider.Provider for testing.
 type mockProvider struct {
-	name       string
-	supports   func(assetType string) bool
+	name        string
+	supports    func(assetType string) bool
 	fetchPrices func(ctx context.Context, securities []provider.Security) ([]provider.PriceResult, []provider.FetchError)
 }
 
@@ -246,6 +246,100 @@ func TestOracle_Run_NoSecurities(t *testing.T) {
 	}
 	if providerCalled {
 		t.Error("provider should not be called when no securities")
+	}
+}
+
+func TestNormalizeAssetType(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"stock", "stock"},
+		{"Stock", "stock"},
+		{"STOCK", "stock"},
+		{"etf", "etf"},
+		{"ETF", "etf"},
+		{"crypto", "crypto"},
+		{"Cryptocurrency", "crypto"},
+		{"CRYPTOCURRENCY", "crypto"},
+		{"bond", "bond"},
+		{"Bond", "bond"},
+		{"reit", "reit"},
+		{"REIT", "reit"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got := normalizeAssetType(tt.input)
+			if got != tt.want {
+				t.Errorf("normalizeAssetType(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestOracle_Run_MixedCaseAssetTypes(t *testing.T) {
+	now := time.Now().UTC()
+
+	var recordedPrices []client.RecordPriceEntry
+
+	mc := &mockClient{
+		getSecuritiesFn: func(_ context.Context) ([]client.Security, error) {
+			return []client.Security{
+				{ID: 1, Symbol: "AAPL", AssetType: "Stock", Currency: "USD"},
+				{ID: 2, Symbol: "VWRA", AssetType: "ETF", Currency: "USD"},
+				{ID: 3, Symbol: "BTC", AssetType: "Cryptocurrency", Currency: "USD"},
+			}, nil
+		},
+		recordPricesFn: func(_ context.Context, prices []client.RecordPriceEntry) (int, error) {
+			recordedPrices = prices
+			return len(prices), nil
+		},
+		computeSnapshotsFn: func(_ context.Context) (int, error) {
+			return 1, nil
+		},
+	}
+
+	yahooProvider := &mockProvider{
+		name:     "Yahoo Finance",
+		supports: func(at string) bool { return at == "stock" || at == "etf" },
+		fetchPrices: func(_ context.Context, secs []provider.Security) ([]provider.PriceResult, []provider.FetchError) {
+			results := make([]provider.PriceResult, len(secs))
+			for i, s := range secs {
+				results[i] = provider.PriceResult{SecurityID: s.ID, Price: 10000, RecordedAt: now}
+			}
+			return results, nil
+		},
+	}
+
+	geckoProvider := &mockProvider{
+		name:     "CoinGecko",
+		supports: func(at string) bool { return at == "crypto" },
+		fetchPrices: func(_ context.Context, secs []provider.Security) ([]provider.PriceResult, []provider.FetchError) {
+			results := make([]provider.PriceResult, len(secs))
+			for i, s := range secs {
+				results[i] = provider.PriceResult{SecurityID: s.ID, Price: 500000, RecordedAt: now}
+			}
+			return results, nil
+		},
+	}
+
+	orc := NewOracle(mc, []provider.Provider{yahooProvider, geckoProvider}, defaultConfig(true), newTestLogger())
+	result, err := orc.Run(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if result.SecuritiesFetched != 3 {
+		t.Errorf("SecuritiesFetched = %d, want 3", result.SecuritiesFetched)
+	}
+	if result.PricesRecorded != 3 {
+		t.Errorf("PricesRecorded = %d, want 3", result.PricesRecorded)
+	}
+	if len(result.Errors) != 0 {
+		t.Errorf("Errors = %d, want 0", len(result.Errors))
+	}
+	if len(recordedPrices) != 3 {
+		t.Errorf("recorded %d prices, want 3", len(recordedPrices))
 	}
 }
 

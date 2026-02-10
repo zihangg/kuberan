@@ -31,7 +31,7 @@ func TestCoinGeckoProvider_FetchPrices_Success(t *testing.T) {
 			"ethereum": {"usd": 3456.78},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer server.Close()
 
@@ -98,7 +98,7 @@ func TestCoinGeckoProvider_FetchPrices_PartialResponse(t *testing.T) {
 			"bitcoin": {"usd": 67234.56},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer server.Close()
 

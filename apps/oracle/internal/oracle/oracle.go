@@ -4,6 +4,7 @@ package oracle
 import (
 	"context"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -46,6 +47,16 @@ func NewOracle(client SecurityClient, providers []provider.Provider, cfg *config
 	}
 }
 
+// normalizeAssetType converts an asset type string to the canonical lowercase form
+// used by providers (e.g. "Stock" -> "stock", "Cryptocurrency" -> "crypto").
+func normalizeAssetType(assetType string) string {
+	t := strings.ToLower(assetType)
+	if t == "cryptocurrency" {
+		return "crypto"
+	}
+	return t
+}
+
 // Run executes a single oracle cycle: fetch securities, get prices, record results.
 func (o *Oracle) Run(ctx context.Context) (*RunResult, error) {
 	start := time.Now()
@@ -70,7 +81,7 @@ func (o *Oracle) Run(ctx context.Context) (*RunResult, error) {
 		providerSecurities[i] = provider.Security{
 			ID:        s.ID,
 			Symbol:    s.Symbol,
-			AssetType: s.AssetType,
+			AssetType: normalizeAssetType(s.AssetType),
 			Exchange:  s.Exchange,
 			Network:   s.Network,
 			Currency:  s.Currency,
