@@ -127,11 +127,14 @@ export default function InvestmentDetailPage() {
     );
   }
 
+  const isClosed = investment.quantity === 0;
   const marketValue = Math.round(investment.quantity * investment.current_price);
   const gainLoss = marketValue - investment.cost_basis;
   const gainLossPct =
     investment.cost_basis > 0 ? (gainLoss / investment.cost_basis) * 100 : 0;
   const isPositive = gainLoss >= 0;
+  const hasRealizedGainLoss = investment.realized_gain_loss !== 0;
+  const isRealizedPositive = investment.realized_gain_loss >= 0;
 
   return (
     <div className="space-y-6">
@@ -152,6 +155,9 @@ export default function InvestmentDetailPage() {
           <Badge variant="outline">
             {ASSET_TYPE_LABELS[investment.security.asset_type]}
           </Badge>
+          {isClosed && (
+            <Badge variant="secondary">Position Closed</Badge>
+          )}
         </div>
         <p className="text-lg text-muted-foreground">
           {investment.security.name}
@@ -159,110 +165,181 @@ export default function InvestmentDetailPage() {
       </div>
 
       {/* Stat cards */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardDescription>Current Price</CardDescription>
-            <DollarSign className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold font-mono">
-              {formatCurrency(investment.current_price)}
-            </p>
-          </CardContent>
-        </Card>
+      {isClosed ? (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardDescription>Realized Gain / Loss</CardDescription>
+              {isRealizedPositive ? (
+                <TrendingUp className="h-4 w-4 text-green-600" />
+              ) : (
+                <TrendingDown className="h-4 w-4 text-red-600" />
+              )}
+            </CardHeader>
+            <CardContent>
+              <p
+                className={`text-2xl font-bold font-mono ${isRealizedPositive ? "text-green-600" : "text-red-600"}`}
+              >
+                {isRealizedPositive ? "+" : ""}
+                {formatCurrency(investment.realized_gain_loss)}
+              </p>
+            </CardContent>
+          </Card>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardDescription>Quantity</CardDescription>
-            <Hash className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold font-mono">
-              {investment.quantity.toLocaleString(undefined, {
-                maximumFractionDigits: 6,
-              })}
-            </p>
-          </CardContent>
-        </Card>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardDescription>Current Price</CardDescription>
+              <DollarSign className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <p className="text-2xl font-bold font-mono">
+                {formatCurrency(investment.current_price)}
+              </p>
+            </CardContent>
+          </Card>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardDescription>Market Value</CardDescription>
-            <BarChart3 className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold font-mono">
-              {formatCurrency(marketValue)}
-            </p>
-          </CardContent>
-        </Card>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardDescription>Account</CardDescription>
+              <Wallet className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <Link
+                href={`/accounts/${investment.account_id}`}
+                className="text-lg font-semibold text-primary hover:underline"
+              >
+                {investment.account?.name ?? `Account #${investment.account_id}`}
+              </Link>
+            </CardContent>
+          </Card>
+        </div>
+      ) : (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardDescription>Current Price</CardDescription>
+              <DollarSign className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <p className="text-2xl font-bold font-mono">
+                {formatCurrency(investment.current_price)}
+              </p>
+            </CardContent>
+          </Card>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardDescription>Cost Basis</CardDescription>
-            <ShoppingCart className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold font-mono">
-              {formatCurrency(investment.cost_basis)}
-            </p>
-          </CardContent>
-        </Card>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardDescription>Quantity</CardDescription>
+              <Hash className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <p className="text-2xl font-bold font-mono">
+                {investment.quantity.toLocaleString(undefined, {
+                  maximumFractionDigits: 6,
+                })}
+              </p>
+            </CardContent>
+          </Card>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardDescription>Gain / Loss</CardDescription>
-            {isPositive ? (
-              <TrendingUp className="h-4 w-4 text-green-600" />
-            ) : (
-              <TrendingDown className="h-4 w-4 text-red-600" />
-            )}
-          </CardHeader>
-          <CardContent>
-            <p
-              className={`text-2xl font-bold font-mono ${isPositive ? "text-green-600" : "text-red-600"}`}
-            >
-              {isPositive ? "+" : ""}
-              {formatCurrency(gainLoss)}
-            </p>
-            <p
-              className={`text-sm ${isPositive ? "text-green-600" : "text-red-600"}`}
-            >
-              {isPositive ? "+" : ""}
-              {gainLossPct.toFixed(2)}%
-            </p>
-          </CardContent>
-        </Card>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardDescription>Market Value</CardDescription>
+              <BarChart3 className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <p className="text-2xl font-bold font-mono">
+                {formatCurrency(marketValue)}
+              </p>
+            </CardContent>
+          </Card>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardDescription>Account</CardDescription>
-            <Wallet className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <Link
-              href={`/accounts/${investment.account_id}`}
-              className="text-lg font-semibold text-primary hover:underline"
-            >
-              {investment.account?.name ?? `Account #${investment.account_id}`}
-            </Link>
-          </CardContent>
-        </Card>
-      </div>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardDescription>Cost Basis</CardDescription>
+              <ShoppingCart className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <p className="text-2xl font-bold font-mono">
+                {formatCurrency(investment.cost_basis)}
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardDescription>{hasRealizedGainLoss ? "Unrealized Gain / Loss" : "Gain / Loss"}</CardDescription>
+              {isPositive ? (
+                <TrendingUp className="h-4 w-4 text-green-600" />
+              ) : (
+                <TrendingDown className="h-4 w-4 text-red-600" />
+              )}
+            </CardHeader>
+            <CardContent>
+              <p
+                className={`text-2xl font-bold font-mono ${isPositive ? "text-green-600" : "text-red-600"}`}
+              >
+                {isPositive ? "+" : ""}
+                {formatCurrency(gainLoss)}
+              </p>
+              <p
+                className={`text-sm ${isPositive ? "text-green-600" : "text-red-600"}`}
+              >
+                {isPositive ? "+" : ""}
+                {gainLossPct.toFixed(2)}%
+              </p>
+            </CardContent>
+          </Card>
+
+          {hasRealizedGainLoss && (
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <CardDescription>Realized Gain / Loss</CardDescription>
+                {isRealizedPositive ? (
+                  <TrendingUp className="h-4 w-4 text-green-600" />
+                ) : (
+                  <TrendingDown className="h-4 w-4 text-red-600" />
+                )}
+              </CardHeader>
+              <CardContent>
+                <p
+                  className={`text-2xl font-bold font-mono ${isRealizedPositive ? "text-green-600" : "text-red-600"}`}
+                >
+                  {isRealizedPositive ? "+" : ""}
+                  {formatCurrency(investment.realized_gain_loss)}
+                </p>
+              </CardContent>
+            </Card>
+          )}
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardDescription>Account</CardDescription>
+              <Wallet className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <Link
+                href={`/accounts/${investment.account_id}`}
+                className="text-lg font-semibold text-primary hover:underline"
+              >
+                {investment.account?.name ?? `Account #${investment.account_id}`}
+              </Link>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {/* Action buttons */}
       <div className="flex flex-wrap gap-2">
         <Button size="sm" variant="default" onClick={() => setBuyOpen(true)}>
           Buy
         </Button>
-        <Button size="sm" variant="outline" onClick={() => setSellOpen(true)}>
+        <Button size="sm" variant="outline" onClick={() => setSellOpen(true)} disabled={isClosed}>
           Sell
         </Button>
         <Button size="sm" variant="outline" onClick={() => setDividendOpen(true)}>
           Dividend
         </Button>
-        <Button size="sm" variant="outline" onClick={() => setSplitOpen(true)}>
+        <Button size="sm" variant="outline" onClick={() => setSplitOpen(true)} disabled={isClosed}>
           Split
         </Button>
       </div>
@@ -323,6 +400,7 @@ export default function InvestmentDetailPage() {
                     <TableHead className="text-right">Price/Unit</TableHead>
                     <TableHead className="text-right">Total</TableHead>
                     <TableHead className="text-right">Fee</TableHead>
+                    <TableHead className="text-right">Realized P&L</TableHead>
                     <TableHead>Notes</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -360,6 +438,16 @@ export default function InvestmentDetailPage() {
                         </TableCell>
                         <TableCell className="text-right font-mono text-muted-foreground">
                           {tx.fee > 0 ? formatCurrency(tx.fee) : "-"}
+                        </TableCell>
+                        <TableCell className="text-right font-mono font-medium">
+                          {tx.type === "sell" ? (
+                            <span className={tx.realized_gain_loss >= 0 ? "text-green-600" : "text-red-600"}>
+                              {tx.realized_gain_loss >= 0 ? "+" : ""}
+                              {formatCurrency(tx.realized_gain_loss)}
+                            </span>
+                          ) : (
+                            "-"
+                          )}
                         </TableCell>
                         <TableCell className="max-w-[200px] truncate text-muted-foreground">
                           {tx.notes || "-"}
