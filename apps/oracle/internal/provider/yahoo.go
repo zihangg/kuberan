@@ -6,14 +6,15 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 )
 
 const (
-	yahooBaseURL        = "https://query1.finance.yahoo.com/v8/finance/chart"
-	yahooMaxConcurrent  = 10
-	yahooUA             = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"
+	yahooBaseURL       = "https://query1.finance.yahoo.com/v8/finance/chart"
+	yahooMaxConcurrent = 10
+	yahooUA            = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"
 )
 
 // exchangeSuffixes maps exchange codes to Yahoo Finance ticker suffixes.
@@ -42,6 +43,7 @@ type yahooChartResponse struct {
 		Result []struct {
 			Meta struct {
 				Symbol             string  `json:"symbol"`
+				Currency           string  `json:"currency"`
 				RegularMarketPrice float64 `json:"regularMarketPrice"`
 			} `json:"meta"`
 		} `json:"result"`
@@ -165,14 +167,15 @@ func (p *YahooProvider) fetchOne(ctx context.Context, ticker string, secID uint,
 		return nil, fmt.Errorf("no results for %s", ticker)
 	}
 
-	price := chartResp.Chart.Result[0].Meta.RegularMarketPrice
-	if price == 0 {
+	meta := chartResp.Chart.Result[0].Meta
+	if meta.RegularMarketPrice == 0 {
 		return nil, fmt.Errorf("zero price for %s", ticker)
 	}
 
 	return &PriceResult{
 		SecurityID: secID,
-		Price:      int64(math.Round(price * 100)),
+		Price:      int64(math.Round(meta.RegularMarketPrice * 100)),
+		Currency:   strings.ToUpper(meta.Currency),
 		RecordedAt: now,
 	}, nil
 }

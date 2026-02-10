@@ -16,6 +16,7 @@ type Config struct {
 	LogLevel         slog.Level
 	RequestTimeout   time.Duration
 	ComputeSnapshots bool
+	TargetCurrency   string // Target currency for all prices (default: "MYR")
 }
 
 // Load reads configuration from environment variables and validates required fields.
@@ -49,6 +50,11 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("invalid COMPUTE_SNAPSHOTS value: %w", err)
 	}
 	cfg.ComputeSnapshots = snapshots
+
+	cfg.TargetCurrency = strings.ToUpper(os.Getenv("TARGET_CURRENCY"))
+	if cfg.TargetCurrency == "" {
+		cfg.TargetCurrency = "MYR"
+	}
 
 	return cfg, nil
 }
@@ -98,4 +104,3 @@ func parseBool(s string, defaultVal bool) (bool, error) {
 		return false, fmt.Errorf("must be true, false, 1, or 0, got %q", s)
 	}
 }
-

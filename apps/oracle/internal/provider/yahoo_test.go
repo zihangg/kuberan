@@ -12,17 +12,24 @@ import (
 
 // v8ChartResponse builds a v8 chart JSON response for a single symbol.
 func v8ChartResponse(symbol string, price float64) yahooChartResponse {
+	return v8ChartResponseWithCurrency(symbol, price, "USD")
+}
+
+// v8ChartResponseWithCurrency builds a v8 chart JSON response with an explicit currency.
+func v8ChartResponseWithCurrency(symbol string, price float64, currency string) yahooChartResponse {
 	var resp yahooChartResponse
 	resp.Chart.Result = []struct {
 		Meta struct {
 			Symbol             string  `json:"symbol"`
+			Currency           string  `json:"currency"`
 			RegularMarketPrice float64 `json:"regularMarketPrice"`
 		} `json:"meta"`
 	}{
 		{Meta: struct {
 			Symbol             string  `json:"symbol"`
+			Currency           string  `json:"currency"`
 			RegularMarketPrice float64 `json:"regularMarketPrice"`
-		}{Symbol: symbol, RegularMarketPrice: price}},
+		}{Symbol: symbol, Currency: currency, RegularMarketPrice: price}},
 	}
 	return resp
 }
@@ -39,9 +46,14 @@ func v8ChartErrorResponse(code, description string) yahooChartResponse {
 
 // newV8MockServer creates a test server that serves v8 chart responses per symbol.
 // priceMap maps ticker (from URL path) to price. Tickers not in the map get a chart error.
+// All prices are returned with currency "USD".
 func newV8MockServer(priceMap map[string]float64) *httptest.Server {
+	return newV8MockServerWithCurrency(priceMap, "USD")
+}
+
+// newV8MockServerWithCurrency creates a test server with a specific currency for all responses.
+func newV8MockServerWithCurrency(priceMap map[string]float64, currency string) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Extract ticker from path: /{ticker}
 		ticker := strings.TrimPrefix(r.URL.Path, "/")
 		w.Header().Set("Content-Type", "application/json")
 
@@ -50,7 +62,7 @@ func newV8MockServer(priceMap map[string]float64) *httptest.Server {
 			_ = json.NewEncoder(w).Encode(v8ChartErrorResponse("Not Found", "No data found, symbol may be delisted"))
 			return
 		}
-		_ = json.NewEncoder(w).Encode(v8ChartResponse(ticker, price))
+		_ = json.NewEncoder(w).Encode(v8ChartResponseWithCurrency(ticker, price, currency))
 	}))
 }
 
@@ -108,6 +120,9 @@ func TestYahooProvider_FetchPrices_Success(t *testing.T) {
 		}
 		if r.Price != want {
 			t.Errorf("security %d: got price %d, want %d", r.SecurityID, r.Price, want)
+		}
+		if r.Currency != "USD" {
+			t.Errorf("security %d: got currency %q, want %q", r.SecurityID, r.Currency, "USD")
 		}
 	}
 }
@@ -334,5 +349,61 @@ func TestYahooProvider_FetchPrices_ChartError(t *testing.T) {
 	}
 	if !strings.Contains(fetchErrors[0].Err.Error(), "Not Found") {
 		t.Errorf("expected error to mention 'Not Found', got: %v", fetchErrors[0].Err)
+	}
+}
+
+func TestYahooProvider_FetchPrices_CurrencyFromResponse(t *testing.T) {
+	// Each ticker responds with a different currency via per-ticker handlers.
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ticker := strings.TrimPrefix(r.URL.Path, "/")
+		w.Header().Set("Content-Type", "application/json")
+		switch ticker {
+		case "AAPL":
+			_ = json.NewEncoder(w).Encode(v8ChartResponseWithCurrency("AAPL", 178.72, "USD"))
+		case "1023.KL":
+			_ = json.NewEncoder(w).Encode(v8ChartResponseWithCurrency("1023.KL", 8.55, "MYR"))
+		case "VUAA.L":
+			_ = json.NewEncoder(w).Encode(v8ChartResponseWithCurrency("VUAA.L", 525.12, "GBp"))
+		default:
+			_ = json.NewEncoder(w).Encode(v8ChartErrorResponse("Not Found", "unknown"))
+		}
+	}))
+	defer server.Close()
+
+	p := &YahooProvider{httpClient: server.Client(), baseURL: server.URL}
+	securities := []Security{
+		{ID: 1, Symbol: "AAPL", AssetType: "stock"},
+		{ID: 2, Symbol: "CIMB", AssetType: "stock", Exchange: "BURSA", ProviderSymbol: "1023.KL"},
+		{ID: 3, Symbol: "VUAA", AssetType: "etf", Exchange: "LSE", ProviderSymbol: "VUAA.L"},
+	}
+
+	results, fetchErrors := p.FetchPrices(context.Background(), securities)
+	if len(fetchErrors) != 0 {
+		t.Fatalf("expected 0 errors, got %d: %v", len(fetchErrors), fetchErrors)
+	}
+	if len(results) != 3 {
+		t.Fatalf("expected 3 results, got %d", len(results))
+	}
+
+	expected := map[uint]struct {
+		price    int64
+		currency string
+	}{
+		1: {17872, "USD"},
+		2: {855, "MYR"},
+		3: {52512, "GBP"}, // GBp → GBP after ToUpper
+	}
+	for _, r := range results {
+		want, ok := expected[r.SecurityID]
+		if !ok {
+			t.Errorf("unexpected security ID %d", r.SecurityID)
+			continue
+		}
+		if r.Price != want.price {
+			t.Errorf("security %d: got price %d, want %d", r.SecurityID, r.Price, want.price)
+		}
+		if r.Currency != want.currency {
+			t.Errorf("security %d: got currency %q, want %q", r.SecurityID, r.Currency, want.currency)
+		}
 	}
 }

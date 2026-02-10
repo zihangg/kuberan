@@ -12,15 +12,19 @@ import (
 
 // CoinGeckoProvider fetches prices from CoinGecko for cryptocurrencies.
 type CoinGeckoProvider struct {
-	httpClient *http.Client
-	baseURL    string // overridable for tests
+	httpClient     *http.Client
+	baseURL        string // overridable for tests
+	targetCurrency string // currency code for vs_currencies (e.g. "myr")
 }
 
 // NewCoinGeckoProvider creates a new CoinGecko price provider.
-func NewCoinGeckoProvider(httpClient *http.Client) *CoinGeckoProvider {
+// targetCurrency sets the vs_currencies parameter (e.g. "MYR") so all
+// crypto prices are returned in the target currency directly.
+func NewCoinGeckoProvider(httpClient *http.Client, targetCurrency string) *CoinGeckoProvider {
 	return &CoinGeckoProvider{
-		httpClient: httpClient,
-		baseURL:    "https://api.coingecko.com/api/v3/simple/price",
+		httpClient:     httpClient,
+		baseURL:        "https://api.coingecko.com/api/v3/simple/price",
+		targetCurrency: strings.ToLower(targetCurrency),
 	}
 }
 
@@ -63,14 +67,8 @@ func (p *CoinGeckoProvider) FetchPrices(ctx context.Context, securities []Securi
 		return nil, fetchErrors
 	}
 
-	// Determine target currency from the first mapped security.
-	currency := "usd"
-	for _, secs := range idToSecs {
-		if secs[0].Currency != "" {
-			currency = strings.ToLower(secs[0].Currency)
-		}
-		break
-	}
+	// Use the configured target currency for all price requests.
+	currency := p.targetCurrency
 
 	// Call CoinGecko simple price API.
 	url := p.baseURL + "?ids=" + strings.Join(ids, ",") + "&vs_currencies=" + currency
@@ -128,6 +126,7 @@ func (p *CoinGeckoProvider) FetchPrices(ctx context.Context, securities []Securi
 			prices = append(prices, PriceResult{
 				SecurityID: sec.ID,
 				Price:      cents,
+				Currency:   strings.ToUpper(currency),
 				RecordedAt: now,
 			})
 		}

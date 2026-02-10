@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
@@ -47,6 +48,42 @@ func (m *mockProvider) FetchPrices(ctx context.Context, securities []provider.Se
 	return m.fetchPrices(ctx, securities)
 }
 
+// mockConverter implements CurrencyConverter for testing.
+type mockConverter struct {
+	target          string
+	needsConversion func(fromCurrency string) bool
+	convertFn       func(ctx context.Context, priceCents int64, fromCurrency string) (int64, error)
+}
+
+func (m *mockConverter) NeedsConversion(fromCurrency string) bool {
+	return m.needsConversion(fromCurrency)
+}
+
+func (m *mockConverter) Convert(ctx context.Context, priceCents int64, fromCurrency string) (int64, error) {
+	return m.convertFn(ctx, priceCents, fromCurrency)
+}
+
+func (m *mockConverter) TargetCurrency() string {
+	return m.target
+}
+
+// newMYRConverter returns a mock converter that multiplies USD prices by 4.47
+// and leaves MYR prices as-is.
+func newMYRConverter() *mockConverter {
+	return &mockConverter{
+		target: "MYR",
+		needsConversion: func(fromCurrency string) bool {
+			return strings.ToUpper(fromCurrency) != "MYR"
+		},
+		convertFn: func(_ context.Context, priceCents int64, fromCurrency string) (int64, error) {
+			if strings.ToUpper(fromCurrency) == "USD" {
+				return int64(float64(priceCents) * 4.47), nil
+			}
+			return priceCents, nil
+		},
+	}
+}
+
 func newTestLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
@@ -57,6 +94,7 @@ func defaultConfig(snapshots bool) *config.Config {
 		PipelineAPIKey:   "test-key",
 		RequestTimeout:   30 * time.Second,
 		ComputeSnapshots: snapshots,
+		TargetCurrency:   "MYR",
 	}
 }
 
@@ -86,6 +124,7 @@ func TestOracle_Run_FullFlow(t *testing.T) {
 		},
 	}
 
+	// Yahoo returns native exchange currency: USD for NASDAQ, MYR for BURSA.
 	var providerSymbolSeen bool
 	yahooProvider := &mockProvider{
 		name:     "Yahoo Finance",
@@ -96,25 +135,32 @@ func TestOracle_Run_FullFlow(t *testing.T) {
 				if s.Symbol == "CIMB" && s.ProviderSymbol == "1023.KL" {
 					providerSymbolSeen = true
 				}
-				results[i] = provider.PriceResult{SecurityID: s.ID, Price: 10000 + int64(s.ID)*100, RecordedAt: now}
+				// Simulate Yahoo returning native currency per exchange.
+				currency := "USD"
+				if s.Exchange == "BURSA" {
+					currency = "MYR"
+				}
+				results[i] = provider.PriceResult{SecurityID: s.ID, Price: 10000 + int64(s.ID)*100, Currency: currency, RecordedAt: now}
 			}
 			return results, nil
 		},
 	}
 
+	// CoinGecko returns prices directly in MYR (target currency).
 	geckoProvider := &mockProvider{
 		name:     "CoinGecko",
 		supports: func(at string) bool { return at == "crypto" },
 		fetchPrices: func(_ context.Context, secs []provider.Security) ([]provider.PriceResult, []provider.FetchError) {
 			results := make([]provider.PriceResult, len(secs))
 			for i, s := range secs {
-				results[i] = provider.PriceResult{SecurityID: s.ID, Price: 500000 + int64(s.ID)*1000, RecordedAt: now}
+				results[i] = provider.PriceResult{SecurityID: s.ID, Price: 500000 + int64(s.ID)*1000, Currency: "MYR", RecordedAt: now}
 			}
 			return results, nil
 		},
 	}
 
-	orc := NewOracle(mc, []provider.Provider{yahooProvider, geckoProvider}, defaultConfig(true), newTestLogger())
+	conv := newMYRConverter()
+	orc := NewOracle(mc, []provider.Provider{yahooProvider, geckoProvider}, conv, defaultConfig(true), newTestLogger())
 	result, err := orc.Run(context.Background())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -143,6 +189,32 @@ func TestOracle_Run_FullFlow(t *testing.T) {
 	}
 	if result.Duration <= 0 {
 		t.Error("Duration should be positive")
+	}
+
+	// Verify that USD prices were converted (multiplied by 4.47) and MYR prices were not.
+	for _, p := range recordedPrices {
+		switch p.SecurityID {
+		case 1: // AAPL (USD stock): original = 10000 + 1*100 = 10100 → 10100 * 4.47 = 45147
+			if p.Price != 45147 {
+				t.Errorf("AAPL price = %d, want 45147 (USD converted to MYR)", p.Price)
+			}
+		case 2: // MSFT (USD stock): original = 10000 + 2*100 = 10200 → 10200 * 4.47 = 45594
+			if p.Price != 45594 {
+				t.Errorf("MSFT price = %d, want 45594 (USD converted to MYR)", p.Price)
+			}
+		case 3: // CIMB (MYR stock): original = 10000 + 3*100 = 10300 → no conversion
+			if p.Price != 10300 {
+				t.Errorf("CIMB price = %d, want 10300 (MYR, no conversion)", p.Price)
+			}
+		case 4: // BTC (MYR from CoinGecko): original = 500000 + 4*1000 = 504000 → no conversion
+			if p.Price != 504000 {
+				t.Errorf("BTC price = %d, want 504000 (MYR from CoinGecko, no conversion)", p.Price)
+			}
+		case 5: // ETH (MYR from CoinGecko): original = 500000 + 5*1000 = 505000 → no conversion
+			if p.Price != 505000 {
+				t.Errorf("ETH price = %d, want 505000 (MYR from CoinGecko, no conversion)", p.Price)
+			}
+		}
 	}
 }
 
@@ -196,7 +268,7 @@ func TestOracle_Run_PartialProviderFailure(t *testing.T) {
 		},
 	}
 
-	orc := NewOracle(mc, []provider.Provider{yahooProvider, geckoProvider}, defaultConfig(true), newTestLogger())
+	orc := NewOracle(mc, []provider.Provider{yahooProvider, geckoProvider}, nil, defaultConfig(true), newTestLogger())
 	result, err := orc.Run(context.Background())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -239,7 +311,7 @@ func TestOracle_Run_NoSecurities(t *testing.T) {
 		},
 	}
 
-	orc := NewOracle(mc, []provider.Provider{mp}, defaultConfig(true), newTestLogger())
+	orc := NewOracle(mc, []provider.Provider{mp}, nil, defaultConfig(true), newTestLogger())
 	result, err := orc.Run(context.Background())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -330,7 +402,7 @@ func TestOracle_Run_MixedCaseAssetTypes(t *testing.T) {
 		},
 	}
 
-	orc := NewOracle(mc, []provider.Provider{yahooProvider, geckoProvider}, defaultConfig(true), newTestLogger())
+	orc := NewOracle(mc, []provider.Provider{yahooProvider, geckoProvider}, nil, defaultConfig(true), newTestLogger())
 	result, err := orc.Run(context.Background())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -377,7 +449,7 @@ func TestOracle_Run_UnsupportedAssetType(t *testing.T) {
 		},
 	}
 
-	orc := NewOracle(mc, []provider.Provider{cryptoOnly}, defaultConfig(true), newTestLogger())
+	orc := NewOracle(mc, []provider.Provider{cryptoOnly}, nil, defaultConfig(true), newTestLogger())
 	result, err := orc.Run(context.Background())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -404,7 +476,7 @@ func TestOracle_Run_GetSecuritiesFails(t *testing.T) {
 		},
 	}
 
-	orc := NewOracle(mc, nil, defaultConfig(true), newTestLogger())
+	orc := NewOracle(mc, nil, nil, defaultConfig(true), newTestLogger())
 	result, err := orc.Run(context.Background())
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -445,7 +517,7 @@ func TestOracle_Run_RecordPricesFails(t *testing.T) {
 		},
 	}
 
-	orc := NewOracle(mc, []provider.Provider{mp}, defaultConfig(true), newTestLogger())
+	orc := NewOracle(mc, []provider.Provider{mp}, nil, defaultConfig(true), newTestLogger())
 	result, err := orc.Run(context.Background())
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -485,7 +557,7 @@ func TestOracle_Run_SnapshotFailureNonFatal(t *testing.T) {
 		},
 	}
 
-	orc := NewOracle(mc, []provider.Provider{mp}, defaultConfig(true), newTestLogger())
+	orc := NewOracle(mc, []provider.Provider{mp}, nil, defaultConfig(true), newTestLogger())
 	result, err := orc.Run(context.Background())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -528,7 +600,7 @@ func TestOracle_Run_SnapshotsDisabled(t *testing.T) {
 		},
 	}
 
-	orc := NewOracle(mc, []provider.Provider{mp}, defaultConfig(false), newTestLogger())
+	orc := NewOracle(mc, []provider.Provider{mp}, nil, defaultConfig(false), newTestLogger())
 	result, err := orc.Run(context.Background())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)

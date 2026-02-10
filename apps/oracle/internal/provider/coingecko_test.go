@@ -10,7 +10,7 @@ import (
 )
 
 func TestCoinGeckoProvider_Supports(t *testing.T) {
-	p := NewCoinGeckoProvider(http.DefaultClient)
+	p := NewCoinGeckoProvider(http.DefaultClient, "MYR")
 
 	if !p.Supports("crypto") {
 		t.Error("expected Supports(crypto) = true")
@@ -25,17 +25,21 @@ func TestCoinGeckoProvider_Supports(t *testing.T) {
 }
 
 func TestCoinGeckoProvider_FetchPrices_Success(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Verify the request uses myr as vs_currencies.
+		if !strings.Contains(r.URL.RawQuery, "vs_currencies=myr") {
+			t.Errorf("expected vs_currencies=myr in query, got %s", r.URL.RawQuery)
+		}
 		resp := map[string]map[string]float64{
-			"bitcoin":  {"usd": 67234.56},
-			"ethereum": {"usd": 3456.78},
+			"bitcoin":  {"myr": 300539.12},
+			"ethereum": {"myr": 15457.82},
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer server.Close()
 
-	p := &CoinGeckoProvider{httpClient: server.Client(), baseURL: server.URL}
+	p := &CoinGeckoProvider{httpClient: server.Client(), baseURL: server.URL, targetCurrency: "myr"}
 	securities := []Security{
 		{ID: 1, Symbol: "BTC", AssetType: "crypto", Currency: "USD"},
 		{ID: 2, Symbol: "ETH", AssetType: "crypto", Currency: "USD"},
@@ -50,8 +54,8 @@ func TestCoinGeckoProvider_FetchPrices_Success(t *testing.T) {
 	}
 
 	expected := map[uint]int64{
-		1: 6723456,
-		2: 345678,
+		1: 30053912,
+		2: 1545782,
 	}
 	for _, r := range results {
 		want, ok := expected[r.SecurityID]
@@ -62,6 +66,9 @@ func TestCoinGeckoProvider_FetchPrices_Success(t *testing.T) {
 		if r.Price != want {
 			t.Errorf("security %d: got price %d, want %d", r.SecurityID, r.Price, want)
 		}
+		if r.Currency != "MYR" {
+			t.Errorf("security %d: got currency %q, want %q", r.SecurityID, r.Currency, "MYR")
+		}
 	}
 }
 
@@ -71,7 +78,7 @@ func TestCoinGeckoProvider_FetchPrices_UnknownSymbol(t *testing.T) {
 	}))
 	defer server.Close()
 
-	p := &CoinGeckoProvider{httpClient: server.Client(), baseURL: server.URL}
+	p := &CoinGeckoProvider{httpClient: server.Client(), baseURL: server.URL, targetCurrency: "myr"}
 	securities := []Security{
 		{ID: 1, Symbol: "OBSCURECOIN", AssetType: "crypto", Currency: "USD"},
 	}
@@ -95,14 +102,14 @@ func TestCoinGeckoProvider_FetchPrices_PartialResponse(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		// Return price for bitcoin but not ethereum.
 		resp := map[string]map[string]float64{
-			"bitcoin": {"usd": 67234.56},
+			"bitcoin": {"myr": 300539.12},
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer server.Close()
 
-	p := &CoinGeckoProvider{httpClient: server.Client(), baseURL: server.URL}
+	p := &CoinGeckoProvider{httpClient: server.Client(), baseURL: server.URL, targetCurrency: "myr"}
 	securities := []Security{
 		{ID: 1, Symbol: "BTC", AssetType: "crypto", Currency: "USD"},
 		{ID: 2, Symbol: "ETH", AssetType: "crypto", Currency: "USD"},
@@ -118,6 +125,9 @@ func TestCoinGeckoProvider_FetchPrices_PartialResponse(t *testing.T) {
 	if results[0].SecurityID != 1 {
 		t.Errorf("expected result for security ID 1, got %d", results[0].SecurityID)
 	}
+	if results[0].Currency != "MYR" {
+		t.Errorf("expected currency MYR, got %q", results[0].Currency)
+	}
 	if fetchErrors[0].SecurityID != 2 {
 		t.Errorf("expected error for security ID 2, got %d", fetchErrors[0].SecurityID)
 	}
@@ -129,7 +139,7 @@ func TestCoinGeckoProvider_FetchPrices_HTTPError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	p := &CoinGeckoProvider{httpClient: server.Client(), baseURL: server.URL}
+	p := &CoinGeckoProvider{httpClient: server.Client(), baseURL: server.URL, targetCurrency: "myr"}
 	securities := []Security{
 		{ID: 1, Symbol: "BTC", AssetType: "crypto", Currency: "USD"},
 		{ID: 2, Symbol: "ETH", AssetType: "crypto", Currency: "USD"},

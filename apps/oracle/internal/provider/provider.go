@@ -22,7 +22,8 @@ type Security struct {
 // PriceResult represents a successfully fetched price for a security.
 type PriceResult struct {
 	SecurityID uint
-	Price      int64 // cents
+	Price      int64  // cents in the native currency reported by the data source
+	Currency   string // ISO 4217 currency code from the data source (e.g. "USD", "MYR", "GBP")
 	RecordedAt time.Time
 }
 

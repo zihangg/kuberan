@@ -28,12 +28,19 @@ func main() {
 
 	kuberanClient := client.NewKuberanClient(cfg.KuberanAPIURL, cfg.PipelineAPIKey, httpClient)
 
+	forexConverter := provider.NewForexConverter(httpClient, cfg.TargetCurrency)
+
 	providers := []provider.Provider{
 		provider.NewYahooProvider(httpClient),
-		provider.NewCoinGeckoProvider(httpClient),
+		provider.NewCoinGeckoProvider(httpClient, cfg.TargetCurrency),
 	}
 
-	orc := oracle.NewOracle(kuberanClient, providers, cfg, logger)
+	logger.Info("oracle starting",
+		"target_currency", cfg.TargetCurrency,
+		"compute_snapshots", cfg.ComputeSnapshots,
+	)
+
+	orc := oracle.NewOracle(kuberanClient, providers, forexConverter, cfg, logger)
 	ctx := context.Background()
 	result, err := orc.Run(ctx)
 	if err != nil {

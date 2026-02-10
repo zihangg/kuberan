@@ -3,6 +3,7 @@ package oracle
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"strings"
 	"sync"
@@ -20,6 +21,16 @@ type SecurityClient interface {
 	ComputeSnapshots(ctx context.Context) (int, error)
 }
 
+// CurrencyConverter converts prices from one currency to the target currency.
+type CurrencyConverter interface {
+	// NeedsConversion returns true if the given currency differs from the target.
+	NeedsConversion(fromCurrency string) bool
+	// Convert converts a price in cents from the given currency to the target currency cents.
+	Convert(ctx context.Context, priceCents int64, fromCurrency string) (int64, error)
+	// TargetCurrency returns the target currency code (e.g. "MYR").
+	TargetCurrency() string
+}
+
 // RunResult contains the outcome of an oracle run.
 type RunResult struct {
 	SecuritiesFetched int
@@ -33,15 +44,17 @@ type RunResult struct {
 type Oracle struct {
 	client    SecurityClient
 	providers []provider.Provider
+	converter CurrencyConverter
 	config    *config.Config
 	logger    *slog.Logger
 }
 
 // NewOracle creates a new Oracle instance.
-func NewOracle(client SecurityClient, providers []provider.Provider, cfg *config.Config, logger *slog.Logger) *Oracle {
+func NewOracle(client SecurityClient, providers []provider.Provider, converter CurrencyConverter, cfg *config.Config, logger *slog.Logger) *Oracle {
 	return &Oracle{
 		client:    client,
 		providers: providers,
+		converter: converter,
 		config:    cfg,
 		logger:    logger,
 	}
@@ -134,9 +147,46 @@ func (o *Oracle) Run(ctx context.Context) (*RunResult, error) {
 		return result, nil
 	}
 
+	// 5b. Convert all prices to the target currency using the currency
+	// reported by each data source (e.g. Yahoo returns "USD" for NASDAQ stocks).
+	var convertedResults []provider.PriceResult
+	for _, r := range allResults {
+		if o.converter != nil && o.converter.NeedsConversion(r.Currency) {
+			converted, err := o.converter.Convert(ctx, r.Price, r.Currency)
+			if err != nil {
+				o.logger.Warn("currency conversion failed, skipping",
+					"security_id", r.SecurityID,
+					"currency", r.Currency,
+					"target", o.converter.TargetCurrency(),
+					"error", err,
+				)
+				result.Errors = append(result.Errors, provider.FetchError{
+					SecurityID: r.SecurityID,
+					Symbol:     fmt.Sprintf("id:%d", r.SecurityID),
+					Err:        fmt.Errorf("currency conversion from %s to %s: %w", r.Currency, o.converter.TargetCurrency(), err),
+				})
+				continue
+			}
+			o.logger.Debug("converted price",
+				"security_id", r.SecurityID,
+				"from_currency", r.Currency,
+				"original_cents", r.Price,
+				"converted_cents", converted,
+			)
+			r.Price = converted
+		}
+		convertedResults = append(convertedResults, r)
+	}
+
+	if len(convertedResults) == 0 {
+		o.logger.Info("no prices after conversion")
+		result.Duration = time.Since(start)
+		return result, nil
+	}
+
 	// 6. Convert to client price entries and record.
-	entries := make([]client.RecordPriceEntry, len(allResults))
-	for i, r := range allResults {
+	entries := make([]client.RecordPriceEntry, len(convertedResults))
+	for i, r := range convertedResults {
 		entries[i] = client.RecordPriceEntry{
 			SecurityID: r.SecurityID,
 			Price:      r.Price,
