@@ -18,8 +18,11 @@ var allModels = []interface{}{
 	&models.Category{},
 	&models.Transaction{},
 	&models.Budget{},
+	&models.Security{},
 	&models.Investment{},
 	&models.InvestmentTransaction{},
+	&models.SecurityPrice{},
+	&models.PortfolioSnapshot{},
 	&models.AuditLog{},
 }
 

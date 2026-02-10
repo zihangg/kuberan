@@ -82,6 +82,8 @@ func run() error {
 	transactionService := services.NewTransactionService(db, accountService)
 	budgetService := services.NewBudgetService(db)
 	investmentService := services.NewInvestmentService(db, accountService)
+	securityService := services.NewSecurityService(db)
+	snapshotService := services.NewPortfolioSnapshotService(db)
 	auditService := services.NewAuditService(db)
 
 	// Initialize handlers
@@ -91,6 +93,8 @@ func run() error {
 	transactionHandler := handlers.NewTransactionHandler(transactionService, auditService)
 	budgetHandler := handlers.NewBudgetHandler(budgetService, auditService)
 	investmentHandler := handlers.NewInvestmentHandler(investmentService, auditService)
+	securityHandler := handlers.NewSecurityHandler(securityService, auditService)
+	snapshotHandler := handlers.NewPortfolioSnapshotHandler(snapshotService, auditService)
 
 	// Register custom validators before routes
 	validator.Register()
@@ -185,6 +189,7 @@ func run() error {
 	investments := protected.Group("/investments")
 	investments.POST("", investmentHandler.AddInvestment)
 	investments.GET("/portfolio", investmentHandler.GetPortfolio)
+	investments.GET("/snapshots", snapshotHandler.GetSnapshots)
 	investments.GET("/:id", investmentHandler.GetInvestment)
 	investments.PUT("/:id/price", investmentHandler.UpdatePrice)
 	investments.POST("/:id/buy", investmentHandler.RecordBuy)
@@ -193,6 +198,12 @@ func run() error {
 	investments.POST("/:id/split", investmentHandler.RecordSplit)
 	investments.GET("/:id/transactions", investmentHandler.GetInvestmentTransactions)
 
+	// Security routes (authenticated)
+	securities := protected.Group("/securities")
+	securities.GET("", securityHandler.ListSecurities)
+	securities.GET("/:id", securityHandler.GetSecurity)
+	securities.GET("/:id/prices", securityHandler.GetPriceHistory)
+
 	// Category routes
 	categories := protected.Group("/categories")
 	categories.POST("", categoryHandler.CreateCategory)
@@ -200,6 +211,13 @@ func run() error {
 	categories.GET("/:id", categoryHandler.GetCategoryByID)
 	categories.PUT("/:id", categoryHandler.UpdateCategory)
 	categories.DELETE("/:id", categoryHandler.DeleteCategory)
+
+	// Pipeline routes (API key auth, no JWT)
+	pipeline := v1.Group("/pipeline")
+	pipeline.Use(middleware.PipelineAuthMiddleware(appConfig.PipelineAPIKey))
+	pipeline.POST("/securities", securityHandler.CreateSecurity)
+	pipeline.POST("/securities/prices", securityHandler.RecordPrices)
+	pipeline.POST("/snapshots", snapshotHandler.ComputeSnapshots)
 
 	// Create HTTP server
 	srv := &http.Server{

@@ -157,21 +157,40 @@ func CreateTestBudget(t *testing.T, db *gorm.DB, userID, categoryID uint) *model
 	return budget
 }
 
+// CreateTestSecurity creates a security with default values.
+func CreateTestSecurity(t *testing.T, db *gorm.DB) *models.Security {
+	t.Helper()
+	n := nextID()
+	return CreateTestSecurityWithParams(t, db, fmt.Sprintf("SEC%d", n), fmt.Sprintf("Test Security %d", n), models.AssetTypeStock, "NYSE")
+}
+
+// CreateTestSecurityWithParams creates a security with the specified parameters.
+func CreateTestSecurityWithParams(t *testing.T, db *gorm.DB, symbol, name string, assetType models.AssetType, exchange string) *models.Security {
+	t.Helper()
+	sec := &models.Security{
+		Symbol:    symbol,
+		Name:      name,
+		AssetType: assetType,
+		Currency:  "USD",
+		Exchange:  exchange,
+	}
+	if err := db.Create(sec).Error; err != nil {
+		t.Fatalf("failed to create test security: %v", err)
+	}
+	return sec
+}
+
 // CreateTestInvestment creates an investment holding in the given account.
-func CreateTestInvestment(t *testing.T, db *gorm.DB, accountID uint) *models.Investment {
+func CreateTestInvestment(t *testing.T, db *gorm.DB, accountID, securityID uint) *models.Investment {
 	t.Helper()
 
-	n := nextID()
 	inv := &models.Investment{
 		AccountID:    accountID,
-		Symbol:       fmt.Sprintf("TST%d", n),
-		AssetType:    models.AssetTypeStock,
-		Name:         fmt.Sprintf("Test Stock %d", n),
+		SecurityID:   securityID,
 		Quantity:     10.0,
 		CostBasis:    100000, // $1000.00
 		CurrentPrice: 10000,  // $100.00 per share
 		LastUpdated:  time.Now(),
-		Currency:     "USD",
 	}
 	if err := db.Create(inv).Error; err != nil {
 		t.Fatalf("failed to create test investment: %v", err)

@@ -16,7 +16,7 @@ import (
 // --- mock investment service ---
 
 type mockInvestmentService struct {
-	addInvestmentFn             func(userID, accountID uint, symbol, name string, assetType models.AssetType, quantity float64, purchasePrice int64, currency string, extraFields map[string]interface{}) (*models.Investment, error)
+	addInvestmentFn             func(userID, accountID, securityID uint, quantity float64, purchasePrice int64, walletAddress string) (*models.Investment, error)
 	getAccountInvestmentsFn     func(userID, accountID uint, page pagination.PageRequest) (*pagination.PageResponse[models.Investment], error)
 	getInvestmentByIDFn         func(userID, investmentID uint) (*models.Investment, error)
 	updateInvestmentPriceFn     func(userID, investmentID uint, currentPrice int64) (*models.Investment, error)
@@ -28,9 +28,9 @@ type mockInvestmentService struct {
 	getInvestmentTransactionsFn func(userID, investmentID uint, page pagination.PageRequest) (*pagination.PageResponse[models.InvestmentTransaction], error)
 }
 
-func (m *mockInvestmentService) AddInvestment(userID, accountID uint, symbol, name string, assetType models.AssetType, quantity float64, purchasePrice int64, currency string, extraFields map[string]interface{}) (*models.Investment, error) {
+func (m *mockInvestmentService) AddInvestment(userID, accountID, securityID uint, quantity float64, purchasePrice int64, walletAddress string) (*models.Investment, error) {
 	if m.addInvestmentFn != nil {
-		return m.addInvestmentFn(userID, accountID, symbol, name, assetType, quantity, purchasePrice, currency, extraFields)
+		return m.addInvestmentFn(userID, accountID, securityID, quantity, purchasePrice, walletAddress)
 	}
 	return &models.Investment{}, nil
 }
@@ -121,13 +121,11 @@ func setupInvestmentRouter(handler *InvestmentHandler) *gin.Engine {
 func TestInvestmentHandler_AddInvestment(t *testing.T) {
 	t.Run("returns 201 on success", func(t *testing.T) {
 		svc := &mockInvestmentService{
-			addInvestmentFn: func(_ uint, accountID uint, symbol, name string, assetType models.AssetType, quantity float64, price int64, _ string, _ map[string]interface{}) (*models.Investment, error) {
+			addInvestmentFn: func(_ uint, accountID, securityID uint, quantity float64, price int64, _ string) (*models.Investment, error) {
 				return &models.Investment{
 					Base:         models.Base{ID: 1},
 					AccountID:    accountID,
-					Symbol:       symbol,
-					Name:         name,
-					AssetType:    assetType,
+					SecurityID:   securityID,
 					Quantity:     quantity,
 					CurrentPrice: price,
 					CostBasis:    int64(quantity * float64(price)),
@@ -138,27 +136,24 @@ func TestInvestmentHandler_AddInvestment(t *testing.T) {
 		r := setupInvestmentRouter(handler)
 
 		rec := doRequest(r, "POST", "/investments",
-			`{"account_id":1,"symbol":"AAPL","name":"Apple Inc","asset_type":"stock","quantity":10,"purchase_price":15000}`)
+			`{"account_id":1,"security_id":1,"quantity":10,"purchase_price":15000}`)
 
 		if rec.Code != http.StatusCreated {
 			t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
 		}
 		result := parseJSON(t, rec)
 		inv := result["investment"].(map[string]interface{})
-		if inv["symbol"] != "AAPL" {
-			t.Errorf("expected AAPL, got %v", inv["symbol"])
-		}
 		if inv["quantity"].(float64) != 10 {
 			t.Errorf("expected quantity=10, got %v", inv["quantity"])
 		}
 	})
 
-	t.Run("returns 400 on missing symbol", func(t *testing.T) {
+	t.Run("returns 400 on missing security_id", func(t *testing.T) {
 		handler := NewInvestmentHandler(&mockInvestmentService{}, &mockAuditService{})
 		r := setupInvestmentRouter(handler)
 
 		rec := doRequest(r, "POST", "/investments",
-			`{"account_id":1,"name":"Apple","asset_type":"stock","quantity":10,"purchase_price":15000}`)
+			`{"account_id":1,"quantity":10,"purchase_price":15000}`)
 
 		if rec.Code != http.StatusBadRequest {
 			t.Fatalf("expected 400, got %d", rec.Code)
@@ -166,24 +161,12 @@ func TestInvestmentHandler_AddInvestment(t *testing.T) {
 		assertErrorCode(t, parseJSON(t, rec), "INVALID_INPUT")
 	})
 
-	t.Run("returns 400 on invalid asset type", func(t *testing.T) {
-		handler := NewInvestmentHandler(&mockInvestmentService{}, &mockAuditService{})
-		r := setupInvestmentRouter(handler)
-
-		rec := doRequest(r, "POST", "/investments",
-			`{"account_id":1,"symbol":"XYZ","name":"Test","asset_type":"invalid","quantity":10,"purchase_price":15000}`)
-
-		if rec.Code != http.StatusBadRequest {
-			t.Fatalf("expected 400, got %d", rec.Code)
-		}
-	})
-
 	t.Run("returns 400 on zero quantity", func(t *testing.T) {
 		handler := NewInvestmentHandler(&mockInvestmentService{}, &mockAuditService{})
 		r := setupInvestmentRouter(handler)
 
 		rec := doRequest(r, "POST", "/investments",
-			`{"account_id":1,"symbol":"AAPL","name":"Apple","asset_type":"stock","quantity":0,"purchase_price":15000}`)
+			`{"account_id":1,"security_id":1,"quantity":0,"purchase_price":15000}`)
 
 		if rec.Code != http.StatusBadRequest {
 			t.Fatalf("expected 400, got %d", rec.Code)
@@ -192,7 +175,7 @@ func TestInvestmentHandler_AddInvestment(t *testing.T) {
 
 	t.Run("returns 404 on invalid account", func(t *testing.T) {
 		svc := &mockInvestmentService{
-			addInvestmentFn: func(_, _ uint, _, _ string, _ models.AssetType, _ float64, _ int64, _ string, _ map[string]interface{}) (*models.Investment, error) {
+			addInvestmentFn: func(_, _, _ uint, _ float64, _ int64, _ string) (*models.Investment, error) {
 				return nil, apperrors.ErrAccountNotFound
 			},
 		}
@@ -200,7 +183,7 @@ func TestInvestmentHandler_AddInvestment(t *testing.T) {
 		r := setupInvestmentRouter(handler)
 
 		rec := doRequest(r, "POST", "/investments",
-			`{"account_id":999,"symbol":"AAPL","name":"Apple","asset_type":"stock","quantity":10,"purchase_price":15000}`)
+			`{"account_id":999,"security_id":1,"quantity":10,"purchase_price":15000}`)
 
 		if rec.Code != http.StatusNotFound {
 			t.Fatalf("expected 404, got %d", rec.Code)
@@ -214,7 +197,7 @@ func TestInvestmentHandler_AddInvestment(t *testing.T) {
 		r.POST("/investments", handler.AddInvestment)
 
 		rec := doRequest(r, "POST", "/investments",
-			`{"account_id":1,"symbol":"AAPL","name":"Apple","asset_type":"stock","quantity":10,"purchase_price":15000}`)
+			`{"account_id":1,"security_id":1,"quantity":10,"purchase_price":15000}`)
 
 		if rec.Code != http.StatusUnauthorized {
 			t.Fatalf("expected 401, got %d", rec.Code)
@@ -227,11 +210,9 @@ func TestInvestmentHandler_GetInvestment(t *testing.T) {
 		svc := &mockInvestmentService{
 			getInvestmentByIDFn: func(_, investmentID uint) (*models.Investment, error) {
 				return &models.Investment{
-					Base:      models.Base{ID: investmentID},
-					Symbol:    "AAPL",
-					Name:      "Apple Inc",
-					AssetType: models.AssetTypeStock,
-					Quantity:  10,
+					Base:       models.Base{ID: investmentID},
+					SecurityID: 1,
+					Quantity:   10,
 				}, nil
 			},
 		}
@@ -245,8 +226,8 @@ func TestInvestmentHandler_GetInvestment(t *testing.T) {
 		}
 		result := parseJSON(t, rec)
 		inv := result["investment"].(map[string]interface{})
-		if inv["symbol"] != "AAPL" {
-			t.Errorf("expected AAPL, got %v", inv["symbol"])
+		if inv["security_id"].(float64) != 1 {
+			t.Errorf("expected security_id=1, got %v", inv["security_id"])
 		}
 	})
 
@@ -285,7 +266,6 @@ func TestInvestmentHandler_UpdatePrice(t *testing.T) {
 			updateInvestmentPriceFn: func(_, investmentID uint, price int64) (*models.Investment, error) {
 				return &models.Investment{
 					Base:         models.Base{ID: investmentID},
-					Symbol:       "AAPL",
 					CurrentPrice: price,
 				}, nil
 			},
@@ -632,8 +612,8 @@ func TestInvestmentHandler_GetAccountInvestments(t *testing.T) {
 		svc := &mockInvestmentService{
 			getAccountInvestmentsFn: func(_, _ uint, _ pagination.PageRequest) (*pagination.PageResponse[models.Investment], error) {
 				resp := pagination.NewPageResponse([]models.Investment{
-					{Base: models.Base{ID: 1}, Symbol: "AAPL"},
-					{Base: models.Base{ID: 2}, Symbol: "GOOGL"},
+					{Base: models.Base{ID: 1}, SecurityID: 1},
+					{Base: models.Base{ID: 2}, SecurityID: 2},
 				}, 1, 20, 2)
 				return &resp, nil
 			},

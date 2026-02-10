@@ -24,13 +24,10 @@ func NewInvestmentService(db *gorm.DB, accountService AccountServicer) Investmen
 
 // AddInvestment adds a new investment holding to an investment account.
 func (s *investmentService) AddInvestment(
-	userID, accountID uint,
-	symbol, name string,
-	assetType models.AssetType,
+	userID, accountID, securityID uint,
 	quantity float64,
 	purchasePrice int64,
-	currency string,
-	extraFields map[string]interface{},
+	walletAddress string,
 ) (*models.Investment, error) {
 	// Verify account exists, belongs to user, and is an investment account
 	account, err := s.accountService.GetAccountByID(userID, accountID)
@@ -41,26 +38,26 @@ func (s *investmentService) AddInvestment(
 		return nil, apperrors.WithMessage(apperrors.ErrInvalidInput, "Account is not an investment account")
 	}
 
-	if currency == "" {
-		currency = account.Currency
+	// Verify security exists
+	var security models.Security
+	if err := s.db.First(&security, securityID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, apperrors.ErrSecurityNotFound
+		}
+		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
 
 	costBasis := int64(quantity * float64(purchasePrice))
 
 	investment := &models.Investment{
-		AccountID:    accountID,
-		Symbol:       symbol,
-		AssetType:    assetType,
-		Name:         name,
-		Quantity:     quantity,
-		CostBasis:    costBasis,
-		CurrentPrice: purchasePrice,
-		LastUpdated:  time.Now(),
-		Currency:     currency,
+		AccountID:     accountID,
+		SecurityID:    securityID,
+		Quantity:      quantity,
+		CostBasis:     costBasis,
+		CurrentPrice:  purchasePrice,
+		LastUpdated:   time.Now(),
+		WalletAddress: walletAddress,
 	}
-
-	// Apply asset-type-specific extra fields
-	applyExtraFields(investment, extraFields)
 
 	err = s.db.Transaction(func(tx *gorm.DB) error {
 		if txErr := tx.Create(investment).Error; txErr != nil {
@@ -68,14 +65,13 @@ func (s *investmentService) AddInvestment(
 		}
 
 		// Create initial buy transaction
-		totalAmount := costBasis
 		invTx := &models.InvestmentTransaction{
 			InvestmentID: investment.ID,
 			Type:         models.InvestmentTransactionBuy,
 			Date:         time.Now(),
 			Quantity:     quantity,
 			PricePerUnit: purchasePrice,
-			TotalAmount:  totalAmount,
+			TotalAmount:  costBasis,
 			Fee:          0,
 			Notes:        "Initial purchase",
 		}
@@ -89,6 +85,7 @@ func (s *investmentService) AddInvestment(
 		return nil, err
 	}
 
+	investment.Security = security
 	return investment, nil
 }
 
@@ -108,7 +105,8 @@ func (s *investmentService) GetAccountInvestments(userID, accountID uint, page p
 	}
 
 	var investments []models.Investment
-	if err := base.Scopes(pagination.Paginate(page)).Find(&investments).Error; err != nil {
+	if err := s.db.Preload("Security").Where("account_id = ?", accountID).
+		Scopes(pagination.Paginate(page)).Find(&investments).Error; err != nil {
 		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
 
@@ -119,7 +117,7 @@ func (s *investmentService) GetAccountInvestments(userID, accountID uint, page p
 // GetInvestmentByID returns an investment if the parent account belongs to the user.
 func (s *investmentService) GetInvestmentByID(userID, investmentID uint) (*models.Investment, error) {
 	var investment models.Investment
-	if err := s.db.Preload("Account").First(&investment, investmentID).Error; err != nil {
+	if err := s.db.Preload("Account").Preload("Security").First(&investment, investmentID).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, apperrors.ErrInvestmentNotFound
 		}
@@ -176,9 +174,9 @@ func (s *investmentService) GetPortfolio(userID uint) (*PortfolioSummary, error)
 		return summary, nil
 	}
 
-	// Get all investments across those accounts
+	// Get all investments across those accounts with Security preloaded
 	var investments []models.Investment
-	if err := s.db.Where("account_id IN ?", accountIDs).Find(&investments).Error; err != nil {
+	if err := s.db.Preload("Security").Where("account_id IN ?", accountIDs).Find(&investments).Error; err != nil {
 		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
 
@@ -188,10 +186,10 @@ func (s *investmentService) GetPortfolio(userID uint) (*PortfolioSummary, error)
 		summary.TotalValue += value
 		summary.TotalCostBasis += inv.CostBasis
 
-		ts := summary.HoldingsByType[inv.AssetType]
+		ts := summary.HoldingsByType[inv.Security.AssetType]
 		ts.Value += value
 		ts.Count++
-		summary.HoldingsByType[inv.AssetType] = ts
+		summary.HoldingsByType[inv.Security.AssetType] = ts
 	}
 
 	summary.TotalGainLoss = summary.TotalValue - summary.TotalCostBasis
@@ -400,32 +398,4 @@ func (s *investmentService) GetInvestmentTransactions(userID, investmentID uint,
 
 	result := pagination.NewPageResponse(transactions, page.Page, page.PageSize, totalItems)
 	return &result, nil
-}
-
-// applyExtraFields sets asset-type-specific fields on an investment from a map.
-func applyExtraFields(inv *models.Investment, fields map[string]interface{}) {
-	if fields == nil {
-		return
-	}
-	if v, ok := fields["exchange"].(string); ok {
-		inv.Exchange = v
-	}
-	if v, ok := fields["maturity_date"].(*time.Time); ok {
-		inv.MaturityDate = v
-	}
-	if v, ok := fields["yield_to_maturity"].(float64); ok {
-		inv.YieldToMaturity = v
-	}
-	if v, ok := fields["coupon_rate"].(float64); ok {
-		inv.CouponRate = v
-	}
-	if v, ok := fields["network"].(string); ok {
-		inv.Network = v
-	}
-	if v, ok := fields["wallet_address"].(string); ok {
-		inv.WalletAddress = v
-	}
-	if v, ok := fields["property_type"].(string); ok {
-		inv.PropertyType = v
-	}
 }

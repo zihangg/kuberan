@@ -53,6 +53,9 @@ func setupIsolatedDB(t *testing.T) *gorm.DB {
 		&models.Category{},
 		&models.Transaction{},
 		&models.Budget{},
+		&models.Security{},
+		&models.SecurityPrice{},
+		&models.PortfolioSnapshot{},
 		&models.Investment{},
 		&models.InvestmentTransaction{},
 		&models.AuditLog{},
@@ -77,6 +80,8 @@ func setupApp(t *testing.T) *testApp {
 	transactionService := services.NewTransactionService(db, accountService)
 	budgetService := services.NewBudgetService(db)
 	investmentService := services.NewInvestmentService(db, accountService)
+	securityService := services.NewSecurityService(db)
+	snapshotService := services.NewPortfolioSnapshotService(db)
 	auditService := services.NewAuditService(db)
 
 	// Handlers
@@ -86,6 +91,8 @@ func setupApp(t *testing.T) *testApp {
 	transactionHandler := handlers.NewTransactionHandler(transactionService, auditService)
 	budgetHandler := handlers.NewBudgetHandler(budgetService, auditService)
 	investmentHandler := handlers.NewInvestmentHandler(investmentService, auditService)
+	securityHandler := handlers.NewSecurityHandler(securityService, auditService)
+	snapshotHandler := handlers.NewPortfolioSnapshotHandler(snapshotService, auditService)
 
 	// Router
 	router := gin.New()
@@ -136,6 +143,7 @@ func setupApp(t *testing.T) *testApp {
 	investments := protected.Group("/investments")
 	investments.POST("", investmentHandler.AddInvestment)
 	investments.GET("/portfolio", investmentHandler.GetPortfolio)
+	investments.GET("/snapshots", snapshotHandler.GetSnapshots)
 	investments.GET("/:id", investmentHandler.GetInvestment)
 	investments.PUT("/:id/price", investmentHandler.UpdatePrice)
 	investments.POST("/:id/buy", investmentHandler.RecordBuy)
@@ -143,6 +151,18 @@ func setupApp(t *testing.T) *testApp {
 	investments.POST("/:id/dividend", investmentHandler.RecordDividend)
 	investments.POST("/:id/split", investmentHandler.RecordSplit)
 	investments.GET("/:id/transactions", investmentHandler.GetInvestmentTransactions)
+
+	securities := protected.Group("/securities")
+	securities.GET("", securityHandler.ListSecurities)
+	securities.GET("/:id", securityHandler.GetSecurity)
+	securities.GET("/:id/prices", securityHandler.GetPriceHistory)
+
+	// Pipeline routes (use test API key for integration tests)
+	pipeline := v1.Group("/pipeline")
+	pipeline.Use(middleware.PipelineAuthMiddleware("test-pipeline-key"))
+	pipeline.POST("/securities", securityHandler.CreateSecurity)
+	pipeline.POST("/securities/prices", securityHandler.RecordPrices)
+	pipeline.POST("/snapshots", snapshotHandler.ComputeSnapshots)
 
 	return &testApp{DB: db, Router: router}
 }
@@ -157,6 +177,29 @@ func (app *testApp) request(method, path, body, token string) *httptest.Response
 	rec := httptest.NewRecorder()
 	app.Router.ServeHTTP(rec, req)
 	return rec
+}
+
+// pipelineRequest makes an HTTP request to a pipeline endpoint with the test API key.
+func (app *testApp) pipelineRequest(method, path, body string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(method, path, strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-Key", "test-pipeline-key")
+	rec := httptest.NewRecorder()
+	app.Router.ServeHTTP(rec, req)
+	return rec
+}
+
+// createSecurity creates a security via the pipeline API and returns the security ID.
+func (app *testApp) createSecurity(t *testing.T, symbol, name, assetType string) float64 {
+	t.Helper()
+	body := fmt.Sprintf(`{"symbol":%q,"name":%q,"asset_type":%q}`, symbol, name, assetType)
+	rec := app.pipelineRequest("POST", "/api/v1/pipeline/securities", body)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create security failed: %d %s", rec.Code, rec.Body.String())
+	}
+	result := parseJSON(t, rec)
+	sec := result["security"].(map[string]interface{})
+	return sec["id"].(float64)
 }
 
 // parseJSON parses the response body into a map.

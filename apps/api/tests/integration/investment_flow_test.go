@@ -11,6 +11,9 @@ func TestInvestmentFlow_FullLifecycle(t *testing.T) {
 	app := setupApp(t)
 	token, _, _ := app.registerUser(t, "invest@test.com", "password123")
 
+	// Step 0: Create security via pipeline
+	securityID := app.createSecurity(t, "AAPL", "Apple Inc.", "stock")
+
 	// Step 1: Create investment account
 	rec := app.request("POST", "/api/v1/accounts/investment",
 		`{"name":"Brokerage","broker":"Fidelity","account_number":"12345"}`, token)
@@ -23,8 +26,8 @@ func TestInvestmentFlow_FullLifecycle(t *testing.T) {
 
 	// Step 2: Add investment holding (10 shares of AAPL at $150/share = $1500 cost basis)
 	rec = app.request("POST", "/api/v1/investments",
-		fmt.Sprintf(`{"account_id":%.0f,"symbol":"AAPL","name":"Apple Inc.","asset_type":"stock","quantity":10,"purchase_price":15000,"currency":"USD","exchange":"NASDAQ"}`,
-			accountID), token)
+		fmt.Sprintf(`{"account_id":%.0f,"security_id":%.0f,"quantity":10,"purchase_price":15000}`,
+			accountID, securityID), token)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("expected 201 adding investment, got %d: %s", rec.Code, rec.Body.String())
 	}
@@ -127,14 +130,17 @@ func TestInvestmentFlow_DividendAndSplit(t *testing.T) {
 	app := setupApp(t)
 	token, _, _ := app.registerUser(t, "divsplit@test.com", "password123")
 
+	// Create security
+	securityID := app.createSecurity(t, "MSFT", "Microsoft Corp", "stock")
+
 	// Create investment account and holding
 	rec := app.request("POST", "/api/v1/accounts/investment",
 		`{"name":"Dividend Account"}`, token)
 	accountID := parseJSON(t, rec)["account"].(map[string]interface{})["id"].(float64)
 
 	rec = app.request("POST", "/api/v1/investments",
-		fmt.Sprintf(`{"account_id":%.0f,"symbol":"MSFT","name":"Microsoft Corp","asset_type":"stock","quantity":20,"purchase_price":30000}`,
-			accountID), token)
+		fmt.Sprintf(`{"account_id":%.0f,"security_id":%.0f,"quantity":20,"purchase_price":30000}`,
+			accountID, securityID), token)
 	investmentID := parseJSON(t, rec)["investment"].(map[string]interface{})["id"].(float64)
 
 	// Verify initial state: 20 shares, cost basis = 20 * 30000 = 600000
@@ -196,13 +202,15 @@ func TestInvestmentFlow_SellInsufficientShares(t *testing.T) {
 	app := setupApp(t)
 	token, _, _ := app.registerUser(t, "insuffshares@test.com", "password123")
 
+	securityID := app.createSecurity(t, "GOOG", "Alphabet", "stock")
+
 	rec := app.request("POST", "/api/v1/accounts/investment",
 		`{"name":"Small Account"}`, token)
 	accountID := parseJSON(t, rec)["account"].(map[string]interface{})["id"].(float64)
 
 	rec = app.request("POST", "/api/v1/investments",
-		fmt.Sprintf(`{"account_id":%.0f,"symbol":"GOOG","name":"Alphabet","asset_type":"stock","quantity":5,"purchase_price":10000}`,
-			accountID), token)
+		fmt.Sprintf(`{"account_id":%.0f,"security_id":%.0f,"quantity":5,"purchase_price":10000}`,
+			accountID, securityID), token)
 	investmentID := parseJSON(t, rec)["investment"].(map[string]interface{})["id"].(float64)
 
 	// Try to sell more shares than held
@@ -229,6 +237,10 @@ func TestInvestmentFlow_PortfolioMultipleHoldings(t *testing.T) {
 	app := setupApp(t)
 	token, _, _ := app.registerUser(t, "multihold@test.com", "password123")
 
+	// Create securities
+	aaplID := app.createSecurity(t, "AAPL", "Apple", "stock")
+	vooID := app.createSecurity(t, "VOO", "Vanguard S&P 500", "etf")
+
 	// Create investment account
 	rec := app.request("POST", "/api/v1/accounts/investment",
 		`{"name":"Diversified"}`, token)
@@ -236,19 +248,19 @@ func TestInvestmentFlow_PortfolioMultipleHoldings(t *testing.T) {
 
 	// Add stock: 10 shares at $100
 	rec = app.request("POST", "/api/v1/investments",
-		fmt.Sprintf(`{"account_id":%.0f,"symbol":"AAPL","name":"Apple","asset_type":"stock","quantity":10,"purchase_price":10000}`,
-			accountID), token)
-	stockID := parseJSON(t, rec)["investment"].(map[string]interface{})["id"].(float64)
+		fmt.Sprintf(`{"account_id":%.0f,"security_id":%.0f,"quantity":10,"purchase_price":10000}`,
+			accountID, aaplID), token)
+	stockInvID := parseJSON(t, rec)["investment"].(map[string]interface{})["id"].(float64)
 
 	// Add ETF: 20 shares at $50
 	rec = app.request("POST", "/api/v1/investments",
-		fmt.Sprintf(`{"account_id":%.0f,"symbol":"VOO","name":"Vanguard S&P 500","asset_type":"etf","quantity":20,"purchase_price":5000}`,
-			accountID), token)
-	etfID := parseJSON(t, rec)["investment"].(map[string]interface{})["id"].(float64)
+		fmt.Sprintf(`{"account_id":%.0f,"security_id":%.0f,"quantity":20,"purchase_price":5000}`,
+			accountID, vooID), token)
+	etfInvID := parseJSON(t, rec)["investment"].(map[string]interface{})["id"].(float64)
 
 	// Update prices
-	app.request("PUT", fmt.Sprintf("/api/v1/investments/%.0f/price", stockID), `{"current_price":12000}`, token)
-	app.request("PUT", fmt.Sprintf("/api/v1/investments/%.0f/price", etfID), `{"current_price":5500}`, token)
+	app.request("PUT", fmt.Sprintf("/api/v1/investments/%.0f/price", stockInvID), `{"current_price":12000}`, token)
+	app.request("PUT", fmt.Sprintf("/api/v1/investments/%.0f/price", etfInvID), `{"current_price":5500}`, token)
 
 	// Check portfolio
 	rec = app.request("GET", "/api/v1/investments/portfolio", "", token)

@@ -2,51 +2,24 @@ package models
 
 import "time"
 
-// AssetType represents the type of investment asset
-type AssetType string
-
-const (
-	AssetTypeStock  AssetType = "stock"
-	AssetTypeETF    AssetType = "etf"
-	AssetTypeBond   AssetType = "bond"
-	AssetTypeCrypto AssetType = "crypto"
-	AssetTypeREIT   AssetType = "reit"
-)
-
-// Investment represents a holding of a specific investment asset
+// Investment represents a holding of a specific investment asset.
 type Investment struct {
 	Base
-	AccountID    uint      `gorm:"not null" json:"account_id"`
-	Symbol       string    `gorm:"not null" json:"symbol"` // Stock/ETF symbol or unique identifier
-	AssetType    AssetType `gorm:"not null" json:"asset_type"`
-	Name         string    `gorm:"not null" json:"name"`                   // Full name of the investment
-	Quantity     float64   `gorm:"not null" json:"quantity"`               // Number of shares/units held
-	CostBasis    int64     `gorm:"type:bigint;not null" json:"cost_basis"` // Total cost basis in cents
-	CurrentPrice int64     `gorm:"type:bigint" json:"current_price"`       // Current market price per unit in cents
-	LastUpdated  time.Time `json:"last_updated"`                           // Last time the price was updated
-	Currency     string    `gorm:"not null;default:'USD'" json:"currency"`
-
-	// Stock/ETF specific fields
-	Exchange string `json:"exchange,omitempty"` // NYSE, NASDAQ, etc.
-
-	// Bond specific fields
-	MaturityDate    *time.Time `json:"maturity_date,omitempty"`
-	YieldToMaturity float64    `json:"yield_to_maturity,omitempty"`
-	CouponRate      float64    `json:"coupon_rate,omitempty"`
-
-	// Crypto specific fields
-	Network       string `json:"network,omitempty"` // Ethereum, Bitcoin, etc.
-	WalletAddress string `json:"wallet_address,omitempty"`
-
-	// REIT specific fields
-	PropertyType string `json:"property_type,omitempty"` // Residential, Commercial, etc.
+	AccountID     uint      `gorm:"not null" json:"account_id"`
+	SecurityID    uint      `gorm:"not null" json:"security_id"`
+	Quantity      float64   `gorm:"not null" json:"quantity"`
+	CostBasis     int64     `gorm:"type:bigint;not null" json:"cost_basis"`
+	CurrentPrice  int64     `gorm:"type:bigint" json:"current_price"`
+	LastUpdated   time.Time `json:"last_updated"`
+	WalletAddress string    `json:"wallet_address,omitempty"`
 
 	// Relationships
+	Security     Security                `gorm:"foreignKey:SecurityID" json:"security"`
 	Account      Account                 `gorm:"foreignKey:AccountID" json:"account"`
 	Transactions []InvestmentTransaction `gorm:"foreignKey:InvestmentID" json:"transactions,omitempty"`
 }
 
-// InvestmentTransactionType represents the type of investment transaction
+// InvestmentTransactionType represents the type of investment transaction.
 type InvestmentTransactionType string
 
 const (
@@ -57,7 +30,7 @@ const (
 	InvestmentTransactionTransfer InvestmentTransactionType = "transfer"
 )
 
-// InvestmentTransaction represents a transaction for an investment
+// InvestmentTransaction represents a transaction for an investment.
 type InvestmentTransaction struct {
 	Base
 	InvestmentID uint                      `gorm:"not null" json:"investment_id"`

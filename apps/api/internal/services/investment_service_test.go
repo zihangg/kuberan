@@ -17,15 +17,16 @@ func TestAddInvestment(t *testing.T) {
 		svc := NewInvestmentService(db, acctSvc)
 		user := testutil.CreateTestUser(t, db)
 		account := testutil.CreateTestInvestmentAccount(t, db, user.ID)
+		sec := testutil.CreateTestSecurityWithParams(t, db, "AAPL", "Apple Inc", models.AssetTypeStock, "NASDAQ")
 
-		inv, err := svc.AddInvestment(user.ID, account.ID, "AAPL", "Apple Inc", models.AssetTypeStock, 10.0, 15000, "USD", nil)
+		inv, err := svc.AddInvestment(user.ID, account.ID, sec.ID, 10.0, 15000, "")
 		testutil.AssertNoError(t, err)
 
 		if inv.ID == 0 {
 			t.Fatal("expected non-zero investment ID")
 		}
-		if inv.Symbol != "AAPL" {
-			t.Errorf("expected symbol AAPL, got %s", inv.Symbol)
+		if inv.SecurityID != sec.ID {
+			t.Errorf("expected security ID %d, got %d", sec.ID, inv.SecurityID)
 		}
 		if inv.Quantity != 10.0 {
 			t.Errorf("expected quantity 10.0, got %f", inv.Quantity)
@@ -58,29 +59,6 @@ func TestAddInvestment(t *testing.T) {
 		}
 	})
 
-	t.Run("with_extra_fields", func(t *testing.T) {
-		db := testutil.SetupTestDB(t)
-		defer testutil.TeardownTestDB(t, db)
-		acctSvc := NewAccountService(db)
-		svc := NewInvestmentService(db, acctSvc)
-		user := testutil.CreateTestUser(t, db)
-		account := testutil.CreateTestInvestmentAccount(t, db, user.ID)
-
-		extras := map[string]interface{}{
-			"exchange": "NASDAQ",
-		}
-		inv, err := svc.AddInvestment(user.ID, account.ID, "MSFT", "Microsoft", models.AssetTypeStock, 5.0, 30000, "", extras)
-		testutil.AssertNoError(t, err)
-
-		if inv.Exchange != "NASDAQ" {
-			t.Errorf("expected exchange NASDAQ, got %s", inv.Exchange)
-		}
-		// Empty currency should inherit from account
-		if inv.Currency != "USD" {
-			t.Errorf("expected currency USD, got %s", inv.Currency)
-		}
-	})
-
 	t.Run("not_investment_account", func(t *testing.T) {
 		db := testutil.SetupTestDB(t)
 		defer testutil.TeardownTestDB(t, db)
@@ -88,8 +66,9 @@ func TestAddInvestment(t *testing.T) {
 		svc := NewInvestmentService(db, acctSvc)
 		user := testutil.CreateTestUser(t, db)
 		cashAcct := testutil.CreateTestCashAccount(t, db, user.ID)
+		sec := testutil.CreateTestSecurity(t, db)
 
-		_, err := svc.AddInvestment(user.ID, cashAcct.ID, "AAPL", "Apple", models.AssetTypeStock, 10.0, 15000, "USD", nil)
+		_, err := svc.AddInvestment(user.ID, cashAcct.ID, sec.ID, 10.0, 15000, "")
 		testutil.AssertAppError(t, err, "INVALID_INPUT")
 	})
 
@@ -99,9 +78,22 @@ func TestAddInvestment(t *testing.T) {
 		acctSvc := NewAccountService(db)
 		svc := NewInvestmentService(db, acctSvc)
 		user := testutil.CreateTestUser(t, db)
+		sec := testutil.CreateTestSecurity(t, db)
 
-		_, err := svc.AddInvestment(user.ID, 9999, "AAPL", "Apple", models.AssetTypeStock, 10.0, 15000, "USD", nil)
+		_, err := svc.AddInvestment(user.ID, 9999, sec.ID, 10.0, 15000, "")
 		testutil.AssertAppError(t, err, "ACCOUNT_NOT_FOUND")
+	})
+
+	t.Run("invalid_security", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		acctSvc := NewAccountService(db)
+		svc := NewInvestmentService(db, acctSvc)
+		user := testutil.CreateTestUser(t, db)
+		account := testutil.CreateTestInvestmentAccount(t, db, user.ID)
+
+		_, err := svc.AddInvestment(user.ID, account.ID, 9999, 10.0, 15000, "")
+		testutil.AssertAppError(t, err, "SECURITY_NOT_FOUND")
 	})
 }
 
@@ -113,7 +105,8 @@ func TestGetInvestmentByID(t *testing.T) {
 		svc := NewInvestmentService(db, acctSvc)
 		user := testutil.CreateTestUser(t, db)
 		account := testutil.CreateTestInvestmentAccount(t, db, user.ID)
-		inv := testutil.CreateTestInvestment(t, db, account.ID)
+		sec := testutil.CreateTestSecurity(t, db)
+		inv := testutil.CreateTestInvestment(t, db, account.ID, sec.ID)
 
 		result, err := svc.GetInvestmentByID(user.ID, inv.ID)
 		testutil.AssertNoError(t, err)
@@ -121,8 +114,8 @@ func TestGetInvestmentByID(t *testing.T) {
 		if result.ID != inv.ID {
 			t.Errorf("expected ID %d, got %d", inv.ID, result.ID)
 		}
-		if result.Symbol != inv.Symbol {
-			t.Errorf("expected symbol %s, got %s", inv.Symbol, result.Symbol)
+		if result.SecurityID != sec.ID {
+			t.Errorf("expected security ID %d, got %d", sec.ID, result.SecurityID)
 		}
 	})
 
@@ -145,7 +138,8 @@ func TestGetInvestmentByID(t *testing.T) {
 		user1 := testutil.CreateTestUser(t, db)
 		user2 := testutil.CreateTestUser(t, db)
 		account := testutil.CreateTestInvestmentAccount(t, db, user1.ID)
-		inv := testutil.CreateTestInvestment(t, db, account.ID)
+		sec := testutil.CreateTestSecurity(t, db)
+		inv := testutil.CreateTestInvestment(t, db, account.ID, sec.ID)
 
 		_, err := svc.GetInvestmentByID(user2.ID, inv.ID)
 		testutil.AssertAppError(t, err, "INVESTMENT_NOT_FOUND")
@@ -160,8 +154,10 @@ func TestGetAccountInvestments(t *testing.T) {
 		svc := NewInvestmentService(db, acctSvc)
 		user := testutil.CreateTestUser(t, db)
 		account := testutil.CreateTestInvestmentAccount(t, db, user.ID)
-		testutil.CreateTestInvestment(t, db, account.ID)
-		testutil.CreateTestInvestment(t, db, account.ID)
+		sec1 := testutil.CreateTestSecurity(t, db)
+		testutil.CreateTestInvestment(t, db, account.ID, sec1.ID)
+		sec2 := testutil.CreateTestSecurity(t, db)
+		testutil.CreateTestInvestment(t, db, account.ID, sec2.ID)
 
 		page := pagination.PageRequest{Page: 1, PageSize: 20}
 		result, err := svc.GetAccountInvestments(user.ID, account.ID, page)
@@ -183,7 +179,8 @@ func TestGetAccountInvestments(t *testing.T) {
 		user := testutil.CreateTestUser(t, db)
 		account := testutil.CreateTestInvestmentAccount(t, db, user.ID)
 		for i := 0; i < 5; i++ {
-			testutil.CreateTestInvestment(t, db, account.ID)
+			sec := testutil.CreateTestSecurity(t, db)
+			testutil.CreateTestInvestment(t, db, account.ID, sec.ID)
 		}
 
 		page := pagination.PageRequest{Page: 1, PageSize: 2}
@@ -222,7 +219,8 @@ func TestUpdateInvestmentPrice(t *testing.T) {
 		svc := NewInvestmentService(db, acctSvc)
 		user := testutil.CreateTestUser(t, db)
 		account := testutil.CreateTestInvestmentAccount(t, db, user.ID)
-		inv := testutil.CreateTestInvestment(t, db, account.ID)
+		sec := testutil.CreateTestSecurity(t, db)
+		inv := testutil.CreateTestInvestment(t, db, account.ID, sec.ID)
 
 		beforeUpdate := time.Now()
 		updated, err := svc.UpdateInvestmentPrice(user.ID, inv.ID, 12500)
@@ -263,7 +261,8 @@ func TestRecordBuy(t *testing.T) {
 		svc := NewInvestmentService(db, acctSvc)
 		user := testutil.CreateTestUser(t, db)
 		account := testutil.CreateTestInvestmentAccount(t, db, user.ID)
-		inv := testutil.CreateTestInvestment(t, db, account.ID) // 10 shares @ $100, cost basis $1000
+		sec := testutil.CreateTestSecurity(t, db)
+		inv := testutil.CreateTestInvestment(t, db, account.ID, sec.ID) // 10 shares @ $100, cost basis $1000
 
 		buyTx, err := svc.RecordBuy(user.ID, inv.ID, time.Now(), 5.0, 10000, 500, "Buy more")
 		testutil.AssertNoError(t, err)
@@ -315,7 +314,8 @@ func TestRecordSell(t *testing.T) {
 		svc := NewInvestmentService(db, acctSvc)
 		user := testutil.CreateTestUser(t, db)
 		account := testutil.CreateTestInvestmentAccount(t, db, user.ID)
-		inv := testutil.CreateTestInvestment(t, db, account.ID) // 10 shares, cost basis 100000
+		sec := testutil.CreateTestSecurity(t, db)
+		inv := testutil.CreateTestInvestment(t, db, account.ID, sec.ID) // 10 shares, cost basis 100000
 
 		sellTx, err := svc.RecordSell(user.ID, inv.ID, time.Now(), 4.0, 12000, 300, "Sell some")
 		testutil.AssertNoError(t, err)
@@ -351,7 +351,8 @@ func TestRecordSell(t *testing.T) {
 		svc := NewInvestmentService(db, acctSvc)
 		user := testutil.CreateTestUser(t, db)
 		account := testutil.CreateTestInvestmentAccount(t, db, user.ID)
-		inv := testutil.CreateTestInvestment(t, db, account.ID) // 10 shares
+		sec := testutil.CreateTestSecurity(t, db)
+		inv := testutil.CreateTestInvestment(t, db, account.ID, sec.ID) // 10 shares
 
 		_, err := svc.RecordSell(user.ID, inv.ID, time.Now(), 15.0, 12000, 0, "Too many")
 		testutil.AssertAppError(t, err, "INSUFFICIENT_SHARES")
@@ -371,7 +372,8 @@ func TestRecordSell(t *testing.T) {
 		svc := NewInvestmentService(db, acctSvc)
 		user := testutil.CreateTestUser(t, db)
 		account := testutil.CreateTestInvestmentAccount(t, db, user.ID)
-		inv := testutil.CreateTestInvestment(t, db, account.ID) // 10 shares, cost basis 100000
+		sec := testutil.CreateTestSecurity(t, db)
+		inv := testutil.CreateTestInvestment(t, db, account.ID, sec.ID) // 10 shares, cost basis 100000
 
 		_, err := svc.RecordSell(user.ID, inv.ID, time.Now(), 10.0, 12000, 0, "Sell all")
 		testutil.AssertNoError(t, err)
@@ -395,7 +397,8 @@ func TestRecordDividend(t *testing.T) {
 		svc := NewInvestmentService(db, acctSvc)
 		user := testutil.CreateTestUser(t, db)
 		account := testutil.CreateTestInvestmentAccount(t, db, user.ID)
-		inv := testutil.CreateTestInvestment(t, db, account.ID) // 10 shares, cost basis 100000
+		sec := testutil.CreateTestSecurity(t, db)
+		inv := testutil.CreateTestInvestment(t, db, account.ID, sec.ID) // 10 shares, cost basis 100000
 
 		divTx, err := svc.RecordDividend(user.ID, inv.ID, time.Now(), 5000, "Cash", "Q4 dividend")
 		testutil.AssertNoError(t, err)
@@ -441,7 +444,8 @@ func TestRecordSplit(t *testing.T) {
 		svc := NewInvestmentService(db, acctSvc)
 		user := testutil.CreateTestUser(t, db)
 		account := testutil.CreateTestInvestmentAccount(t, db, user.ID)
-		inv := testutil.CreateTestInvestment(t, db, account.ID) // 10 shares, cost basis 100000
+		sec := testutil.CreateTestSecurity(t, db)
+		inv := testutil.CreateTestInvestment(t, db, account.ID, sec.ID) // 10 shares, cost basis 100000
 
 		splitTx, err := svc.RecordSplit(user.ID, inv.ID, time.Now(), 2.0, "2-for-1 split")
 		testutil.AssertNoError(t, err)
@@ -489,19 +493,18 @@ func TestGetPortfolio(t *testing.T) {
 		acct2 := testutil.CreateTestInvestmentAccount(t, db, user.ID)
 
 		// Account 1: stock - 10 shares @ $100 current, cost basis $1000
-		testutil.CreateTestInvestment(t, db, acct1.ID) // stock, 10 qty, cost 100000, price 10000
+		sec1 := testutil.CreateTestSecurityWithParams(t, db, "AAPL", "Apple Inc", models.AssetTypeStock, "NASDAQ")
+		testutil.CreateTestInvestment(t, db, acct1.ID, sec1.ID) // stock, 10 qty, cost 100000, price 10000
 
 		// Account 2: create an ETF manually
+		secETF := testutil.CreateTestSecurityWithParams(t, db, "VTI", "Vanguard Total", models.AssetTypeETF, "NYSE")
 		etfInv := &models.Investment{
 			AccountID:    acct2.ID,
-			Symbol:       "VTI",
-			AssetType:    models.AssetTypeETF,
-			Name:         "Vanguard Total",
+			SecurityID:   secETF.ID,
 			Quantity:     20.0,
 			CostBasis:    200000, // $2000
 			CurrentPrice: 12000,  // $120 per share
 			LastUpdated:  time.Now(),
-			Currency:     "USD",
 		}
 		if err := db.Create(etfInv).Error; err != nil {
 			t.Fatalf("failed to create ETF investment: %v", err)
@@ -590,10 +593,12 @@ func TestGetPortfolio(t *testing.T) {
 		user2 := testutil.CreateTestUser(t, db)
 
 		acct1 := testutil.CreateTestInvestmentAccount(t, db, user1.ID)
-		testutil.CreateTestInvestment(t, db, acct1.ID)
+		sec1 := testutil.CreateTestSecurity(t, db)
+		testutil.CreateTestInvestment(t, db, acct1.ID, sec1.ID)
 
 		acct2 := testutil.CreateTestInvestmentAccount(t, db, user2.ID)
-		testutil.CreateTestInvestment(t, db, acct2.ID)
+		sec2 := testutil.CreateTestSecurity(t, db)
+		testutil.CreateTestInvestment(t, db, acct2.ID, sec2.ID)
 
 		portfolio1, err := svc.GetPortfolio(user1.ID)
 		testutil.AssertNoError(t, err)
@@ -619,7 +624,8 @@ func TestGetInvestmentTransactions(t *testing.T) {
 		svc := NewInvestmentService(db, acctSvc)
 		user := testutil.CreateTestUser(t, db)
 		account := testutil.CreateTestInvestmentAccount(t, db, user.ID)
-		inv := testutil.CreateTestInvestment(t, db, account.ID)
+		sec := testutil.CreateTestSecurity(t, db)
+		inv := testutil.CreateTestInvestment(t, db, account.ID, sec.ID)
 
 		// Record some transactions
 		_, err := svc.RecordBuy(user.ID, inv.ID, time.Now(), 5.0, 10000, 0, "Buy 1")

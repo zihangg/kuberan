@@ -14,7 +14,7 @@ func TestSetupTestDB(t *testing.T) {
 
 	// Verify all tables exist by doing a simple count query on each model.
 	var count int64
-	for _, table := range []string{"users", "accounts", "categories", "transactions", "budgets", "investments", "investment_transactions", "audit_logs"} {
+	for _, table := range []string{"users", "accounts", "categories", "transactions", "budgets", "securities", "security_prices", "portfolio_snapshots", "investments", "investment_transactions", "audit_logs"} {
 		if err := db.Table(table).Count(&count).Error; err != nil {
 			t.Errorf("table %q should exist after migration: %v", table, err)
 		}
@@ -55,7 +55,12 @@ func TestFixtures(t *testing.T) {
 		t.Errorf("expected budget amount 10000, got %d", budget.Amount)
 	}
 
-	inv := testutil.CreateTestInvestment(t, db, invAccount.ID)
+	sec := testutil.CreateTestSecurity(t, db)
+	if sec.ID == 0 {
+		t.Fatal("security should have a non-zero ID")
+	}
+
+	inv := testutil.CreateTestInvestment(t, db, invAccount.ID, sec.ID)
 	if inv.Quantity != 10.0 {
 		t.Errorf("expected quantity 10.0, got %f", inv.Quantity)
 	}

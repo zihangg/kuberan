@@ -39,6 +39,9 @@ type Config struct {
 	// JWT
 	JWTSecret        string
 	JWTExpirationDur time.Duration
+
+	// Pipeline
+	PipelineAPIKey string
 }
 
 var appConfig *Config
@@ -68,6 +71,9 @@ func Load() (*Config, error) {
 
 		// JWT
 		JWTSecret: getEnv("JWT_SECRET", "fallback-secret-key-for-dev-only"),
+
+		// Pipeline
+		PipelineAPIKey: os.Getenv("PIPELINE_API_KEY"),
 	}
 
 	// Parse JWT expiration duration

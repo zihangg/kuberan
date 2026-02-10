@@ -94,3 +94,9 @@ var (
 	ErrInvestmentNotFound = &AppError{Code: "INVESTMENT_NOT_FOUND", Message: "Investment not found", StatusCode: http.StatusNotFound}
 	ErrInsufficientShares = &AppError{Code: "INSUFFICIENT_SHARES", Message: "Insufficient shares for this sale", StatusCode: http.StatusBadRequest}
 )
+
+// Security errors.
+var (
+	ErrSecurityNotFound  = &AppError{Code: "SECURITY_NOT_FOUND", Message: "Security not found", StatusCode: http.StatusNotFound}
+	ErrDuplicateSecurity = &AppError{Code: "DUPLICATE_SECURITY", Message: "A security with this symbol and exchange already exists", StatusCode: http.StatusConflict}
+)

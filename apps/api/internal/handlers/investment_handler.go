@@ -7,7 +7,6 @@ import (
 	"github.com/gin-gonic/gin"
 
 	apperrors "kuberan/internal/errors"
-	"kuberan/internal/models"
 	"kuberan/internal/pagination"
 	"kuberan/internal/services"
 )
@@ -25,21 +24,11 @@ func NewInvestmentHandler(investmentService services.InvestmentServicer, auditSe
 
 // AddInvestmentRequest represents the request payload for adding an investment.
 type AddInvestmentRequest struct {
-	AccountID     uint             `json:"account_id" binding:"required"`
-	Symbol        string           `json:"symbol" binding:"required,min=1,max=20"`
-	Name          string           `json:"name" binding:"required,min=1,max=200"`
-	AssetType     models.AssetType `json:"asset_type" binding:"required,asset_type"`
-	Quantity      float64          `json:"quantity" binding:"required,gt=0"`
-	PurchasePrice int64            `json:"purchase_price" binding:"required,gt=0"`
-	Currency      string           `json:"currency" binding:"omitempty,iso4217"`
-	// Asset-type-specific optional fields
-	Exchange        string     `json:"exchange,omitempty"`
-	MaturityDate    *time.Time `json:"maturity_date,omitempty"`
-	YieldToMaturity float64    `json:"yield_to_maturity,omitempty"`
-	CouponRate      float64    `json:"coupon_rate,omitempty"`
-	Network         string     `json:"network,omitempty"`
-	WalletAddress   string     `json:"wallet_address,omitempty"`
-	PropertyType    string     `json:"property_type,omitempty"`
+	AccountID     uint    `json:"account_id" binding:"required"`
+	SecurityID    uint    `json:"security_id" binding:"required"`
+	Quantity      float64 `json:"quantity" binding:"required,gt=0"`
+	PurchasePrice int64   `json:"purchase_price" binding:"required,gt=0"`
+	WalletAddress string  `json:"wallet_address,omitempty"`
 }
 
 // UpdatePriceRequest represents the request payload for updating an investment price.
@@ -107,11 +96,8 @@ func (h *InvestmentHandler) AddInvestment(c *gin.Context) {
 		return
 	}
 
-	extraFields := buildExtraFields(req)
-
 	investment, err := h.investmentService.AddInvestment(
-		userID, req.AccountID, req.Symbol, req.Name, req.AssetType,
-		req.Quantity, req.PurchasePrice, req.Currency, extraFields,
+		userID, req.AccountID, req.SecurityID, req.Quantity, req.PurchasePrice, req.WalletAddress,
 	)
 	if err != nil {
 		respondWithError(c, err)
@@ -119,7 +105,7 @@ func (h *InvestmentHandler) AddInvestment(c *gin.Context) {
 	}
 
 	h.auditService.Log(userID, "CREATE_INVESTMENT", "investment", investment.ID, c.ClientIP(),
-		map[string]interface{}{"symbol": req.Symbol, "asset_type": string(req.AssetType), "quantity": req.Quantity})
+		map[string]interface{}{"security_id": req.SecurityID, "quantity": req.Quantity})
 
 	c.JSON(http.StatusCreated, gin.H{"investment": investment})
 }
@@ -503,31 +489,4 @@ func (h *InvestmentHandler) GetInvestmentTransactions(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, result)
-}
-
-// buildExtraFields extracts asset-type-specific fields from the request into a map.
-func buildExtraFields(req AddInvestmentRequest) map[string]interface{} {
-	fields := make(map[string]interface{})
-	if req.Exchange != "" {
-		fields["exchange"] = req.Exchange
-	}
-	if req.MaturityDate != nil {
-		fields["maturity_date"] = req.MaturityDate
-	}
-	if req.YieldToMaturity != 0 {
-		fields["yield_to_maturity"] = req.YieldToMaturity
-	}
-	if req.CouponRate != 0 {
-		fields["coupon_rate"] = req.CouponRate
-	}
-	if req.Network != "" {
-		fields["network"] = req.Network
-	}
-	if req.WalletAddress != "" {
-		fields["wallet_address"] = req.WalletAddress
-	}
-	if req.PropertyType != "" {
-		fields["property_type"] = req.PropertyType
-	}
-	return fields
 }

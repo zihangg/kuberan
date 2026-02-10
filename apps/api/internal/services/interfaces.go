@@ -157,7 +157,7 @@ type TypeSummary struct {
 
 // InvestmentServicer defines the contract for investment-related business logic.
 type InvestmentServicer interface {
-	AddInvestment(userID, accountID uint, symbol, name string, assetType models.AssetType, quantity float64, purchasePrice int64, currency string, extraFields map[string]interface{}) (*models.Investment, error)
+	AddInvestment(userID, accountID, securityID uint, quantity float64, purchasePrice int64, walletAddress string) (*models.Investment, error)
 	GetAccountInvestments(userID, accountID uint, page pagination.PageRequest) (*pagination.PageResponse[models.Investment], error)
 	GetInvestmentByID(userID, investmentID uint) (*models.Investment, error)
 	UpdateInvestmentPrice(userID, investmentID uint, currentPrice int64) (*models.Investment, error)
@@ -167,6 +167,28 @@ type InvestmentServicer interface {
 	RecordDividend(userID, investmentID uint, date time.Time, amount int64, dividendType, notes string) (*models.InvestmentTransaction, error)
 	RecordSplit(userID, investmentID uint, date time.Time, splitRatio float64, notes string) (*models.InvestmentTransaction, error)
 	GetInvestmentTransactions(userID, investmentID uint, page pagination.PageRequest) (*pagination.PageResponse[models.InvestmentTransaction], error)
+}
+
+// SecurityPriceInput represents a single price entry for bulk recording.
+type SecurityPriceInput struct {
+	SecurityID uint      `json:"security_id"`
+	Price      int64     `json:"price"`
+	RecordedAt time.Time `json:"recorded_at"`
+}
+
+// SecurityServicer defines the interface for security-related operations.
+type SecurityServicer interface {
+	CreateSecurity(symbol, name string, assetType models.AssetType, currency, exchange string, extraFields map[string]interface{}) (*models.Security, error)
+	GetSecurityByID(id uint) (*models.Security, error)
+	ListSecurities(page pagination.PageRequest) (*pagination.PageResponse[models.Security], error)
+	RecordPrices(prices []SecurityPriceInput) (int, error)
+	GetPriceHistory(securityID uint, from, to time.Time, page pagination.PageRequest) (*pagination.PageResponse[models.SecurityPrice], error)
+}
+
+// PortfolioSnapshotServicer defines the interface for portfolio snapshot operations.
+type PortfolioSnapshotServicer interface {
+	ComputeAndRecordSnapshots(recordedAt time.Time) (int, error)
+	GetSnapshots(userID uint, from, to time.Time, page pagination.PageRequest) (*pagination.PageResponse[models.PortfolioSnapshot], error)
 }
 
 // AuditServicer defines the contract for audit logging.
