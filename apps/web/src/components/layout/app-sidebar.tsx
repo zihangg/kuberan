@@ -8,6 +8,7 @@ import {
   ArrowLeftRight,
   Tag,
   PieChart,
+  Database,
   TrendingUp,
 } from "lucide-react";
 import {
@@ -29,6 +30,7 @@ const navItems = [
   { title: "Transactions", href: "/transactions", icon: ArrowLeftRight },
   { title: "Categories", href: "/categories", icon: Tag },
   { title: "Budgets", href: "/budgets", icon: PieChart },
+  { title: "Securities", href: "/securities", icon: Database },
   { title: "Investments", href: "/investments", icon: TrendingUp },
 ];
 

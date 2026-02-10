@@ -17,7 +17,8 @@ import { useAuth } from "@/hooks/use-auth";
 import { useAccounts } from "@/hooks/use-accounts";
 import { useTransactions } from "@/hooks/use-transactions";
 import { useBudgets, useBudgetProgress } from "@/hooks/use-budgets";
-import { formatCurrency, formatDate } from "@/lib/format";
+import { usePortfolio } from "@/hooks/use-investments";
+import { formatCurrency, formatDate, formatPercentage } from "@/lib/format";
 import {
   Card,
   CardContent,
@@ -85,20 +86,28 @@ function DashboardSkeleton() {
 }
 
 function SummaryCards({ accounts }: { accounts: Account[] }) {
+  const { data: portfolio } = usePortfolio();
+
   const cashTotal = accounts
     .filter((a) => a.type === "cash")
     .reduce((sum, a) => sum + a.balance, 0);
-  const investmentTotal = accounts
+  const investmentAccountTotal = accounts
     .filter((a) => a.type === "investment")
     .reduce((sum, a) => sum + a.balance, 0);
   const creditCardTotal = accounts
     .filter((a) => a.type === "credit_card")
     .reduce((sum, a) => sum + a.balance, 0);
-  const netWorth = cashTotal + investmentTotal - creditCardTotal;
+
+  // Use real portfolio value when available, fall back to account balances
+  const investmentValue = portfolio?.total_value ?? investmentAccountTotal;
+  const netWorth = cashTotal + investmentValue - creditCardTotal;
 
   const cashCount = accounts.filter((a) => a.type === "cash").length;
-  const investmentCount = accounts.filter((a) => a.type === "investment").length;
   const creditCardCount = accounts.filter((a) => a.type === "credit_card").length;
+
+  const holdingsCount = portfolio
+    ? Object.values(portfolio.holdings_by_type).reduce((sum, h) => sum + h.count, 0)
+    : 0;
 
   return (
     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -137,14 +146,31 @@ function SummaryCards({ accounts }: { accounts: Account[] }) {
             <Landmark className="h-4 w-4 text-muted-foreground" />
           </div>
           <CardTitle className="text-3xl">
-            {formatCurrency(investmentTotal)}
+            {formatCurrency(investmentValue)}
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-sm text-muted-foreground">
-            {investmentCount} investment account
-            {investmentCount !== 1 ? "s" : ""}
-          </p>
+          {portfolio ? (
+            <div className="space-y-0.5">
+              <p
+                className={`text-sm font-medium ${portfolio.total_gain_loss >= 0 ? "text-green-600" : "text-red-600"}`}
+              >
+                {portfolio.total_gain_loss >= 0 ? "+" : ""}
+                {formatCurrency(portfolio.total_gain_loss)} (
+                {portfolio.total_gain_loss >= 0 ? "+" : ""}
+                {formatPercentage(portfolio.gain_loss_pct)})
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {holdingsCount} holding{holdingsCount !== 1 ? "s" : ""}
+              </p>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              {accounts.filter((a) => a.type === "investment").length} investment
+              account
+              {accounts.filter((a) => a.type === "investment").length !== 1 ? "s" : ""}
+            </p>
+          )}
         </CardContent>
       </Card>
       <Card>
