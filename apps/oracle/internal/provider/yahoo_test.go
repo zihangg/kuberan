@@ -10,6 +10,50 @@ import (
 	"testing"
 )
 
+// v8ChartResponse builds a v8 chart JSON response for a single symbol.
+func v8ChartResponse(symbol string, price float64) yahooChartResponse {
+	var resp yahooChartResponse
+	resp.Chart.Result = []struct {
+		Meta struct {
+			Symbol             string  `json:"symbol"`
+			RegularMarketPrice float64 `json:"regularMarketPrice"`
+		} `json:"meta"`
+	}{
+		{Meta: struct {
+			Symbol             string  `json:"symbol"`
+			RegularMarketPrice float64 `json:"regularMarketPrice"`
+		}{Symbol: symbol, RegularMarketPrice: price}},
+	}
+	return resp
+}
+
+// v8ChartErrorResponse builds a v8 chart error JSON response.
+func v8ChartErrorResponse(code, description string) yahooChartResponse {
+	var resp yahooChartResponse
+	resp.Chart.Error = &struct {
+		Code        string `json:"code"`
+		Description string `json:"description"`
+	}{Code: code, Description: description}
+	return resp
+}
+
+// newV8MockServer creates a test server that serves v8 chart responses per symbol.
+// priceMap maps ticker (from URL path) to price. Tickers not in the map get a chart error.
+func newV8MockServer(priceMap map[string]float64) *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Extract ticker from path: /{ticker}
+		ticker := strings.TrimPrefix(r.URL.Path, "/")
+		w.Header().Set("Content-Type", "application/json")
+
+		price, ok := priceMap[ticker]
+		if !ok {
+			_ = json.NewEncoder(w).Encode(v8ChartErrorResponse("Not Found", "No data found, symbol may be delisted"))
+			return
+		}
+		_ = json.NewEncoder(w).Encode(v8ChartResponse(ticker, price))
+	}))
+}
+
 func TestYahooProvider_Supports(t *testing.T) {
 	p := NewYahooProvider(http.DefaultClient)
 
@@ -29,16 +73,11 @@ func TestYahooProvider_Supports(t *testing.T) {
 }
 
 func TestYahooProvider_FetchPrices_Success(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		resp := yahooQuoteResponse{}
-		resp.QuoteResponse.Result = []yahooQuoteResult{
-			{Symbol: "AAPL", RegularMarketPrice: 178.72},
-			{Symbol: "MSFT", RegularMarketPrice: 420.55},
-			{Symbol: "GOOGL", RegularMarketPrice: 175.03},
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(resp)
-	}))
+	server := newV8MockServer(map[string]float64{
+		"AAPL":  178.72,
+		"MSFT":  420.55,
+		"GOOGL": 175.03,
+	})
 	defer server.Close()
 
 	p := &YahooProvider{httpClient: server.Client(), baseURL: server.URL}
@@ -74,16 +113,11 @@ func TestYahooProvider_FetchPrices_Success(t *testing.T) {
 }
 
 func TestYahooProvider_FetchPrices_PartialFailure(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		resp := yahooQuoteResponse{}
-		resp.QuoteResponse.Result = []yahooQuoteResult{
-			{Symbol: "AAPL", RegularMarketPrice: 178.72},
-			{Symbol: "MSFT", RegularMarketPrice: 420.55},
-			// MISSING: no result for FAKESYM
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(resp)
-	}))
+	// Only AAPL and MSFT have prices; FAKESYM is missing → chart error.
+	server := newV8MockServer(map[string]float64{
+		"AAPL": 178.72,
+		"MSFT": 420.55,
+	})
 	defer server.Close()
 
 	p := &YahooProvider{httpClient: server.Client(), baseURL: server.URL}
@@ -106,15 +140,12 @@ func TestYahooProvider_FetchPrices_PartialFailure(t *testing.T) {
 }
 
 func TestYahooProvider_FetchPrices_ExchangeSuffix(t *testing.T) {
-	var capturedSymbols string
+	var capturedPaths []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		capturedSymbols = r.URL.Query().Get("symbols")
-		resp := yahooQuoteResponse{}
-		resp.QuoteResponse.Result = []yahooQuoteResult{
-			{Symbol: "SHOP.TO", RegularMarketPrice: 100.00},
-		}
+		capturedPaths = append(capturedPaths, r.URL.Path)
+		ticker := strings.TrimPrefix(r.URL.Path, "/")
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(v8ChartResponse(ticker, 100.00))
 	}))
 	defer server.Close()
 
@@ -130,21 +161,26 @@ func TestYahooProvider_FetchPrices_ExchangeSuffix(t *testing.T) {
 	if len(results) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(results))
 	}
-	if !strings.Contains(capturedSymbols, "SHOP.TO") {
-		t.Errorf("expected URL to contain SHOP.TO, got symbols=%s", capturedSymbols)
+
+	found := false
+	for _, path := range capturedPaths {
+		if strings.Contains(path, "SHOP.TO") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected request path to contain SHOP.TO, got paths=%v", capturedPaths)
 	}
 }
 
 func TestYahooProvider_FetchPrices_ProviderSymbol(t *testing.T) {
-	var capturedSymbols string
+	var capturedPaths []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		capturedSymbols = r.URL.Query().Get("symbols")
-		resp := yahooQuoteResponse{}
-		resp.QuoteResponse.Result = []yahooQuoteResult{
-			{Symbol: "1023.KL", RegularMarketPrice: 6.50},
-		}
+		capturedPaths = append(capturedPaths, r.URL.Path)
+		ticker := strings.TrimPrefix(r.URL.Path, "/")
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(v8ChartResponse(ticker, 6.50))
 	}))
 	defer server.Close()
 
@@ -163,50 +199,68 @@ func TestYahooProvider_FetchPrices_ProviderSymbol(t *testing.T) {
 	if results[0].Price != 650 {
 		t.Errorf("expected price 650 cents, got %d", results[0].Price)
 	}
+
 	// Verify the request used provider_symbol (1023.KL), not CIMB.KL.
-	if !strings.Contains(capturedSymbols, "1023.KL") {
-		t.Errorf("expected URL to contain 1023.KL, got symbols=%s", capturedSymbols)
+	foundProvider := false
+	foundWrong := false
+	for _, path := range capturedPaths {
+		if strings.Contains(path, "1023.KL") {
+			foundProvider = true
+		}
+		if strings.Contains(path, "CIMB.KL") {
+			foundWrong = true
+		}
 	}
-	if strings.Contains(capturedSymbols, "CIMB.KL") {
-		t.Errorf("should NOT contain CIMB.KL, got symbols=%s", capturedSymbols)
+	if !foundProvider {
+		t.Errorf("expected request path to contain 1023.KL, got paths=%v", capturedPaths)
+	}
+	if foundWrong {
+		t.Errorf("should NOT contain CIMB.KL, got paths=%v", capturedPaths)
 	}
 }
 
-func TestYahooProvider_FetchPrices_BatchSplit(t *testing.T) {
-	var requestCount atomic.Int32
+func TestYahooProvider_FetchPrices_Concurrent(t *testing.T) {
+	var maxInFlight atomic.Int32
+	var curInFlight atomic.Int32
+
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requestCount.Add(1)
-		symbols := strings.Split(r.URL.Query().Get("symbols"), ",")
-		resp := yahooQuoteResponse{}
-		for _, sym := range symbols {
-			resp.QuoteResponse.Result = append(resp.QuoteResponse.Result, yahooQuoteResult{
-				Symbol:             sym,
-				RegularMarketPrice: 100.00,
-			})
+		cur := curInFlight.Add(1)
+		// Track peak concurrency.
+		for {
+			old := maxInFlight.Load()
+			if cur <= old || maxInFlight.CompareAndSwap(old, cur) {
+				break
+			}
 		}
+		defer curInFlight.Add(-1)
+
+		ticker := strings.TrimPrefix(r.URL.Path, "/")
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(v8ChartResponse(ticker, 100.00))
 	}))
 	defer server.Close()
 
 	p := &YahooProvider{httpClient: server.Client(), baseURL: server.URL}
 
-	// Create 60 securities.
-	securities := make([]Security, 60)
+	// Create 15 securities.
+	securities := make([]Security, 15)
 	for i := range securities {
 		securities[i] = Security{
 			ID:        uint(i + 1),
-			Symbol:    "SYM" + strings.Repeat("X", i),
+			Symbol:    "SYM" + string(rune('A'+i)),
 			AssetType: "stock",
 		}
 	}
 
-	results, _ := p.FetchPrices(context.Background(), securities)
-	if got := requestCount.Load(); got != 2 {
-		t.Errorf("expected 2 HTTP requests (50+10), got %d", got)
+	results, fetchErrors := p.FetchPrices(context.Background(), securities)
+	if len(fetchErrors) != 0 {
+		t.Fatalf("expected 0 errors, got %d: %v", len(fetchErrors), fetchErrors)
 	}
-	if len(results) != 60 {
-		t.Errorf("expected 60 results, got %d", len(results))
+	if len(results) != 15 {
+		t.Errorf("expected 15 results, got %d", len(results))
+	}
+	if peak := maxInFlight.Load(); peak > int32(yahooMaxConcurrent) {
+		t.Errorf("peak concurrency %d exceeded limit %d", peak, yahooMaxConcurrent)
 	}
 }
 
@@ -237,14 +291,9 @@ func TestYahooProvider_FetchPrices_HTTPError(t *testing.T) {
 }
 
 func TestYahooProvider_FetchPrices_ZeroPrice(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		resp := yahooQuoteResponse{}
-		resp.QuoteResponse.Result = []yahooQuoteResult{
-			{Symbol: "DEAD", RegularMarketPrice: 0},
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(resp)
-	}))
+	server := newV8MockServer(map[string]float64{
+		"DEAD": 0,
+	})
 	defer server.Close()
 
 	p := &YahooProvider{httpClient: server.Client(), baseURL: server.URL}
@@ -261,5 +310,29 @@ func TestYahooProvider_FetchPrices_ZeroPrice(t *testing.T) {
 	}
 	if !strings.Contains(fetchErrors[0].Err.Error(), "zero price") {
 		t.Errorf("expected error about zero price, got: %v", fetchErrors[0].Err)
+	}
+}
+
+func TestYahooProvider_FetchPrices_ChartError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(v8ChartErrorResponse("Not Found", "No data found, symbol may be delisted"))
+	}))
+	defer server.Close()
+
+	p := &YahooProvider{httpClient: server.Client(), baseURL: server.URL}
+	securities := []Security{
+		{ID: 1, Symbol: "DELISTED", AssetType: "stock"},
+	}
+
+	results, fetchErrors := p.FetchPrices(context.Background(), securities)
+	if len(results) != 0 {
+		t.Errorf("expected 0 results, got %d", len(results))
+	}
+	if len(fetchErrors) != 1 {
+		t.Fatalf("expected 1 error, got %d", len(fetchErrors))
+	}
+	if !strings.Contains(fetchErrors[0].Err.Error(), "Not Found") {
+		t.Errorf("expected error to mention 'Not Found', got: %v", fetchErrors[0].Err)
 	}
 }

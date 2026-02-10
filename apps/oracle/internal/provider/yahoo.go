@@ -6,14 +6,14 @@ import (
 	"fmt"
 	"math"
 	"net/http"
-	"strings"
+	"sync"
 	"time"
 )
 
 const (
-	yahooBaseURL  = "https://query1.finance.yahoo.com/v7/finance/quote"
-	yahooBatchMax = 50
-	yahooUA       = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"
+	yahooBaseURL        = "https://query1.finance.yahoo.com/v8/finance/chart"
+	yahooMaxConcurrent  = 10
+	yahooUA             = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"
 )
 
 // exchangeSuffixes maps exchange codes to Yahoo Finance ticker suffixes.
@@ -36,18 +36,20 @@ var exchangeSuffixes = map[string]string{
 	"EURONEXT": ".PA",
 }
 
-// yahooQuoteResponse is the top-level Yahoo Finance API response.
-type yahooQuoteResponse struct {
-	QuoteResponse struct {
-		Result []yahooQuoteResult `json:"result"`
-		Error  *json.RawMessage   `json:"error"`
-	} `json:"quoteResponse"`
-}
-
-// yahooQuoteResult is a single quote result from Yahoo Finance.
-type yahooQuoteResult struct {
-	Symbol             string  `json:"symbol"`
-	RegularMarketPrice float64 `json:"regularMarketPrice"`
+// yahooChartResponse is the top-level Yahoo Finance v8 chart API response.
+type yahooChartResponse struct {
+	Chart struct {
+		Result []struct {
+			Meta struct {
+				Symbol             string  `json:"symbol"`
+				RegularMarketPrice float64 `json:"regularMarketPrice"`
+			} `json:"meta"`
+		} `json:"result"`
+		Error *struct {
+			Code        string `json:"code"`
+			Description string `json:"description"`
+		} `json:"error"`
+	} `json:"chart"`
 }
 
 // YahooProvider fetches prices from Yahoo Finance for stocks, ETFs, bonds, and REITs.
@@ -87,111 +89,90 @@ func buildYahooSymbol(sec Security) string {
 	return sec.Symbol
 }
 
-// FetchPrices fetches current prices from Yahoo Finance.
+// FetchPrices fetches current prices from Yahoo Finance using the v8 chart endpoint.
+// Each security is fetched individually with concurrent requests limited by a semaphore.
 func (p *YahooProvider) FetchPrices(ctx context.Context, securities []Security) ([]PriceResult, []FetchError) {
 	if len(securities) == 0 {
 		return nil, nil
 	}
 
-	// Build Yahoo tickers and maintain mapping back to security IDs.
-	tickerToSec := make(map[string]Security, len(securities))
-	tickers := make([]string, 0, len(securities))
-	for _, sec := range securities {
-		ticker := buildYahooSymbol(sec)
-		tickerToSec[ticker] = sec
-		tickers = append(tickers, ticker)
-	}
-
-	// Split into batches.
-	var allResults []PriceResult
-	var allErrors []FetchError
 	now := time.Now().UTC()
+	sem := make(chan struct{}, yahooMaxConcurrent)
 
-	for i := 0; i < len(tickers); i += yahooBatchMax {
-		end := min(i+yahooBatchMax, len(tickers))
-		batch := tickers[i:end]
+	var mu sync.Mutex
+	var results []PriceResult
+	var fetchErrors []FetchError
 
-		results, fetchErrors := p.fetchBatch(ctx, batch, tickerToSec, now)
-		allResults = append(allResults, results...)
-		allErrors = append(allErrors, fetchErrors...)
+	var wg sync.WaitGroup
+	for _, sec := range securities {
+		wg.Add(1)
+		go func(sec Security) {
+			defer wg.Done()
+
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			ticker := buildYahooSymbol(sec)
+			result, err := p.fetchOne(ctx, ticker, sec.ID, now)
+			mu.Lock()
+			defer mu.Unlock()
+			if err != nil {
+				fetchErrors = append(fetchErrors, FetchError{
+					SecurityID: sec.ID,
+					Symbol:     sec.Symbol,
+					Err:        err,
+				})
+				return
+			}
+			results = append(results, *result)
+		}(sec)
 	}
+	wg.Wait()
 
-	return allResults, allErrors
+	return results, fetchErrors
 }
 
-// fetchBatch fetches prices for a single batch of tickers.
-func (p *YahooProvider) fetchBatch(ctx context.Context, tickers []string, tickerToSec map[string]Security, now time.Time) ([]PriceResult, []FetchError) {
-	url := p.baseURL + "?symbols=" + strings.Join(tickers, ",")
+// fetchOne fetches the price for a single ticker from the Yahoo v8 chart endpoint.
+func (p *YahooProvider) fetchOne(ctx context.Context, ticker string, secID uint, now time.Time) (*PriceResult, error) {
+	url := p.baseURL + "/" + ticker + "?interval=1d&range=1d"
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return nil, batchErrors(tickers, tickerToSec, fmt.Errorf("building request: %w", err))
+		return nil, fmt.Errorf("building request: %w", err)
 	}
 	req.Header.Set("User-Agent", yahooUA)
 
 	resp, err := p.httpClient.Do(req)
 	if err != nil {
-		return nil, batchErrors(tickers, tickerToSec, fmt.Errorf("http request: %w", err))
+		return nil, fmt.Errorf("http request: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, batchErrors(tickers, tickerToSec, fmt.Errorf("unexpected status %d", resp.StatusCode))
+		return nil, fmt.Errorf("unexpected status %d", resp.StatusCode)
 	}
 
-	var quoteResp yahooQuoteResponse
-	if err := json.NewDecoder(resp.Body).Decode(&quoteResp); err != nil {
-		return nil, batchErrors(tickers, tickerToSec, fmt.Errorf("decoding response: %w", err))
+	var chartResp yahooChartResponse
+	if err := json.NewDecoder(resp.Body).Decode(&chartResp); err != nil {
+		return nil, fmt.Errorf("decoding response: %w", err)
 	}
 
-	// Index results by symbol for lookup.
-	resultMap := make(map[string]float64, len(quoteResp.QuoteResponse.Result))
-	for _, r := range quoteResp.QuoteResponse.Result {
-		resultMap[r.Symbol] = r.RegularMarketPrice
+	if chartResp.Chart.Error != nil {
+		return nil, fmt.Errorf("chart error %s: %s", chartResp.Chart.Error.Code, chartResp.Chart.Error.Description)
 	}
 
-	var results []PriceResult
-	var fetchErrors []FetchError
-
-	for _, ticker := range tickers {
-		sec := tickerToSec[ticker]
-		price, found := resultMap[ticker]
-		if !found {
-			fetchErrors = append(fetchErrors, FetchError{
-				SecurityID: sec.ID,
-				Symbol:     sec.Symbol,
-				Err:        fmt.Errorf("symbol %s not found in response", ticker),
-			})
-			continue
-		}
-		if price == 0 {
-			fetchErrors = append(fetchErrors, FetchError{
-				SecurityID: sec.ID,
-				Symbol:     sec.Symbol,
-				Err:        fmt.Errorf("zero price for %s", ticker),
-			})
-			continue
-		}
-		results = append(results, PriceResult{
-			SecurityID: sec.ID,
-			Price:      int64(math.Round(price * 100)),
-			RecordedAt: now,
-		})
+	if len(chartResp.Chart.Result) == 0 {
+		return nil, fmt.Errorf("no results for %s", ticker)
 	}
 
-	return results, fetchErrors
-}
-
-// batchErrors creates FetchErrors for all tickers in a failed batch.
-func batchErrors(tickers []string, tickerToSec map[string]Security, err error) []FetchError {
-	errors := make([]FetchError, len(tickers))
-	for i, ticker := range tickers {
-		sec := tickerToSec[ticker]
-		errors[i] = FetchError{
-			SecurityID: sec.ID,
-			Symbol:     sec.Symbol,
-			Err:        err,
-		}
+	price := chartResp.Chart.Result[0].Meta.RegularMarketPrice
+	if price == 0 {
+		return nil, fmt.Errorf("zero price for %s", ticker)
 	}
-	return errors
+
+	return &PriceResult{
+		SecurityID: secID,
+		Price:      int64(math.Round(price * 100)),
+		RecordedAt: now,
+	}, nil
 }
