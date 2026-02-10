@@ -347,6 +347,43 @@ func TestGetAccountInvestments(t *testing.T) {
 		_, err := svc.GetAccountInvestments(user.ID, 9999, page)
 		testutil.AssertAppError(t, err, "ACCOUNT_NOT_FOUND")
 	})
+
+	t.Run("excludes_closed_positions", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		acctSvc := NewAccountService(db)
+		svc := NewInvestmentService(db, acctSvc)
+		user := testutil.CreateTestUser(t, db)
+		account := testutil.CreateTestInvestmentAccount(t, db, user.ID)
+
+		// Open position
+		sec1 := testutil.CreateTestSecurity(t, db)
+		testutil.CreateTestInvestment(t, db, account.ID, sec1.ID)
+
+		// Closed position (quantity = 0)
+		sec2 := testutil.CreateTestSecurity(t, db)
+		closedInv := &models.Investment{
+			AccountID:        account.ID,
+			SecurityID:       sec2.ID,
+			Quantity:         0,
+			CostBasis:        0,
+			RealizedGainLoss: 30000,
+		}
+		if err := db.Create(closedInv).Error; err != nil {
+			t.Fatalf("failed to create closed investment: %v", err)
+		}
+
+		page := pagination.PageRequest{Page: 1, PageSize: 20}
+		result, err := svc.GetAccountInvestments(user.ID, account.ID, page)
+		testutil.AssertNoError(t, err)
+
+		if result.TotalItems != 1 {
+			t.Errorf("expected 1 investment (open only), got %d", result.TotalItems)
+		}
+		if len(result.Data) != 1 {
+			t.Errorf("expected 1 item in data, got %d", len(result.Data))
+		}
+	})
 }
 
 func TestRecordBuy(t *testing.T) {
@@ -866,6 +903,64 @@ func TestGetPortfolio(t *testing.T) {
 			t.Errorf("expected user2 total value 100000, got %d", portfolio2.TotalValue)
 		}
 	})
+
+	t.Run("excludes_closed_from_count_but_includes_realized_gl", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		acctSvc := NewAccountService(db)
+		svc := NewInvestmentService(db, acctSvc)
+		user := testutil.CreateTestUser(t, db)
+		acct := testutil.CreateTestInvestmentAccount(t, db, user.ID)
+
+		// Open position: 10 shares of AAPL, cost basis $1000
+		secOpen := testutil.CreateTestSecurityWithParams(t, db, "AAPL", "Apple Inc", models.AssetTypeStock, "NASDAQ")
+		testutil.CreateTestInvestment(t, db, acct.ID, secOpen.ID)
+		testutil.CreateTestSecurityPrice(t, db, secOpen.ID, 15000, time.Now()) // $150/share
+
+		// Closed position: 0 shares of GOOG, realized G/L of $500
+		secClosed := testutil.CreateTestSecurityWithParams(t, db, "GOOG", "Alphabet Inc", models.AssetTypeStock, "NASDAQ")
+		closedInv := &models.Investment{
+			AccountID:        acct.ID,
+			SecurityID:       secClosed.ID,
+			Quantity:         0,
+			CostBasis:        0,
+			RealizedGainLoss: 50000, // $500 realized gain
+		}
+		if err := db.Create(closedInv).Error; err != nil {
+			t.Fatalf("failed to create closed investment: %v", err)
+		}
+		testutil.CreateTestSecurityPrice(t, db, secClosed.ID, 20000, time.Now())
+
+		portfolio, err := svc.GetPortfolio(user.ID)
+		testutil.AssertNoError(t, err)
+
+		// TotalValue should only include open position: 10 * 15000 = 150000
+		if portfolio.TotalValue != 150000 {
+			t.Errorf("expected total value 150000 (open only), got %d", portfolio.TotalValue)
+		}
+
+		// TotalCostBasis should only include open position: 100000
+		if portfolio.TotalCostBasis != 100000 {
+			t.Errorf("expected total cost basis 100000 (open only), got %d", portfolio.TotalCostBasis)
+		}
+
+		// TotalRealizedGainLoss should include closed position: 50000
+		if portfolio.TotalRealizedGainLoss != 50000 {
+			t.Errorf("expected total realized gain/loss 50000 (from closed), got %d", portfolio.TotalRealizedGainLoss)
+		}
+
+		// Holdings by type should only count 1 (the open position)
+		stockSummary, ok := portfolio.HoldingsByType[models.AssetTypeStock]
+		if !ok {
+			t.Fatal("expected stock type in holdings")
+		}
+		if stockSummary.Count != 1 {
+			t.Errorf("expected 1 stock holding (open only), got %d", stockSummary.Count)
+		}
+		if stockSummary.Value != 150000 {
+			t.Errorf("expected stock value 150000, got %d", stockSummary.Value)
+		}
+	})
 }
 
 func TestGetAllInvestments(t *testing.T) {
@@ -990,6 +1085,43 @@ func TestGetAllInvestments(t *testing.T) {
 
 		if result.TotalItems != 1 {
 			t.Errorf("expected 1 investment (from active account only), got %d", result.TotalItems)
+		}
+	})
+
+	t.Run("excludes_closed_positions", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		acctSvc := NewAccountService(db)
+		svc := NewInvestmentService(db, acctSvc)
+		user := testutil.CreateTestUser(t, db)
+		acct := testutil.CreateTestInvestmentAccount(t, db, user.ID)
+
+		// Open position (quantity > 0)
+		sec1 := testutil.CreateTestSecurity(t, db)
+		testutil.CreateTestInvestment(t, db, acct.ID, sec1.ID)
+
+		// Closed position (quantity = 0)
+		sec2 := testutil.CreateTestSecurity(t, db)
+		closedInv := &models.Investment{
+			AccountID:        acct.ID,
+			SecurityID:       sec2.ID,
+			Quantity:         0,
+			CostBasis:        0,
+			RealizedGainLoss: 50000,
+		}
+		if err := db.Create(closedInv).Error; err != nil {
+			t.Fatalf("failed to create closed investment: %v", err)
+		}
+
+		page := pagination.PageRequest{Page: 1, PageSize: 20}
+		result, err := svc.GetAllInvestments(user.ID, page)
+		testutil.AssertNoError(t, err)
+
+		if result.TotalItems != 1 {
+			t.Errorf("expected 1 investment (open only), got %d", result.TotalItems)
+		}
+		if len(result.Data) != 1 {
+			t.Errorf("expected 1 item in data, got %d", len(result.Data))
 		}
 	})
 }

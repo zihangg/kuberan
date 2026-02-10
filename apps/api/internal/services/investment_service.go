@@ -150,13 +150,13 @@ func (s *investmentService) GetAccountInvestments(userID, accountID uint, page p
 	page.Defaults()
 
 	var totalItems int64
-	base := s.db.Model(&models.Investment{}).Where("account_id = ?", accountID)
+	base := s.db.Model(&models.Investment{}).Where("account_id = ? AND quantity > 0", accountID)
 	if err := base.Count(&totalItems).Error; err != nil {
 		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
 
 	var investments []models.Investment
-	if err := s.db.Preload("Security").Where("account_id = ?", accountID).
+	if err := s.db.Preload("Security").Where("account_id = ? AND quantity > 0", accountID).
 		Scopes(pagination.Paginate(page)).Find(&investments).Error; err != nil {
 		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
@@ -197,14 +197,14 @@ func (s *investmentService) GetAllInvestments(userID uint, page pagination.PageR
 	}
 
 	var totalItems int64
-	base := s.db.Model(&models.Investment{}).Where("account_id IN ?", accountIDs)
+	base := s.db.Model(&models.Investment{}).Where("account_id IN ? AND quantity > 0", accountIDs)
 	if err := base.Count(&totalItems).Error; err != nil {
 		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
 
 	var investments []models.Investment
 	if err := s.db.Preload("Security").Preload("Account").
-		Where("account_id IN ?", accountIDs).
+		Where("account_id IN ? AND quantity > 0", accountIDs).
 		Scopes(pagination.Paginate(page)).Find(&investments).Error; err != nil {
 		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
@@ -291,15 +291,21 @@ func (s *investmentService) GetPortfolio(userID uint) (*PortfolioSummary, error)
 
 	for i := range investments {
 		inv := &investments[i]
-		value := int64(inv.Quantity * float64(prices[inv.SecurityID]))
-		summary.TotalValue += value
-		summary.TotalCostBasis += inv.CostBasis
+
+		// Always include realized G/L from all positions (open + closed)
 		summary.TotalRealizedGainLoss += inv.RealizedGainLoss
 
-		ts := summary.HoldingsByType[inv.Security.AssetType]
-		ts.Value += value
-		ts.Count++
-		summary.HoldingsByType[inv.Security.AssetType] = ts
+		// Only include open positions in holdings counts, values, and cost basis
+		if inv.Quantity > 0 {
+			value := int64(inv.Quantity * float64(prices[inv.SecurityID]))
+			summary.TotalValue += value
+			summary.TotalCostBasis += inv.CostBasis
+
+			ts := summary.HoldingsByType[inv.Security.AssetType]
+			ts.Value += value
+			ts.Count++
+			summary.HoldingsByType[inv.Security.AssetType] = ts
+		}
 	}
 
 	summary.TotalGainLoss = summary.TotalValue - summary.TotalCostBasis
