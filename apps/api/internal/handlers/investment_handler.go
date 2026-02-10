@@ -68,6 +68,41 @@ type RecordSplitRequest struct {
 	Notes      string    `json:"notes" binding:"max=500"`
 }
 
+// GetAllInvestments handles listing all investments across all investment accounts.
+// @Summary     Get all investments
+// @Description Get a paginated list of all investments across all active investment accounts
+// @Tags        investments
+// @Accept      json
+// @Produce     json
+// @Security    BearerAuth
+// @Param       page      query int false "Page number (default 1)"
+// @Param       page_size query int false "Items per page (default 20, max 100)"
+// @Success     200 {object} pagination.PageResponse[models.Investment] "Paginated investments"
+// @Failure     401 {object} ErrorResponse "Unauthorized"
+// @Failure     500 {object} ErrorResponse "Server error"
+// @Router      /investments [get]
+func (h *InvestmentHandler) GetAllInvestments(c *gin.Context) {
+	userID, err := getUserID(c)
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	var page pagination.PageRequest
+	if err := c.ShouldBindQuery(&page); err != nil {
+		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, err.Error()))
+		return
+	}
+
+	result, err := h.investmentService.GetAllInvestments(userID, page)
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, result)
+}
+
 // AddInvestment handles adding a new investment holding.
 // @Summary     Add investment
 // @Description Add a new investment holding to an investment account

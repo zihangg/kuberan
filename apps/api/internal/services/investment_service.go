@@ -178,6 +178,54 @@ func (s *investmentService) GetAccountInvestments(userID, accountID uint, page p
 	return &result, nil
 }
 
+// GetAllInvestments returns a paginated list of all investments across all active
+// investment accounts for the given user.
+func (s *investmentService) GetAllInvestments(userID uint, page pagination.PageRequest) (*pagination.PageResponse[models.Investment], error) {
+	page.Defaults()
+
+	// Find all active investment account IDs for the user
+	var accountIDs []uint
+	if err := s.db.Model(&models.Account{}).
+		Where("user_id = ? AND type = ? AND is_active = ?", userID, models.AccountTypeInvestment, true).
+		Pluck("id", &accountIDs).Error; err != nil {
+		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
+	}
+
+	if len(accountIDs) == 0 {
+		empty := pagination.NewPageResponse([]models.Investment{}, page.Page, page.PageSize, 0)
+		return &empty, nil
+	}
+
+	var totalItems int64
+	base := s.db.Model(&models.Investment{}).Where("account_id IN ?", accountIDs)
+	if err := base.Count(&totalItems).Error; err != nil {
+		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
+	}
+
+	var investments []models.Investment
+	if err := s.db.Preload("Security").Preload("Account").
+		Where("account_id IN ?", accountIDs).
+		Scopes(pagination.Paginate(page)).Find(&investments).Error; err != nil {
+		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
+	}
+
+	// Batch populate current prices from security_prices
+	secIDs := make([]uint, 0, len(investments))
+	for i := range investments {
+		secIDs = append(secIDs, investments[i].SecurityID)
+	}
+	prices, err := getLatestPrices(s.db, secIDs)
+	if err != nil {
+		return nil, err
+	}
+	for i := range investments {
+		investments[i].CurrentPrice = prices[investments[i].SecurityID]
+	}
+
+	result := pagination.NewPageResponse(investments, page.Page, page.PageSize, totalItems)
+	return &result, nil
+}
+
 // GetInvestmentByID returns an investment if the parent account belongs to the user.
 func (s *investmentService) GetInvestmentByID(userID, investmentID uint) (*models.Investment, error) {
 	var investment models.Investment

@@ -714,6 +714,132 @@ func TestGetPortfolio(t *testing.T) {
 	})
 }
 
+func TestGetAllInvestments(t *testing.T) {
+	t.Run("returns_investments_across_accounts", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		acctSvc := NewAccountService(db)
+		svc := NewInvestmentService(db, acctSvc)
+		user := testutil.CreateTestUser(t, db)
+
+		acct1 := testutil.CreateTestInvestmentAccount(t, db, user.ID)
+		acct2 := testutil.CreateTestInvestmentAccount(t, db, user.ID)
+
+		sec1 := testutil.CreateTestSecurityWithParams(t, db, "AAPL", "Apple Inc", models.AssetTypeStock, "NASDAQ")
+		sec2 := testutil.CreateTestSecurityWithParams(t, db, "VTI", "Vanguard Total", models.AssetTypeETF, "NYSE")
+		testutil.CreateTestInvestment(t, db, acct1.ID, sec1.ID)
+		testutil.CreateTestInvestment(t, db, acct2.ID, sec2.ID)
+
+		testutil.CreateTestSecurityPrice(t, db, sec1.ID, 15000, time.Now())
+		testutil.CreateTestSecurityPrice(t, db, sec2.ID, 12000, time.Now())
+
+		page := pagination.PageRequest{Page: 1, PageSize: 20}
+		result, err := svc.GetAllInvestments(user.ID, page)
+		testutil.AssertNoError(t, err)
+
+		if result.TotalItems != 2 {
+			t.Errorf("expected 2 investments, got %d", result.TotalItems)
+		}
+		if len(result.Data) != 2 {
+			t.Errorf("expected 2 items in data, got %d", len(result.Data))
+		}
+
+		// Verify CurrentPrice, Security, and Account are populated
+		for _, inv := range result.Data {
+			if inv.CurrentPrice == 0 {
+				t.Errorf("expected non-zero CurrentPrice for investment %d", inv.ID)
+			}
+			if inv.Security.Symbol == "" {
+				t.Errorf("expected Security preloaded for investment %d", inv.ID)
+			}
+			if inv.Account.Name == "" {
+				t.Errorf("expected Account preloaded for investment %d", inv.ID)
+			}
+		}
+	})
+
+	t.Run("returns_empty_for_no_investments", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		acctSvc := NewAccountService(db)
+		svc := NewInvestmentService(db, acctSvc)
+		user := testutil.CreateTestUser(t, db)
+
+		page := pagination.PageRequest{Page: 1, PageSize: 20}
+		result, err := svc.GetAllInvestments(user.ID, page)
+		testutil.AssertNoError(t, err)
+
+		if result.TotalItems != 0 {
+			t.Errorf("expected 0 total items, got %d", result.TotalItems)
+		}
+		if len(result.Data) != 0 {
+			t.Errorf("expected empty data, got %d items", len(result.Data))
+		}
+	})
+
+	t.Run("paginates_results", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		acctSvc := NewAccountService(db)
+		svc := NewInvestmentService(db, acctSvc)
+		user := testutil.CreateTestUser(t, db)
+		acct := testutil.CreateTestInvestmentAccount(t, db, user.ID)
+
+		for i := 0; i < 5; i++ {
+			sec := testutil.CreateTestSecurity(t, db)
+			testutil.CreateTestInvestment(t, db, acct.ID, sec.ID)
+		}
+
+		page := pagination.PageRequest{Page: 1, PageSize: 2}
+		result, err := svc.GetAllInvestments(user.ID, page)
+		testutil.AssertNoError(t, err)
+
+		if result.TotalItems != 5 {
+			t.Errorf("expected total 5, got %d", result.TotalItems)
+		}
+		if result.TotalPages != 3 {
+			t.Errorf("expected 3 total pages, got %d", result.TotalPages)
+		}
+		if len(result.Data) != 2 {
+			t.Errorf("expected 2 items on page 1, got %d", len(result.Data))
+		}
+
+		page2 := pagination.PageRequest{Page: 3, PageSize: 2}
+		result2, err := svc.GetAllInvestments(user.ID, page2)
+		testutil.AssertNoError(t, err)
+		if len(result2.Data) != 1 {
+			t.Errorf("expected 1 item on page 3, got %d", len(result2.Data))
+		}
+	})
+
+	t.Run("excludes_inactive_accounts", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		acctSvc := NewAccountService(db)
+		svc := NewInvestmentService(db, acctSvc)
+		user := testutil.CreateTestUser(t, db)
+
+		activeAcct := testutil.CreateTestInvestmentAccount(t, db, user.ID)
+		inactiveAcct := testutil.CreateTestInvestmentAccount(t, db, user.ID)
+
+		// Deactivate one account
+		db.Model(&inactiveAcct).Update("is_active", false)
+
+		sec1 := testutil.CreateTestSecurity(t, db)
+		sec2 := testutil.CreateTestSecurity(t, db)
+		testutil.CreateTestInvestment(t, db, activeAcct.ID, sec1.ID)
+		testutil.CreateTestInvestment(t, db, inactiveAcct.ID, sec2.ID)
+
+		page := pagination.PageRequest{Page: 1, PageSize: 20}
+		result, err := svc.GetAllInvestments(user.ID, page)
+		testutil.AssertNoError(t, err)
+
+		if result.TotalItems != 1 {
+			t.Errorf("expected 1 investment (from active account only), got %d", result.TotalItems)
+		}
+	})
+}
+
 func TestGetInvestmentTransactions(t *testing.T) {
 	t.Run("returns_transactions", func(t *testing.T) {
 		db := testutil.SetupTestDB(t)

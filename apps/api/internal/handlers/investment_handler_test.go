@@ -17,6 +17,7 @@ import (
 
 type mockInvestmentService struct {
 	addInvestmentFn             func(userID, accountID, securityID uint, quantity float64, purchasePrice int64, walletAddress string, date *time.Time, fee int64, notes string) (*models.Investment, error)
+	getAllInvestmentsFn         func(userID uint, page pagination.PageRequest) (*pagination.PageResponse[models.Investment], error)
 	getAccountInvestmentsFn     func(userID, accountID uint, page pagination.PageRequest) (*pagination.PageResponse[models.Investment], error)
 	getInvestmentByIDFn         func(userID, investmentID uint) (*models.Investment, error)
 	getPortfolioFn              func(userID uint) (*services.PortfolioSummary, error)
@@ -32,6 +33,14 @@ func (m *mockInvestmentService) AddInvestment(userID, accountID, securityID uint
 		return m.addInvestmentFn(userID, accountID, securityID, quantity, purchasePrice, walletAddress, date, fee, notes)
 	}
 	return &models.Investment{}, nil
+}
+
+func (m *mockInvestmentService) GetAllInvestments(userID uint, page pagination.PageRequest) (*pagination.PageResponse[models.Investment], error) {
+	if m.getAllInvestmentsFn != nil {
+		return m.getAllInvestmentsFn(userID, page)
+	}
+	resp := pagination.NewPageResponse([]models.Investment{}, 1, 20, 0)
+	return &resp, nil
 }
 
 func (m *mockInvestmentService) GetAccountInvestments(userID, accountID uint, page pagination.PageRequest) (*pagination.PageResponse[models.Investment], error) {
@@ -98,6 +107,7 @@ func setupInvestmentRouter(handler *InvestmentHandler) *gin.Engine {
 	r := gin.New()
 	auth := r.Group("", injectUserID(1))
 	auth.POST("/investments", handler.AddInvestment)
+	auth.GET("/investments", handler.GetAllInvestments)
 	auth.GET("/investments/portfolio", handler.GetPortfolio)
 	auth.GET("/investments/:id", handler.GetInvestment)
 	auth.POST("/investments/:id/buy", handler.RecordBuy)
@@ -661,6 +671,74 @@ func TestInvestmentHandler_GetAccountInvestments(t *testing.T) {
 			t.Fatalf("expected 404, got %d", rec.Code)
 		}
 		assertErrorCode(t, parseJSON(t, rec), "ACCOUNT_NOT_FOUND")
+	})
+}
+
+func TestInvestmentHandler_GetAllInvestments(t *testing.T) {
+	t.Run("returns_200_with_investments", func(t *testing.T) {
+		svc := &mockInvestmentService{
+			getAllInvestmentsFn: func(_ uint, _ pagination.PageRequest) (*pagination.PageResponse[models.Investment], error) {
+				resp := pagination.NewPageResponse([]models.Investment{
+					{Base: models.Base{ID: 1}, SecurityID: 1, Quantity: 10},
+					{Base: models.Base{ID: 2}, SecurityID: 2, Quantity: 5},
+				}, 1, 20, 2)
+				return &resp, nil
+			},
+		}
+		handler := NewInvestmentHandler(svc, &mockAuditService{})
+		r := setupInvestmentRouter(handler)
+
+		rec := doRequest(r, "GET", "/investments", "")
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		result := parseJSON(t, rec)
+		data := result["data"].([]interface{})
+		if len(data) != 2 {
+			t.Errorf("expected 2 investments, got %d", len(data))
+		}
+		if result["total_items"].(float64) != 2 {
+			t.Errorf("expected total_items=2, got %v", result["total_items"])
+		}
+	})
+
+	t.Run("returns_200_empty_list", func(t *testing.T) {
+		svc := &mockInvestmentService{
+			getAllInvestmentsFn: func(_ uint, _ pagination.PageRequest) (*pagination.PageResponse[models.Investment], error) {
+				resp := pagination.NewPageResponse([]models.Investment{}, 1, 20, 0)
+				return &resp, nil
+			},
+		}
+		handler := NewInvestmentHandler(svc, &mockAuditService{})
+		r := setupInvestmentRouter(handler)
+
+		rec := doRequest(r, "GET", "/investments", "")
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		result := parseJSON(t, rec)
+		data := result["data"].([]interface{})
+		if len(data) != 0 {
+			t.Errorf("expected 0 investments, got %d", len(data))
+		}
+	})
+
+	t.Run("returns_500_on_service_error", func(t *testing.T) {
+		svc := &mockInvestmentService{
+			getAllInvestmentsFn: func(_ uint, _ pagination.PageRequest) (*pagination.PageResponse[models.Investment], error) {
+				return nil, apperrors.ErrInternalServer
+			},
+		}
+		handler := NewInvestmentHandler(svc, &mockAuditService{})
+		r := setupInvestmentRouter(handler)
+
+		rec := doRequest(r, "GET", "/investments", "")
+
+		if rec.Code != http.StatusInternalServerError {
+			t.Fatalf("expected 500, got %d: %s", rec.Code, rec.Body.String())
+		}
 	})
 }
 

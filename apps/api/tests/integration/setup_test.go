@@ -142,6 +142,7 @@ func setupApp(t *testing.T) *testApp {
 
 	investments := protected.Group("/investments")
 	investments.POST("", investmentHandler.AddInvestment)
+	investments.GET("", investmentHandler.GetAllInvestments)
 	investments.GET("/portfolio", investmentHandler.GetPortfolio)
 	investments.GET("/snapshots", snapshotHandler.GetSnapshots)
 	investments.GET("/:id", investmentHandler.GetInvestment)
