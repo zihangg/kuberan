@@ -17,11 +17,12 @@ import (
 // --- mock security service ---
 
 type mockSecurityService struct {
-	createSecurityFn  func(symbol, name string, assetType models.AssetType, currency, exchange string, extraFields map[string]interface{}) (*models.Security, error)
-	getSecurityByIDFn func(id uint) (*models.Security, error)
-	listSecuritiesFn  func(search string, page pagination.PageRequest) (*pagination.PageResponse[models.Security], error)
-	recordPricesFn    func(prices []services.SecurityPriceInput) (int, error)
-	getPriceHistoryFn func(securityID uint, from, to time.Time, page pagination.PageRequest) (*pagination.PageResponse[models.SecurityPrice], error)
+	createSecurityFn    func(symbol, name string, assetType models.AssetType, currency, exchange string, extraFields map[string]interface{}) (*models.Security, error)
+	getSecurityByIDFn   func(id uint) (*models.Security, error)
+	listSecuritiesFn    func(search string, page pagination.PageRequest) (*pagination.PageResponse[models.Security], error)
+	listAllSecuritiesFn func() ([]models.Security, error)
+	recordPricesFn      func(prices []services.SecurityPriceInput) (int, error)
+	getPriceHistoryFn   func(securityID uint, from, to time.Time, page pagination.PageRequest) (*pagination.PageResponse[models.SecurityPrice], error)
 }
 
 var _ services.SecurityServicer = (*mockSecurityService)(nil)
@@ -38,6 +39,13 @@ func (m *mockSecurityService) GetSecurityByID(id uint) (*models.Security, error)
 		return m.getSecurityByIDFn(id)
 	}
 	return &models.Security{}, nil
+}
+
+func (m *mockSecurityService) ListAllSecurities() ([]models.Security, error) {
+	if m.listAllSecuritiesFn != nil {
+		return m.listAllSecuritiesFn()
+	}
+	return []models.Security{}, nil
 }
 
 func (m *mockSecurityService) ListSecurities(search string, page pagination.PageRequest) (*pagination.PageResponse[models.Security], error) {
@@ -68,6 +76,7 @@ func (m *mockSecurityService) GetPriceHistory(securityID uint, from, to time.Tim
 func setupSecurityRouter(handler *SecurityHandler) *gin.Engine {
 	r := gin.New()
 	// Pipeline routes (no auth needed for handler tests)
+	r.GET("/pipeline/securities", handler.ListAllSecurities)
 	r.POST("/pipeline/securities", handler.CreateSecurity)
 	r.POST("/pipeline/securities/prices", handler.RecordPrices)
 	// User routes (with auth)
@@ -168,6 +177,77 @@ func TestSecurityHandler_CreateSecurity(t *testing.T) {
 			t.Fatalf("expected 409, got %d: %s", rec.Code, rec.Body.String())
 		}
 		assertErrorCode(t, parseJSON(t, rec), "DUPLICATE_SECURITY")
+	})
+}
+
+func TestSecurityHandler_ListAllSecurities(t *testing.T) {
+	t.Run("returns_200_with_securities", func(t *testing.T) {
+		svc := &mockSecurityService{
+			listAllSecuritiesFn: func() ([]models.Security, error) {
+				return []models.Security{
+					{Base: models.Base{ID: 1}, Symbol: "AAPL", Name: "Apple Inc.", AssetType: models.AssetTypeStock, Currency: "USD", Exchange: "NASDAQ"},
+					{Base: models.Base{ID: 7}, Symbol: "BTC", Name: "Bitcoin", AssetType: models.AssetTypeCrypto, Currency: "USD", Network: "bitcoin"},
+				}, nil
+			},
+		}
+		handler := NewSecurityHandler(svc, &mockAuditService{})
+		r := setupSecurityRouter(handler)
+
+		rec := doRequest(r, "GET", "/pipeline/securities", "")
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		result := parseJSON(t, rec)
+		securities := result["securities"].([]interface{})
+		if len(securities) != 2 {
+			t.Errorf("expected 2 securities, got %d", len(securities))
+		}
+		first := securities[0].(map[string]interface{})
+		if first["symbol"] != "AAPL" {
+			t.Errorf("expected first symbol AAPL, got %v", first["symbol"])
+		}
+		second := securities[1].(map[string]interface{})
+		if second["symbol"] != "BTC" {
+			t.Errorf("expected second symbol BTC, got %v", second["symbol"])
+		}
+	})
+
+	t.Run("returns_200_empty_list", func(t *testing.T) {
+		svc := &mockSecurityService{
+			listAllSecuritiesFn: func() ([]models.Security, error) {
+				return []models.Security{}, nil
+			},
+		}
+		handler := NewSecurityHandler(svc, &mockAuditService{})
+		r := setupSecurityRouter(handler)
+
+		rec := doRequest(r, "GET", "/pipeline/securities", "")
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		result := parseJSON(t, rec)
+		securities := result["securities"].([]interface{})
+		if len(securities) != 0 {
+			t.Errorf("expected empty securities array, got %d items", len(securities))
+		}
+	})
+
+	t.Run("returns_500_on_service_error", func(t *testing.T) {
+		svc := &mockSecurityService{
+			listAllSecuritiesFn: func() ([]models.Security, error) {
+				return nil, fmt.Errorf("database error")
+			},
+		}
+		handler := NewSecurityHandler(svc, &mockAuditService{})
+		r := setupSecurityRouter(handler)
+
+		rec := doRequest(r, "GET", "/pipeline/securities", "")
+
+		if rec.Code != http.StatusInternalServerError {
+			t.Fatalf("expected 500, got %d: %s", rec.Code, rec.Body.String())
+		}
 	})
 }
 

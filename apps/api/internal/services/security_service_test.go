@@ -292,6 +292,73 @@ func TestListSecurities(t *testing.T) {
 	})
 }
 
+func TestListAllSecurities(t *testing.T) {
+	t.Run("returns_all_securities", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		svc := NewSecurityService(db)
+
+		testutil.CreateTestSecurityWithParams(t, db, "MSFT", "Microsoft Corp", models.AssetTypeStock, "NASDAQ")
+		testutil.CreateTestSecurityWithParams(t, db, "AAPL", "Apple Inc", models.AssetTypeStock, "NASDAQ")
+		testutil.CreateTestSecurityWithParams(t, db, "GOOGL", "Alphabet Inc", models.AssetTypeStock, "NASDAQ")
+
+		securities, err := svc.ListAllSecurities()
+		testutil.AssertNoError(t, err)
+
+		if len(securities) != 3 {
+			t.Fatalf("expected 3 securities, got %d", len(securities))
+		}
+		// Verify ordered by symbol ASC
+		if securities[0].Symbol != "AAPL" {
+			t.Errorf("expected first symbol AAPL, got %s", securities[0].Symbol)
+		}
+		if securities[1].Symbol != "GOOGL" {
+			t.Errorf("expected second symbol GOOGL, got %s", securities[1].Symbol)
+		}
+		if securities[2].Symbol != "MSFT" {
+			t.Errorf("expected third symbol MSFT, got %s", securities[2].Symbol)
+		}
+	})
+
+	t.Run("returns_empty_when_none", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		svc := NewSecurityService(db)
+
+		securities, err := svc.ListAllSecurities()
+		testutil.AssertNoError(t, err)
+
+		if securities == nil {
+			t.Fatal("expected non-nil empty slice, got nil")
+		}
+		if len(securities) != 0 {
+			t.Errorf("expected 0 securities, got %d", len(securities))
+		}
+	})
+
+	t.Run("excludes_soft_deleted", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		svc := NewSecurityService(db)
+
+		active := testutil.CreateTestSecurityWithParams(t, db, "AAPL", "Apple Inc", models.AssetTypeStock, "NASDAQ")
+		deleted := testutil.CreateTestSecurityWithParams(t, db, "GONE", "Deleted Corp", models.AssetTypeStock, "NYSE")
+
+		// Soft-delete one security
+		db.Delete(deleted)
+
+		securities, err := svc.ListAllSecurities()
+		testutil.AssertNoError(t, err)
+
+		if len(securities) != 1 {
+			t.Fatalf("expected 1 security, got %d", len(securities))
+		}
+		if securities[0].ID != active.ID {
+			t.Errorf("expected security ID %d, got %d", active.ID, securities[0].ID)
+		}
+	})
+}
+
 func TestRecordPrices(t *testing.T) {
 	t.Run("valid_bulk_insert", func(t *testing.T) {
 		db := testutil.SetupTestDB(t)

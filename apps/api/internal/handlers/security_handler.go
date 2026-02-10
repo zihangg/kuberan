@@ -86,6 +86,27 @@ func (h *SecurityHandler) CreateSecurity(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{"security": security})
 }
 
+// ListAllSecurities handles listing all securities for the pipeline.
+// @Summary     List all securities (pipeline)
+// @Description Get all active securities without pagination (pipeline endpoint)
+// @Tags        pipeline
+// @Produce     json
+// @Security    ApiKeyAuth
+// @Success     200 {object} map[string][]models.Security "All securities"
+// @Failure     401 {object} ErrorResponse "Invalid API key"
+// @Failure     500 {object} ErrorResponse "Server error"
+// @Failure     503 {object} ErrorResponse "Pipeline not configured"
+// @Router      /pipeline/securities [get]
+func (h *SecurityHandler) ListAllSecurities(c *gin.Context) {
+	securities, err := h.securityService.ListAllSecurities()
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"securities": securities})
+}
+
 // ListSecurities handles listing all securities.
 // @Summary     List securities
 // @Description Get a paginated list of all securities, optionally filtered by search term

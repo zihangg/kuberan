@@ -220,6 +220,7 @@ func run() error {
 	// Pipeline routes (API key auth, no JWT)
 	pipeline := v1.Group("/pipeline")
 	pipeline.Use(middleware.PipelineAuthMiddleware(appConfig.PipelineAPIKey))
+	pipeline.GET("/securities", securityHandler.ListAllSecurities)
 	pipeline.POST("/securities", securityHandler.CreateSecurity)
 	pipeline.POST("/securities/prices", securityHandler.RecordPrices)
 	pipeline.POST("/snapshots", snapshotHandler.ComputeSnapshots)

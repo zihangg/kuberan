@@ -147,6 +147,16 @@ func (s *securityService) GetPriceHistory(
 	return &result, nil
 }
 
+// ListAllSecurities returns all active securities ordered by symbol.
+// Intended for machine clients (e.g., the price oracle) that need the full list.
+func (s *securityService) ListAllSecurities() ([]models.Security, error) {
+	var securities []models.Security
+	if err := s.db.Order("symbol ASC").Find(&securities).Error; err != nil {
+		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
+	}
+	return securities, nil
+}
+
 // applySecurityExtraFields sets asset-type-specific fields on a security from a map.
 func applySecurityExtraFields(sec *models.Security, fields map[string]interface{}) {
 	if fields == nil {
