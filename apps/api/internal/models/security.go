@@ -21,6 +21,7 @@ type Security struct {
 	AssetType       AssetType  `gorm:"not null" json:"asset_type"`
 	Currency        string     `gorm:"not null;default:'USD'" json:"currency"`
 	Exchange        string     `gorm:"uniqueIndex:uq_securities_symbol_exchange" json:"exchange,omitempty"`
+	ProviderSymbol  string     `gorm:"default:''" json:"provider_symbol,omitempty"`
 	MaturityDate    *time.Time `json:"maturity_date,omitempty"`
 	YieldToMaturity float64    `json:"yield_to_maturity,omitempty"`
 	CouponRate      float64    `json:"coupon_rate,omitempty"`

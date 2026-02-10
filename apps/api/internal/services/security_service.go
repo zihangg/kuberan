@@ -177,6 +177,9 @@ func applySecurityExtraFields(sec *models.Security, fields map[string]interface{
 	if v, ok := fields["property_type"].(string); ok {
 		sec.PropertyType = v
 	}
+	if v, ok := fields["provider_symbol"].(string); ok {
+		sec.ProviderSymbol = v
+	}
 }
 
 // isUniqueConstraintError checks if a GORM error is a unique constraint violation.

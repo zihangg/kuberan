@@ -161,6 +161,41 @@ func TestSecurityHandler_CreateSecurity(t *testing.T) {
 		assertErrorCode(t, parseJSON(t, rec), "INVALID_INPUT")
 	})
 
+	t.Run("returns_201_with_provider_symbol", func(t *testing.T) {
+		var capturedExtraFields map[string]interface{}
+		svc := &mockSecurityService{
+			createSecurityFn: func(symbol, name string, assetType models.AssetType, currency, exchange string, extraFields map[string]interface{}) (*models.Security, error) {
+				capturedExtraFields = extraFields
+				return &models.Security{
+					Base:           models.Base{ID: 1},
+					Symbol:         symbol,
+					Name:           name,
+					AssetType:      assetType,
+					Currency:       currency,
+					Exchange:       exchange,
+					ProviderSymbol: "1023.KL",
+				}, nil
+			},
+		}
+		handler := NewSecurityHandler(svc, &mockAuditService{})
+		r := setupSecurityRouter(handler)
+
+		rec := doRequest(r, "POST", "/pipeline/securities",
+			`{"symbol":"CIMB","name":"CIMB Group","asset_type":"stock","currency":"MYR","exchange":"BURSA","provider_symbol":"1023.KL"}`)
+
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
+		}
+		if capturedExtraFields["provider_symbol"] != "1023.KL" {
+			t.Errorf("expected provider_symbol=1023.KL in extraFields, got %v", capturedExtraFields["provider_symbol"])
+		}
+		result := parseJSON(t, rec)
+		sec := result["security"].(map[string]interface{})
+		if sec["provider_symbol"] != "1023.KL" {
+			t.Errorf("expected provider_symbol=1023.KL in response, got %v", sec["provider_symbol"])
+		}
+	})
+
 	t.Run("returns_409_duplicate", func(t *testing.T) {
 		svc := &mockSecurityService{
 			createSecurityFn: func(_, _ string, _ models.AssetType, _, _ string, _ map[string]interface{}) (*models.Security, error) {

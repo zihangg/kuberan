@@ -160,6 +160,7 @@ func setupApp(t *testing.T) *testApp {
 	// Pipeline routes (use test API key for integration tests)
 	pipeline := v1.Group("/pipeline")
 	pipeline.Use(middleware.PipelineAuthMiddleware("test-pipeline-key"))
+	pipeline.GET("/securities", securityHandler.ListAllSecurities)
 	pipeline.POST("/securities", securityHandler.CreateSecurity)
 	pipeline.POST("/securities/prices", securityHandler.RecordPrices)
 	pipeline.POST("/snapshots", snapshotHandler.ComputeSnapshots)

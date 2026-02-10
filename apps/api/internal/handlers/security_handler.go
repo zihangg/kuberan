@@ -30,6 +30,7 @@ type CreateSecurityRequest struct {
 	AssetType       models.AssetType `json:"asset_type" binding:"required,asset_type"`
 	Currency        string           `json:"currency" binding:"omitempty,iso4217"`
 	Exchange        string           `json:"exchange,omitempty"`
+	ProviderSymbol  string           `json:"provider_symbol,omitempty"`
 	MaturityDate    *time.Time       `json:"maturity_date,omitempty"`
 	YieldToMaturity float64          `json:"yield_to_maturity,omitempty"`
 	CouponRate      float64          `json:"coupon_rate,omitempty"`
@@ -283,6 +284,9 @@ func buildSecurityExtraFields(req CreateSecurityRequest) map[string]interface{} 
 	}
 	if req.PropertyType != "" {
 		fields["property_type"] = req.PropertyType
+	}
+	if req.ProviderSymbol != "" {
+		fields["provider_symbol"] = req.ProviderSymbol
 	}
 	return fields
 }

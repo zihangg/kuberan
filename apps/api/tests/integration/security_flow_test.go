@@ -118,6 +118,56 @@ func TestSecurityFlow_FullLifecycle(t *testing.T) {
 	}
 }
 
+func TestSecurityFlow_ProviderSymbolRoundTrip(t *testing.T) {
+	app := setupApp(t)
+	token, _, _ := app.registerUser(t, "provsym@test.com", "password123")
+
+	// Create security with provider_symbol
+	rec := app.pipelineRequest("POST", "/api/v1/pipeline/securities",
+		`{"symbol":"CIMB","name":"CIMB Group","asset_type":"stock","currency":"MYR","exchange":"BURSA","provider_symbol":"1023.KL"}`)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
+	}
+	secResult := parseJSON(t, rec)
+	security := secResult["security"].(map[string]interface{})
+	securityID := security["id"].(float64)
+
+	if security["provider_symbol"] != "1023.KL" {
+		t.Errorf("expected provider_symbol 1023.KL in create response, got %v", security["provider_symbol"])
+	}
+
+	// Get security by ID — verify provider_symbol round-trips
+	rec = app.request("GET", fmt.Sprintf("/api/v1/securities/%.0f", securityID), "", token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	getSec := parseJSON(t, rec)["security"].(map[string]interface{})
+	if getSec["provider_symbol"] != "1023.KL" {
+		t.Errorf("expected provider_symbol 1023.KL on GET, got %v", getSec["provider_symbol"])
+	}
+
+	// List all via pipeline — verify provider_symbol is returned
+	rec = app.pipelineRequest("GET", "/api/v1/pipeline/securities", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	listResult := parseJSON(t, rec)
+	securities := listResult["securities"].([]interface{})
+	found := false
+	for _, s := range securities {
+		sec := s.(map[string]interface{})
+		if sec["symbol"] == "CIMB" {
+			if sec["provider_symbol"] != "1023.KL" {
+				t.Errorf("expected provider_symbol 1023.KL in pipeline list, got %v", sec["provider_symbol"])
+			}
+			found = true
+		}
+	}
+	if !found {
+		t.Error("CIMB not found in pipeline securities list")
+	}
+}
+
 func TestSecurityFlow_DuplicateSymbolExchange(t *testing.T) {
 	app := setupApp(t)
 

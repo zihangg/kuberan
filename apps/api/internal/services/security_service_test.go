@@ -67,6 +67,30 @@ func TestCreateSecurity(t *testing.T) {
 		}
 	})
 
+	t.Run("with_provider_symbol", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		svc := NewSecurityService(db)
+
+		extra := map[string]interface{}{
+			"provider_symbol": "1023.KL",
+		}
+
+		sec, err := svc.CreateSecurity("CIMB", "CIMB Group", models.AssetTypeStock, "MYR", "BURSA", extra)
+		testutil.AssertNoError(t, err)
+
+		if sec.ProviderSymbol != "1023.KL" {
+			t.Errorf("expected provider_symbol 1023.KL, got %s", sec.ProviderSymbol)
+		}
+
+		// Verify it persists by re-reading
+		fetched, err := svc.GetSecurityByID(sec.ID)
+		testutil.AssertNoError(t, err)
+		if fetched.ProviderSymbol != "1023.KL" {
+			t.Errorf("expected persisted provider_symbol 1023.KL, got %s", fetched.ProviderSymbol)
+		}
+	})
+
 	t.Run("duplicate_symbol_exchange", func(t *testing.T) {
 		db := testutil.SetupTestDB(t)
 		defer testutil.TeardownTestDB(t, db)
