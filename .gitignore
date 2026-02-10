@@ -49,3 +49,6 @@ out/
 docker-compose.override.yml
 
 .pnpm-store
+
+scripts/
+backups/
