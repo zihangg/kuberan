@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   TrendingUp,
   TrendingDown,
@@ -9,6 +10,9 @@ import {
   BarChart3,
   PieChart,
   Landmark,
+  ChevronLeft,
+  ChevronRight,
+  List,
 } from "lucide-react";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid } from "recharts";
 import {
@@ -24,9 +28,18 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { usePortfolio } from "@/hooks/use-investments";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { usePortfolio, useAllInvestments } from "@/hooks/use-investments";
 import { usePortfolioSnapshots } from "@/hooks/use-portfolio-snapshots";
 import { formatCurrency, formatDate, formatPercentage } from "@/lib/format";
 import type { AssetType } from "@/types/models";
@@ -199,6 +212,145 @@ function NetWorthChart() {
               />
             </AreaChart>
           </ChartContainer>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+const HOLDINGS_PAGE_SIZE = 20;
+
+function AllHoldingsTable() {
+  const router = useRouter();
+  const [page, setPage] = useState(1);
+  const { data, isLoading } = useAllInvestments({
+    page,
+    page_size: HOLDINGS_PAGE_SIZE,
+  });
+
+  const investments = data?.data ?? [];
+  const totalPages = data?.total_pages ?? 1;
+  const totalItems = data?.total_items ?? 0;
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center gap-2">
+          <List className="h-4 w-4 text-muted-foreground" />
+          <CardTitle>All Holdings</CardTitle>
+        </div>
+        <CardDescription>
+          {totalItems} holding{totalItems !== 1 ? "s" : ""} across all
+          investment accounts
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <div className="space-y-3">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <Skeleton key={i} className="h-12 w-full" />
+            ))}
+          </div>
+        ) : investments.length === 0 ? (
+          <div className="flex flex-col items-center justify-center rounded-lg border border-dashed p-8 text-center">
+            <h3 className="text-lg font-semibold">No holdings yet</h3>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Add investments to your accounts to see them here.
+            </p>
+          </div>
+        ) : (
+          <>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Symbol</TableHead>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Account</TableHead>
+                  <TableHead className="text-right">Qty</TableHead>
+                  <TableHead className="text-right">Price</TableHead>
+                  <TableHead className="text-right">Market Value</TableHead>
+                  <TableHead className="text-right">Gain/Loss</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {investments.map((inv) => {
+                  const marketValue = Math.round(
+                    inv.quantity * inv.current_price
+                  );
+                  const gainLoss = marketValue - inv.cost_basis;
+                  const isPositive = gainLoss >= 0;
+                  return (
+                    <TableRow
+                      key={inv.id}
+                      className="cursor-pointer"
+                      onClick={() => router.push(`/investments/${inv.id}`)}
+                    >
+                      <TableCell className="font-mono font-semibold">
+                        {inv.security.symbol}
+                      </TableCell>
+                      <TableCell>{inv.security.name}</TableCell>
+                      <TableCell>
+                        <Link
+                          href={`/accounts/${inv.account_id}`}
+                          className="text-primary hover:underline"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {inv.account?.name ?? `Account #${inv.account_id}`}
+                        </Link>
+                      </TableCell>
+                      <TableCell className="text-right font-mono tabular-nums">
+                        {inv.quantity.toFixed(
+                          Number.isInteger(inv.quantity) ? 0 : 6
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right font-mono tabular-nums">
+                        {formatCurrency(inv.current_price)}
+                      </TableCell>
+                      <TableCell className="text-right font-medium font-mono tabular-nums">
+                        {formatCurrency(marketValue)}
+                      </TableCell>
+                      <TableCell
+                        className={`text-right font-medium font-mono tabular-nums ${
+                          isPositive ? "text-green-600" : "text-red-600"
+                        }`}
+                      >
+                        {isPositive ? "+" : ""}
+                        {formatCurrency(gainLoss)}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+
+            {totalPages > 1 && (
+              <div className="mt-4 flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">
+                  Page {page} of {totalPages}
+                </span>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={page <= 1}
+                    onClick={() => setPage((p) => p - 1)}
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                    Previous
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={page >= totalPages}
+                    onClick={() => setPage((p) => p + 1)}
+                  >
+                    Next
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            )}
+          </>
         )}
       </CardContent>
     </Card>
@@ -393,6 +545,9 @@ export default function InvestmentsPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* All Holdings Table */}
+      <AllHoldingsTable />
     </div>
   );
 }
