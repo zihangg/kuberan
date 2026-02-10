@@ -38,6 +38,21 @@ services:
       - api
     restart: unless-stopped
 
+  oracle:
+    build:
+      context: ./apps/oracle
+      dockerfile: Dockerfile
+    environment:
+      - KUBERAN_API_URL=http://api:8080
+      - PIPELINE_API_KEY=${PIPELINE_API_KEY}
+      - COMPUTE_SNAPSHOTS=true
+      - LOG_LEVEL=info
+    depends_on:
+      - api
+    profiles:
+      - oracle
+    restart: "no"
+
   postgres:
     image: postgres:16-alpine
     container_name: kuberan-postgres
