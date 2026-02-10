@@ -79,12 +79,13 @@ func (o *Oracle) Run(ctx context.Context) (*RunResult, error) {
 	providerSecurities := make([]provider.Security, len(securities))
 	for i, s := range securities {
 		providerSecurities[i] = provider.Security{
-			ID:        s.ID,
-			Symbol:    s.Symbol,
-			AssetType: normalizeAssetType(s.AssetType),
-			Exchange:  s.Exchange,
-			Network:   s.Network,
-			Currency:  s.Currency,
+			ID:             s.ID,
+			Symbol:         s.Symbol,
+			AssetType:      normalizeAssetType(s.AssetType),
+			Exchange:       s.Exchange,
+			ProviderSymbol: s.ProviderSymbol,
+			Network:        s.Network,
+			Currency:       s.Currency,
 		}
 	}
 

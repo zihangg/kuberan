@@ -71,7 +71,7 @@ func TestOracle_Run_FullFlow(t *testing.T) {
 			return []client.Security{
 				{ID: 1, Symbol: "AAPL", AssetType: "stock", Currency: "USD", Exchange: "NASDAQ"},
 				{ID: 2, Symbol: "MSFT", AssetType: "stock", Currency: "USD", Exchange: "NASDAQ"},
-				{ID: 3, Symbol: "SHOP", AssetType: "stock", Currency: "CAD", Exchange: "TSX"},
+				{ID: 3, Symbol: "CIMB", AssetType: "stock", Currency: "MYR", Exchange: "BURSA", ProviderSymbol: "1023.KL"},
 				{ID: 4, Symbol: "BTC", AssetType: "crypto", Currency: "USD"},
 				{ID: 5, Symbol: "ETH", AssetType: "crypto", Currency: "USD"},
 			}, nil
@@ -86,12 +86,16 @@ func TestOracle_Run_FullFlow(t *testing.T) {
 		},
 	}
 
+	var providerSymbolSeen bool
 	yahooProvider := &mockProvider{
 		name:     "Yahoo Finance",
 		supports: func(at string) bool { return at == "stock" || at == "etf" || at == "reit" || at == "bond" },
 		fetchPrices: func(_ context.Context, secs []provider.Security) ([]provider.PriceResult, []provider.FetchError) {
 			results := make([]provider.PriceResult, len(secs))
 			for i, s := range secs {
+				if s.Symbol == "CIMB" && s.ProviderSymbol == "1023.KL" {
+					providerSymbolSeen = true
+				}
 				results[i] = provider.PriceResult{SecurityID: s.ID, Price: 10000 + int64(s.ID)*100, RecordedAt: now}
 			}
 			return results, nil
@@ -133,6 +137,9 @@ func TestOracle_Run_FullFlow(t *testing.T) {
 	}
 	if !snapshotsCalled {
 		t.Error("ComputeSnapshots was not called")
+	}
+	if !providerSymbolSeen {
+		t.Error("ProviderSymbol was not propagated to provider for CIMB security")
 	}
 	if result.Duration <= 0 {
 		t.Error("Duration should be positive")

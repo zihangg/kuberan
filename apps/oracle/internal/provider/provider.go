@@ -10,12 +10,13 @@ import (
 // Security represents a security from the Kuberan API, containing
 // the fields needed by price providers to fetch quotes.
 type Security struct {
-	ID        uint
-	Symbol    string
-	AssetType string
-	Exchange  string
-	Network   string
-	Currency  string
+	ID             uint
+	Symbol         string
+	AssetType      string
+	Exchange       string
+	ProviderSymbol string
+	Network        string
+	Currency       string
 }
 
 // PriceResult represents a successfully fetched price for a security.

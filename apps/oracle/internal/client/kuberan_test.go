@@ -24,9 +24,9 @@ func TestGetSecurities_Success(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"securities": []map[string]any{
-				{"id": 1, "symbol": "AAPL", "name": "Apple Inc.", "asset_type": "stock", "currency": "USD", "exchange": "NASDAQ", "network": ""},
-				{"id": 2, "symbol": "BTC", "name": "Bitcoin", "asset_type": "crypto", "currency": "USD", "exchange": "", "network": "bitcoin"},
-				{"id": 3, "symbol": "SHOP", "name": "Shopify", "asset_type": "stock", "currency": "CAD", "exchange": "TSX", "network": ""},
+				{"id": 1, "symbol": "AAPL", "name": "Apple Inc.", "asset_type": "stock", "currency": "USD", "exchange": "NASDAQ", "network": "", "provider_symbol": ""},
+				{"id": 2, "symbol": "BTC", "name": "Bitcoin", "asset_type": "crypto", "currency": "USD", "exchange": "", "network": "bitcoin", "provider_symbol": ""},
+				{"id": 3, "symbol": "CIMB", "name": "CIMB Group", "asset_type": "stock", "currency": "MYR", "exchange": "BURSA", "network": "", "provider_symbol": "1023.KL"},
 			},
 		})
 	}))
@@ -44,11 +44,17 @@ func TestGetSecurities_Success(t *testing.T) {
 	if securities[0].ID != 1 || securities[0].Symbol != "AAPL" || securities[0].AssetType != "stock" {
 		t.Errorf("first security mismatch: %+v", securities[0])
 	}
+	if securities[0].ProviderSymbol != "" {
+		t.Errorf("first security: expected empty provider_symbol, got %q", securities[0].ProviderSymbol)
+	}
 	if securities[1].ID != 2 || securities[1].Symbol != "BTC" || securities[1].Network != "bitcoin" {
 		t.Errorf("second security mismatch: %+v", securities[1])
 	}
-	if securities[2].ID != 3 || securities[2].Currency != "CAD" || securities[2].Exchange != "TSX" {
+	if securities[2].ID != 3 || securities[2].Symbol != "CIMB" || securities[2].Exchange != "BURSA" {
 		t.Errorf("third security mismatch: %+v", securities[2])
+	}
+	if securities[2].ProviderSymbol != "1023.KL" {
+		t.Errorf("third security: expected provider_symbol '1023.KL', got %q", securities[2].ProviderSymbol)
 	}
 }
 

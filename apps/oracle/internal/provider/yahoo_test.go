@@ -135,6 +135,43 @@ func TestYahooProvider_FetchPrices_ExchangeSuffix(t *testing.T) {
 	}
 }
 
+func TestYahooProvider_FetchPrices_ProviderSymbol(t *testing.T) {
+	var capturedSymbols string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedSymbols = r.URL.Query().Get("symbols")
+		resp := yahooQuoteResponse{}
+		resp.QuoteResponse.Result = []yahooQuoteResult{
+			{Symbol: "1023.KL", RegularMarketPrice: 6.50},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	p := &YahooProvider{httpClient: server.Client(), baseURL: server.URL}
+	securities := []Security{
+		{ID: 1, Symbol: "CIMB", AssetType: "stock", Exchange: "BURSA", ProviderSymbol: "1023.KL"},
+	}
+
+	results, fetchErrors := p.FetchPrices(context.Background(), securities)
+	if len(fetchErrors) != 0 {
+		t.Fatalf("expected 0 errors, got %d: %v", len(fetchErrors), fetchErrors)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if results[0].Price != 650 {
+		t.Errorf("expected price 650 cents, got %d", results[0].Price)
+	}
+	// Verify the request used provider_symbol (1023.KL), not CIMB.KL.
+	if !strings.Contains(capturedSymbols, "1023.KL") {
+		t.Errorf("expected URL to contain 1023.KL, got symbols=%s", capturedSymbols)
+	}
+	if strings.Contains(capturedSymbols, "CIMB.KL") {
+		t.Errorf("should NOT contain CIMB.KL, got symbols=%s", capturedSymbols)
+	}
+}
+
 func TestYahooProvider_FetchPrices_BatchSplit(t *testing.T) {
 	var requestCount atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -74,12 +74,17 @@ func (p *YahooProvider) Supports(assetType string) bool {
 	}
 }
 
-// buildYahooSymbol converts a security symbol and exchange to a Yahoo-compatible ticker.
-func buildYahooSymbol(symbol, exchange string) string {
-	if suffix, ok := exchangeSuffixes[exchange]; ok {
-		return symbol + suffix
+// buildYahooSymbol converts a security to a Yahoo-compatible ticker.
+// If ProviderSymbol is set, it is used directly. Otherwise, the symbol
+// is combined with the exchange suffix from the exchangeSuffixes map.
+func buildYahooSymbol(sec Security) string {
+	if sec.ProviderSymbol != "" {
+		return sec.ProviderSymbol
 	}
-	return symbol
+	if suffix, ok := exchangeSuffixes[sec.Exchange]; ok {
+		return sec.Symbol + suffix
+	}
+	return sec.Symbol
 }
 
 // FetchPrices fetches current prices from Yahoo Finance.
@@ -92,7 +97,7 @@ func (p *YahooProvider) FetchPrices(ctx context.Context, securities []Security) 
 	tickerToSec := make(map[string]Security, len(securities))
 	tickers := make([]string, 0, len(securities))
 	for _, sec := range securities {
-		ticker := buildYahooSymbol(sec.Symbol, sec.Exchange)
+		ticker := buildYahooSymbol(sec)
 		tickerToSec[ticker] = sec
 		tickers = append(tickers, ticker)
 	}
