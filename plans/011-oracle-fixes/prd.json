@@ -1,0 +1,289 @@
+[
+  {
+    "id": "1.1",
+    "category": "migration",
+    "passes": true,
+    "description": "Add provider_symbol column to securities table via migration 000017",
+    "steps": [
+      "Create apps/api/migrations/000017_add_provider_symbol.up.sql",
+      "SQL: ALTER TABLE securities ADD COLUMN provider_symbol VARCHAR(50) DEFAULT '';",
+      "Create apps/api/migrations/000017_add_provider_symbol.down.sql",
+      "SQL: ALTER TABLE securities DROP COLUMN provider_symbol;",
+      "Run go build ./... from apps/api/ to verify compilation"
+    ]
+  },
+  {
+    "id": "1.2",
+    "category": "model",
+    "passes": true,
+    "description": "Add ProviderSymbol field to Security model",
+    "steps": [
+      "Open apps/api/internal/models/security.go",
+      "Add ProviderSymbol string field after Exchange with gorm:\"default:''\" json:\"provider_symbol,omitempty\"",
+      "Run go build ./... from apps/api/"
+    ]
+  },
+  {
+    "id": "1.3",
+    "category": "handler",
+    "passes": true,
+    "description": "Add provider_symbol to CreateSecurityRequest and buildSecurityExtraFields",
+    "steps": [
+      "Open apps/api/internal/handlers/security_handler.go",
+      "Add ProviderSymbol string field to CreateSecurityRequest with json:\"provider_symbol,omitempty\"",
+      "Update buildSecurityExtraFields to extract provider_symbol when non-empty",
+      "Run go build ./... from apps/api/"
+    ]
+  },
+  {
+    "id": "1.4",
+    "category": "service",
+    "passes": true,
+    "description": "Add provider_symbol handling to applySecurityExtraFields in security service",
+    "steps": [
+      "Open apps/api/internal/services/security_service.go",
+      "Add provider_symbol case to applySecurityExtraFields: if v, ok := fields[\"provider_symbol\"].(string); ok { sec.ProviderSymbol = v }",
+      "Run go build ./... from apps/api/"
+    ]
+  },
+  {
+    "id": "1.5",
+    "category": "api-tests",
+    "passes": true,
+    "description": "Add provider_symbol test coverage to handler, service, and integration tests",
+    "steps": [
+      "Open apps/api/internal/handlers/security_handler_test.go",
+      "Add subtest to TestSecurityHandler_CreateSecurity: returns_201_with_provider_symbol — include provider_symbol in request JSON, verify service receives it via capturedExtraFields",
+      "Open apps/api/internal/services/security_service_test.go",
+      "Update with_extra_fields subtest in TestCreateSecurity to include provider_symbol and verify it persists",
+      "Open apps/api/tests/integration/security_flow_test.go",
+      "Add provider_symbol to a security creation in the full lifecycle test and verify it round-trips through GET",
+      "Run go test ./... -v from apps/api/"
+    ]
+  },
+  {
+    "id": "1.6",
+    "category": "api-verification",
+    "passes": true,
+    "description": "Full API verification after provider_symbol changes",
+    "steps": [
+      "Run ./scripts/check-go.sh apps/api",
+      "All 5 steps must pass: go build, go vet, golangci-lint, go test, go test -race"
+    ]
+  },
+  {
+    "id": "2.1",
+    "category": "oracle-client",
+    "passes": true,
+    "description": "Add ProviderSymbol to oracle client Security struct",
+    "steps": [
+      "Open apps/oracle/internal/client/kuberan.go",
+      "Add ProviderSymbol string field with json:\"provider_symbol\" tag to Security struct",
+      "Run go build ./... from apps/oracle/"
+    ]
+  },
+  {
+    "id": "2.2",
+    "category": "oracle-provider",
+    "passes": true,
+    "description": "Add ProviderSymbol to oracle provider Security struct",
+    "steps": [
+      "Open apps/oracle/internal/provider/provider.go",
+      "Add ProviderSymbol string field to Security struct (no JSON tags — internal use only)",
+      "Run go build ./... from apps/oracle/"
+    ]
+  },
+  {
+    "id": "2.3",
+    "category": "oracle-orchestrator",
+    "passes": true,
+    "description": "Map ProviderSymbol in client-to-provider conversion in oracle orchestrator",
+    "steps": [
+      "Open apps/oracle/internal/oracle/oracle.go",
+      "In the conversion loop (around line 84), add: ProviderSymbol: s.ProviderSymbol,",
+      "Run go build ./... from apps/oracle/"
+    ]
+  },
+  {
+    "id": "2.4",
+    "category": "oracle-yahoo",
+    "passes": true,
+    "description": "Update buildYahooSymbol to use ProviderSymbol when set",
+    "steps": [
+      "Open apps/oracle/internal/provider/yahoo.go",
+      "Change buildYahooSymbol signature to accept a Security struct instead of (symbol, exchange)",
+      "Add check: if sec.ProviderSymbol is non-empty, return it directly",
+      "Otherwise fall back to existing symbol + exchange suffix logic",
+      "Update all call sites in FetchPrices to pass the Security struct",
+      "Run go build ./... from apps/oracle/"
+    ]
+  },
+  {
+    "id": "2.5",
+    "category": "oracle-tests",
+    "passes": true,
+    "description": "Add ProviderSymbol test coverage to oracle tests",
+    "steps": [
+      "Open apps/oracle/internal/provider/yahoo_test.go",
+      "Add TestYahooProvider_FetchPrices_ProviderSymbol: security with ProviderSymbol '1023.KL' and Exchange 'BURSA'; verify HTTP request uses 1023.KL not CIMB.KL",
+      "Update TestYahooProvider_FetchPrices_ExchangeSuffix to use Security struct in assertions",
+      "Open apps/oracle/internal/oracle/oracle_test.go",
+      "Add ProviderSymbol field to at least one security in TestOracle_Run_FullFlow or TestOracle_Run_MixedCaseAssetTypes",
+      "Open apps/oracle/internal/client/kuberan_test.go",
+      "Update TestGetSecurities_Success mock response to include provider_symbol field; verify it's parsed",
+      "Run go test ./... -v from apps/oracle/"
+    ]
+  },
+  {
+    "id": "2.6",
+    "category": "oracle-verification",
+    "passes": true,
+    "description": "Oracle verification after provider_symbol changes (before v8 migration)",
+    "steps": [
+      "Run ./scripts/check-go.sh apps/oracle",
+      "All 5 steps must pass: go build, go vet, golangci-lint, go test, go test -race"
+    ]
+  },
+  {
+    "id": "3.1",
+    "category": "oracle-yahoo-v8",
+    "passes": true,
+    "description": "Update Yahoo response types and constants for v8 chart endpoint",
+    "steps": [
+      "Open apps/oracle/internal/provider/yahoo.go",
+      "Change yahooBaseURL to https://query1.finance.yahoo.com/v8/finance/chart",
+      "Remove yahooBatchMax constant",
+      "Add yahooMaxConcurrent = 10 constant",
+      "Remove yahooQuoteResponse and yahooQuoteResult structs",
+      "Add yahooChartResponse struct: Chart.Result[].Meta.Symbol + Meta.RegularMarketPrice, Chart.Error with Code + Description",
+      "Run go build ./... from apps/oracle/ — expect compilation errors from removed types"
+    ]
+  },
+  {
+    "id": "3.2",
+    "category": "oracle-yahoo-v8",
+    "passes": true,
+    "description": "Implement fetchOne method for v8 per-symbol requests",
+    "steps": [
+      "Open apps/oracle/internal/provider/yahoo.go",
+      "Add fetchOne(ctx, ticker string, secID uint, now time.Time) (*PriceResult, error) method",
+      "Build URL: baseURL + / + ticker + ?interval=1d&range=1d",
+      "Set User-Agent header",
+      "Parse yahooChartResponse",
+      "If chart.result is nil/empty or chart.error is non-nil, return descriptive error",
+      "Extract regularMarketPrice from chart.result[0].meta",
+      "If price is 0, return error",
+      "Convert to cents via math.Round(price * 100)",
+      "Return PriceResult with secID, cents price, and now timestamp"
+    ]
+  },
+  {
+    "id": "3.3",
+    "category": "oracle-yahoo-v8",
+    "passes": true,
+    "description": "Rewrite FetchPrices for concurrent per-symbol fetching with semaphore",
+    "steps": [
+      "Open apps/oracle/internal/provider/yahoo.go",
+      "Rewrite FetchPrices to iterate securities and launch goroutines",
+      "Create semaphore: sem := make(chan struct{}, yahooMaxConcurrent)",
+      "For each security: build Yahoo ticker via buildYahooSymbol, launch goroutine that acquires sem, calls fetchOne, appends result or error to mutex-protected slices, releases sem",
+      "Use sync.WaitGroup to wait for all goroutines",
+      "Remove fetchBatch method",
+      "Remove batchErrors helper function",
+      "Run go build ./... from apps/oracle/"
+    ]
+  },
+  {
+    "id": "3.4",
+    "category": "oracle-yahoo-v8-tests",
+    "passes": true,
+    "description": "Update Yahoo tests for v8 response format and concurrent fetching",
+    "steps": [
+      "Open apps/oracle/internal/provider/yahoo_test.go",
+      "Update mock server to serve per-symbol at /{ticker} path instead of ?symbols= query param",
+      "Mock handler: extract ticker from r.URL.Path, return v8 chart response with correct price",
+      "Update TestYahooProvider_Supports — no changes needed",
+      "Update TestYahooProvider_FetchPrices_Success — v8 mock, 3 symbols, verify 3 results with correct cents",
+      "Update TestYahooProvider_FetchPrices_PartialFailure — mock returns chart error for one symbol, success for others",
+      "Update TestYahooProvider_FetchPrices_ExchangeSuffix — verify request path includes SHOP.TO",
+      "Remove TestYahooProvider_FetchPrices_BatchSplit — batching no longer exists",
+      "Add TestYahooProvider_FetchPrices_Concurrent — create 15 securities, verify all fetched; use atomic counter to verify max concurrent requests stays within limit",
+      "Update TestYahooProvider_FetchPrices_HTTPError — mock returns 500, verify FetchErrors",
+      "Update TestYahooProvider_FetchPrices_ZeroPrice — v8 format, verify FetchError",
+      "Add TestYahooProvider_FetchPrices_ChartError — mock returns {chart: {result: null, error: {code: 'Not Found'}}} for delisted symbol; verify FetchError",
+      "Run go test ./internal/provider/ -v -run TestYahoo from apps/oracle/"
+    ]
+  },
+  {
+    "id": "3.5",
+    "category": "oracle-verification",
+    "passes": true,
+    "description": "Full oracle verification after v7 to v8 migration",
+    "steps": [
+      "Run ./scripts/check-go.sh apps/oracle",
+      "All 5 steps must pass: go build, go vet, golangci-lint, go test, go test -race"
+    ]
+  },
+  {
+    "id": "4.1",
+    "category": "verification",
+    "passes": true,
+    "description": "Full API verification",
+    "steps": [
+      "Run ./scripts/check-go.sh apps/api",
+      "All 5 steps must pass: go build, go vet, golangci-lint, go test, go test -race"
+    ]
+  },
+  {
+    "id": "4.2",
+    "category": "verification",
+    "passes": true,
+    "description": "Full oracle verification",
+    "steps": [
+      "Run ./scripts/check-go.sh apps/oracle",
+      "All 5 steps must pass: go build, go vet, golangci-lint, go test, go test -race"
+    ]
+  },
+  {
+    "id": "4.3",
+    "category": "verification",
+    "passes": true,
+    "description": "Docker build and live test",
+    "steps": [
+      "Ensure docker compose stack is running: docker compose up -d",
+      "Run migration: the API auto-runs migrations on start in development",
+      "Rebuild oracle: docker compose --profile oracle build oracle",
+      "Run oracle: docker compose --profile oracle run --rm oracle",
+      "Verify CoinGecko prices recorded (crypto securities)",
+      "Verify Yahoo v8 prices recorded (stock/ETF/REIT securities with valid Yahoo symbols)",
+      "Verify portfolio snapshots computed",
+      "Verify BURSA securities without provider_symbol fail gracefully (FetchError logged, not crash)",
+      "Verify oracle exit code is 0 (full success) or 2 (partial success with BURSA errors)"
+    ]
+  },
+  {
+    "id": "4.4",
+    "category": "verification",
+    "passes": true,
+    "description": "Final verification checklist",
+    "steps": [
+      "Verify migration applies cleanly: provider_symbol column added to securities table",
+      "Verify migration rolls back cleanly: column dropped",
+      "Verify POST /api/v1/pipeline/securities accepts provider_symbol in request body",
+      "Verify GET /api/v1/pipeline/securities returns provider_symbol in response",
+      "Verify provider_symbol is optional — omitting it defaults to empty string",
+      "Verify oracle receives provider_symbol from API and passes it to Yahoo provider",
+      "Verify Yahoo provider uses provider_symbol when non-empty (e.g., 1023.KL)",
+      "Verify Yahoo provider falls back to symbol + exchange suffix when provider_symbol is empty",
+      "Verify Yahoo v8 endpoint returns prices for US stocks",
+      "Verify Yahoo v8 endpoint returns prices for international stocks with exchange suffixes",
+      "Verify Yahoo v8 concurrent fetching works for 20+ symbols",
+      "Verify Yahoo v8 handles 'Not Found' errors gracefully (FetchError per symbol)",
+      "Verify CoinGecko provider continues to work unchanged",
+      "Verify all API tests pass (build, vet, lint, test, test -race)",
+      "Verify all oracle tests pass (build, vet, lint, test, test -race)",
+      "Verify Docker image builds successfully",
+      "Verify no //nolint directives without justification"
+    ]
+  }
+]

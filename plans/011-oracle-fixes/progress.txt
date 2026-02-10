@@ -1,0 +1,141 @@
+## Pre-plan fixes (completed before plan was written)
+
+### Asset type normalization
+- Added `normalizeAssetType()` in `apps/oracle/internal/oracle/oracle.go`
+- Lowercases asset types and maps `"cryptocurrency"` → `"crypto"`
+- Applied at client→provider conversion point
+- Tests added: `TestNormalizeAssetType` (16 cases), `TestOracle_Run_MixedCaseAssetTypes`
+
+### Lint fixes
+- Fixed errcheck violations across oracle codebase:
+  - `internal/client/kuberan.go`: 3x `defer resp.Body.Close()` → `defer func() { _ = resp.Body.Close() }()`
+  - `internal/client/kuberan_test.go`: 5x unchecked `json.NewEncoder(w).Encode(...)` → `_ = json.NewEncoder(w).Encode(...)`
+  - `internal/provider/coingecko.go`: 1x `defer resp.Body.Close()`
+  - `internal/provider/yahoo.go`: 1x `defer resp.Body.Close()`
+  - `internal/provider/coingecko_test.go`: 2x unchecked Encode
+  - `internal/provider/yahoo_test.go`: 5x unchecked Encode
+
+### Docker compose fix
+- Added `PIPELINE_API_KEY=${PIPELINE_API_KEY}` to API service environment in `docker-compose.yml`
+- Without this, API returned 503 PIPELINE_NOT_CONFIGURED on all pipeline endpoints
+
+### Status
+- `./scripts/check-go.sh apps/oracle` passes (all 5 steps, 0 lint issues)
+- Oracle runs successfully: CoinGecko fetches 2 crypto prices, Yahoo returns 401 on v7 (to be fixed in Phase 3)
+
+## Phase 1: Add `provider_symbol` to API (PRD 1.1–1.6)
+
+### Migration (1.1)
+- Created `000017_add_provider_symbol.up.sql`: `ALTER TABLE securities ADD COLUMN provider_symbol VARCHAR(50) DEFAULT ''`
+- Created `000017_add_provider_symbol.down.sql`: `ALTER TABLE securities DROP COLUMN provider_symbol`
+
+### Model (1.2)
+- Added `ProviderSymbol string` field to `Security` struct in `models/security.go` after `Exchange`
+- Tags: `gorm:"default:''" json:"provider_symbol,omitempty"`
+
+### Handler (1.3)
+- Added `ProviderSymbol string` to `CreateSecurityRequest` with `json:"provider_symbol,omitempty"`
+- Added `provider_symbol` extraction in `buildSecurityExtraFields`
+
+### Service (1.4)
+- Added `provider_symbol` handling in `applySecurityExtraFields`
+
+### Tests (1.5)
+- Handler: added `returns_201_with_provider_symbol` subtest — verifies extraFields propagation and response
+- Service: added `with_provider_symbol` subtest — verifies persistence and re-read
+- Integration: added `TestSecurityFlow_ProviderSymbolRoundTrip` — create→GET→pipeline list round-trip
+- Also added missing `GET /pipeline/securities` route to integration test setup (was in production but not test setup)
+
+### Verification (1.6)
+- `./scripts/check-go.sh apps/api` passes all 5 steps (build, vet, lint, test, test -race)
+
+## Phase 2: Propagate `provider_symbol` to Oracle (PRD 2.1–2.6)
+
+### Client struct (2.1)
+- Added `ProviderSymbol string` with `json:"provider_symbol"` to `client.Security` after `Exchange`
+
+### Provider struct (2.2)
+- Added `ProviderSymbol string` to `provider.Security` after `Exchange`
+
+### Orchestrator mapping (2.3)
+- Added `ProviderSymbol: s.ProviderSymbol` to client→provider conversion in `oracle.go`
+
+### buildYahooSymbol update (2.4)
+- Changed signature from `buildYahooSymbol(symbol, exchange string)` to `buildYahooSymbol(sec Security)`
+- Returns `sec.ProviderSymbol` directly when non-empty, falls back to symbol+suffix
+
+### Tests (2.5)
+- Client: updated mock to include `provider_symbol: "1023.KL"` for CIMB, added assertions
+- Yahoo: added `TestYahooProvider_FetchPrices_ProviderSymbol` — verifies 1023.KL used instead of CIMB.KL
+- Oracle: added ProviderSymbol to FullFlow test, verified it propagates to mock provider
+
+### Verification (2.6)
+- `./scripts/check-go.sh apps/oracle` passes all 5 steps (build, vet, lint, test, test -race)
+
+## Phase 3: Switch Yahoo from v7 to v8 Endpoint (PRD 3.1–3.5)
+
+### Response types & constants (3.1)
+- Replaced `yahooQuoteResponse`/`yahooQuoteResult` with `yahooChartResponse` (v8 chart format)
+- Changed `yahooBaseURL` from v7 `/quote` to v8 `/chart`
+- Removed `yahooBatchMax = 50`, added `yahooMaxConcurrent = 10`
+- Removed `strings` import (no longer joining symbols for batch query)
+- Added `sync` import for mutex + WaitGroup
+
+### fetchOne method (3.2)
+- New method `fetchOne(ctx, ticker, secID, now)` → `(*PriceResult, error)`
+- URL: `{baseURL}/{ticker}?interval=1d&range=1d`
+- Parses `yahooChartResponse`, checks `chart.error`, empty results, zero price
+- Converts to cents via `math.Round(price * 100)`
+
+### Concurrent FetchPrices (3.3)
+- Rewrote `FetchPrices` to use goroutines with semaphore (buffered chan, cap 10)
+- Each security: goroutine acquires sem → calls fetchOne → appends to mutex-protected slices
+- WaitGroup for synchronization
+- Removed `fetchBatch` method and `batchErrors` helper
+
+### Tests (3.4)
+- Created `v8ChartResponse(symbol, price)` and `v8ChartErrorResponse(code, desc)` test helpers
+- Created `newV8MockServer(priceMap)` — serves per-symbol at `/{ticker}` path
+- Updated all existing tests to v8 format (mock server per-symbol, path-based routing)
+- Removed `TestYahooProvider_FetchPrices_BatchSplit` (batching no longer exists)
+- Added `TestYahooProvider_FetchPrices_Concurrent` — 15 securities, verifies all fetched, peak concurrency ≤ 10 via atomic counter
+- Added `TestYahooProvider_FetchPrices_ChartError` — verifies chart error response → FetchError
+- `ExchangeSuffix` and `ProviderSymbol` tests now verify request paths instead of query params
+
+### Verification (3.5)
+- `./scripts/check-go.sh apps/oracle` passes all 5 steps (build, vet, lint, test, test -race)
+- `./scripts/check-go.sh apps/api` also passes all 5 steps
+
+### Files changed
+- `apps/oracle/internal/provider/yahoo.go` — complete rewrite for v8
+- `apps/oracle/internal/provider/yahoo_test.go` — complete rewrite for v8 format
+
+## Phase 4: Final Verification (PRD 4.1–4.4)
+
+### Full checks (4.1, 4.2)
+- `./scripts/check-go.sh apps/api` — all 5 steps pass
+- `./scripts/check-go.sh apps/oracle` — all 5 steps pass
+
+### Docker build & live test (4.3)
+- Docker image builds successfully (`docker compose --profile oracle build oracle`)
+- Oracle run results: 22 securities fetched, 8 prices recorded, 1 snapshot recorded, 14 errors
+- CoinGecko: 2 crypto prices fetched successfully
+- Yahoo v8: 6 stock/ETF prices fetched successfully (US + international with valid symbols)
+- BURSA securities without `provider_symbol`: 404 errors (graceful FetchError, no crash)
+- Exit code 2 (partial success) — expected due to BURSA securities needing `provider_symbol` population
+
+### Verification checklist (4.4)
+All items verified:
+- Migration applies cleanly (column exists in DB)
+- POST /pipeline/securities accepts `provider_symbol` (tested with curl, 201)
+- GET /pipeline/securities returns `provider_symbol` when non-empty (verified round-trip)
+- `provider_symbol` optional — existing securities omit it via `omitempty`
+- Oracle receives and propagates `provider_symbol` to Yahoo provider
+- Yahoo uses `provider_symbol` when set, falls back to symbol+suffix when empty
+- Yahoo v8 works for US stocks, international stocks with suffixes
+- Concurrent fetching handles 20 Yahoo symbols without rate limiting
+- 404 errors handled gracefully (per-symbol FetchError)
+- CoinGecko unchanged and working
+- All tests pass (API + oracle, including -race)
+- Docker image builds
+- No `//nolint` without justification (only 1, has justification comment)
