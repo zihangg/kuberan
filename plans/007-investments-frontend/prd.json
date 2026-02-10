@@ -1,0 +1,435 @@
+[
+  {
+    "id": "1.1",
+    "category": "backend",
+    "passes": true,
+    "description": "Update SecurityServicer interface to accept search parameter in ListSecurities",
+    "steps": [
+      "Open apps/api/internal/services/interfaces.go",
+      "Change ListSecurities(page pagination.PageRequest) to ListSecurities(search string, page pagination.PageRequest)",
+      "Run go build ./... from apps/api/ — expect failures in service/handler/tests until they are updated"
+    ]
+  },
+  {
+    "id": "1.2",
+    "category": "backend",
+    "passes": true,
+    "description": "Update security service implementation to filter by search term using LIKE on symbol and name",
+    "steps": [
+      "Open apps/api/internal/services/security_service.go",
+      "In ListSecurities: when search is non-empty, apply WHERE LOWER(symbol) LIKE ? OR LOWER(name) LIKE ? with %search% pattern (case-insensitive)",
+      "When search is empty, query all securities (existing behavior unchanged)",
+      "Run go build ./... from apps/api/"
+    ]
+  },
+  {
+    "id": "1.3",
+    "category": "backend",
+    "passes": true,
+    "description": "Update security handler to parse search query parameter and pass to service",
+    "steps": [
+      "Open apps/api/internal/handlers/security_handler.go",
+      "In ListSecurities handler: parse search query param via c.Query(\"search\")",
+      "Pass search to h.securityService.ListSecurities(search, page)",
+      "Update Swagger annotation to document optional search query parameter",
+      "Run go build ./... from apps/api/"
+    ]
+  },
+  {
+    "id": "1.4",
+    "category": "backend",
+    "passes": true,
+    "description": "Update security service tests for new ListSecurities signature and add search subtests",
+    "steps": [
+      "Open apps/api/internal/services/security_service_test.go",
+      "Update all existing ListSecurities calls to pass \"\" as first arg",
+      "Add subtest search_by_symbol: create AAPL, GOOGL, MSFT; search \"aapl\" returns 1 result",
+      "Add subtest search_by_name: search \"apple\" matches AAPL (Apple Inc.)",
+      "Add subtest search_case_insensitive: search \"AAPL\" and \"aapl\" both return same result",
+      "Add subtest search_empty_returns_all: search \"\" returns all securities",
+      "Run go test ./internal/services/ -v -run TestListSecurities from apps/api/"
+    ]
+  },
+  {
+    "id": "1.5",
+    "category": "backend",
+    "passes": true,
+    "description": "Update security handler tests for new ListSecurities mock signature and add search forwarding test",
+    "steps": [
+      "Open apps/api/internal/handlers/security_handler_test.go",
+      "Update mockSecurityService.ListSecurities signature: add search string parameter",
+      "Update mockSecurityService.listSecuritiesFn type to include search string",
+      "Add subtest passes_search_to_service: send GET /securities?search=aapl, verify mock receives \"aapl\"",
+      "Run go test ./internal/handlers/ -v -run TestSecurityHandler from apps/api/"
+    ]
+  },
+  {
+    "id": "1.6",
+    "category": "backend",
+    "passes": true,
+    "description": "Run full backend verification — all 5 check.sh steps must pass",
+    "steps": [
+      "Run ./scripts/check.sh from apps/api/",
+      "All 5 steps must pass: go build, go vet, golangci-lint, go test, go test -race",
+      "If any step fails, fix the issues and re-run"
+    ]
+  },
+  {
+    "id": "2.1",
+    "category": "frontend-types",
+    "passes": true,
+    "description": "Update models.ts — add Security, SecurityPrice, PortfolioSnapshot types; refactor Investment to use security_id + Security relation",
+    "steps": [
+      "Open apps/web/src/types/models.ts",
+      "Add Security interface extending BaseModel: symbol, name, asset_type, currency, exchange?, maturity_date?, yield_to_maturity?, coupon_rate?, network?, property_type?",
+      "Add SecurityPrice interface (no BaseModel): id, security_id, price (cents), recorded_at, security?",
+      "Add PortfolioSnapshot interface (no BaseModel): id, user_id, recorded_at, total_net_worth, cash_balance, investment_value, debt_balance (all cents)",
+      "Refactor Investment: remove symbol, name, asset_type, currency, exchange, maturity_date, yield_to_maturity, coupon_rate, network, property_type",
+      "Add to Investment: security_id (number), security (Security), account? (Account)",
+      "Keep on Investment: account_id, quantity, cost_basis, current_price, last_updated, wallet_address",
+      "Add investment? (Investment) optional relation to InvestmentTransaction",
+      "Run npm run build from apps/web/"
+    ]
+  },
+  {
+    "id": "2.2",
+    "category": "frontend-types",
+    "passes": true,
+    "description": "Update api.ts — add all investment, security, and snapshot request/response types",
+    "steps": [
+      "Open apps/web/src/types/api.ts",
+      "Add imports: Investment, InvestmentTransaction, PortfolioSummary, Security from models",
+      "Add InvestmentResponse: { investment: Investment }",
+      "Add InvestmentTransactionResponse: { transaction: InvestmentTransaction }",
+      "Add SecurityResponse: { security: Security }",
+      "Add PortfolioResponse: { portfolio: PortfolioSummary }",
+      "Add AddInvestmentRequest: account_id, security_id, quantity, purchase_price, wallet_address?",
+      "Add RecordBuyRequest: date, quantity, price_per_unit, fee?, notes?",
+      "Add RecordSellRequest: date, quantity, price_per_unit, fee?, notes?",
+      "Add RecordDividendRequest: date, amount, dividend_type?, notes?",
+      "Add RecordSplitRequest: date, split_ratio, notes?",
+      "Add UpdatePriceRequest: current_price",
+      "Add SecurityFilters extends PaginationParams: search?",
+      "Add PortfolioSnapshotFilters extends PaginationParams: from_date, to_date",
+      "Run npm run build from apps/web/"
+    ]
+  },
+  {
+    "id": "3.1",
+    "category": "frontend-hooks",
+    "passes": true,
+    "description": "Create use-investments.ts with 10 hooks for portfolio, CRUD, buy/sell/dividend/split, and price update",
+    "steps": [
+      "Create apps/web/src/hooks/use-investments.ts",
+      "Define investmentKeys factory: all, portfolio, lists, list(accountId, params?), details, detail(id), transactions(id, params?)",
+      "usePortfolio: GET /api/v1/investments/portfolio, unwrap res.portfolio",
+      "useInvestment(id): GET /api/v1/investments/:id, unwrap res.investment, enabled when id > 0",
+      "useAccountInvestments(accountId, params?): GET /api/v1/accounts/:accountId/investments, returns PageResponse<Investment>",
+      "useInvestmentTransactions(investmentId, params?): GET /api/v1/investments/:id/transactions, returns PageResponse<InvestmentTransaction>",
+      "useAddInvestment: POST /api/v1/investments, invalidates investmentKeys.all + accountKeys.all",
+      "useRecordBuy(investmentId): POST /api/v1/investments/:id/buy, invalidates investmentKeys.all + accountKeys.all",
+      "useRecordSell(investmentId): POST /api/v1/investments/:id/sell, invalidates investmentKeys.all + accountKeys.all",
+      "useRecordDividend(investmentId): POST /api/v1/investments/:id/dividend, invalidates investmentKeys.all",
+      "useRecordSplit(investmentId): POST /api/v1/investments/:id/split, invalidates investmentKeys.all",
+      "useUpdateInvestmentPrice(investmentId): PUT /api/v1/investments/:id/price, invalidates investmentKeys.all + accountKeys.all",
+      "Run npm run build from apps/web/"
+    ]
+  },
+  {
+    "id": "3.2",
+    "category": "frontend-hooks",
+    "passes": true,
+    "description": "Create use-securities.ts with 3 hooks for list (with search), detail, and price history",
+    "steps": [
+      "Create apps/web/src/hooks/use-securities.ts",
+      "Define securityKeys factory: all, lists, list(params?), details, detail(id), prices(id, from, to)",
+      "useSecurities(params?): GET /api/v1/securities with search + pagination, returns PageResponse<Security>",
+      "useSecurity(id): GET /api/v1/securities/:id, unwrap res.security, enabled when id > 0",
+      "useSecurityPriceHistory(id, from, to, params?): GET /api/v1/securities/:id/prices with from_date/to_date, returns PageResponse<SecurityPrice>, enabled when id > 0 and dates set",
+      "Run npm run build from apps/web/"
+    ]
+  },
+  {
+    "id": "3.3",
+    "category": "frontend-hooks",
+    "passes": true,
+    "description": "Create use-portfolio-snapshots.ts with snapshot time-series hook",
+    "steps": [
+      "Create apps/web/src/hooks/use-portfolio-snapshots.ts",
+      "Define snapshotKeys factory: all, list(params)",
+      "usePortfolioSnapshots(params): GET /api/v1/investments/snapshots with from_date/to_date + pagination, returns PageResponse<PortfolioSnapshot>, enabled when both dates are set",
+      "Run npm run build from apps/web/"
+    ]
+  },
+  {
+    "id": "4.1",
+    "category": "frontend-pages",
+    "passes": true,
+    "description": "Create securities browse page with debounced search, paginated table, and navigation to detail",
+    "steps": [
+      "Create apps/web/src/app/(dashboard)/securities/page.tsx as 'use client'",
+      "Add debounced search input: useState for search and debouncedSearch, useEffect timer (300ms)",
+      "Use useSecurities({ search: debouncedSearch, page, page_size: 20 })",
+      "Three render states: loading (Skeleton rows), empty (friendly message), data (table)",
+      "Table columns: Symbol (monospace font-semibold), Name, Type (Badge), Currency, Exchange",
+      "Row click navigates to /securities/[id] via useRouter",
+      "Pagination controls: Previous/Next buttons, Page X of Y text",
+      "Run npm run build from apps/web/"
+    ]
+  },
+  {
+    "id": "4.2",
+    "category": "frontend-pages",
+    "passes": true,
+    "description": "Create security detail page with info cards, asset-specific fields, and price history table",
+    "steps": [
+      "Create apps/web/src/app/(dashboard)/securities/[id]/page.tsx as 'use client'",
+      "Back button linking to /securities",
+      "Security header: symbol, name, asset type badge",
+      "Info cards: Currency, Exchange (if present)",
+      "Asset-specific fields shown conditionally: bonds (Maturity Date, YTM, Coupon Rate), crypto (Network), REITs (Property Type)",
+      "Price history table with period selector tabs (1M, 3M, 6M, 1Y)",
+      "Use useSecurityPriceHistory with computed from_date based on selected period",
+      "Table columns: Date, Price (formatted via formatCurrency)",
+      "Pagination controls for price history",
+      "Loading skeleton and empty states",
+      "Run npm run build from apps/web/"
+    ]
+  },
+  {
+    "id": "5.1",
+    "category": "frontend-pages",
+    "passes": true,
+    "description": "Create portfolio/investments page with summary cards, net worth chart, and holdings breakdown by type",
+    "steps": [
+      "Create apps/web/src/app/(dashboard)/investments/page.tsx as 'use client'",
+      "Use usePortfolio() for summary data",
+      "Summary cards row (4 cards): Total Value, Cost Basis, Gain/Loss (green if positive, red if negative with formatCurrency + formatPercentage), Holdings Count",
+      "Net worth area chart using usePortfolioSnapshots with period selector (1M, 3M, 6M, 1Y, ALL)",
+      "Use Recharts AreaChart via ShadCN ChartContainer",
+      "X-axis: dates, Y-axis: total_net_worth formatted as currency",
+      "Empty state if no snapshots available (e.g., pipeline not yet run)",
+      "Holdings breakdown table from usePortfolio().holdings_by_type: Asset Type, Holdings Count, Total Value per type",
+      "Loading skeleton states for all sections",
+      "Run npm run build from apps/web/"
+    ]
+  },
+  {
+    "id": "6.1",
+    "category": "frontend-pages",
+    "passes": true,
+    "description": "Create investment detail page with stats cards, action buttons, and transaction history",
+    "steps": [
+      "Create apps/web/src/app/(dashboard)/investments/[id]/page.tsx as 'use client'",
+      "Back button linking to /investments",
+      "Use useInvestment(id) for investment data",
+      "Investment header: security.symbol + security.name, asset type badge",
+      "6 stat cards: Current Price, Quantity, Market Value (quantity * current_price), Cost Basis, Gain/Loss (market value - cost basis, green/red), Account (link to /accounts/:id)",
+      "Action buttons row: Buy, Sell, Dividend, Split — each opens respective dialog",
+      "State variables for each dialog open/close",
+      "Transaction history table: useInvestmentTransactions(id, { page, page_size: 20 })",
+      "Table columns: Date, Type (badge with color), Quantity, Price/Unit, Total Amount, Fee, Notes",
+      "Pagination controls",
+      "Loading skeleton and not-found states",
+      "Run npm run build from apps/web/"
+    ]
+  },
+  {
+    "id": "6.2",
+    "category": "frontend-components",
+    "passes": true,
+    "description": "Create Add Investment dialog with searchable security selector, quantity, price, and wallet address fields",
+    "steps": [
+      "Create apps/web/src/components/investments/add-investment-dialog.tsx",
+      "Props: accountId: number, open: boolean, onOpenChange: (open: boolean) => void",
+      "Security selector: ShadCN Command/Popover combobox with shouldFilter={false}",
+      "Debounced search (300ms) using useState + useEffect pattern",
+      "Uses useSecurities({ search: debouncedSearch, page_size: 20 }) for server-side search",
+      "CommandItem shows: Symbol (monospace), Name, Asset Type badge, Exchange",
+      "Quantity: number input with step='any' min=0",
+      "Purchase Price per unit: CurrencyInput component",
+      "Wallet Address: text input, conditionally shown only when selectedSecurity.asset_type === 'crypto'",
+      "Submit calls useAddInvestment() mutation",
+      "Success: toast notification, form reset, dialog close",
+      "Error: display ApiClientError message in error banner",
+      "Run npm run build from apps/web/"
+    ]
+  },
+  {
+    "id": "6.3",
+    "category": "frontend-components",
+    "passes": true,
+    "description": "Create Record Buy dialog with date, quantity, price, fee, and notes fields",
+    "steps": [
+      "Create apps/web/src/components/investments/record-buy-dialog.tsx",
+      "Props: investmentId: number, open: boolean, onOpenChange: (open: boolean) => void",
+      "Form fields: Date (date input), Quantity (number input step='any'), Price per Unit (CurrencyInput), Fee (CurrencyInput, optional, default 0), Notes (textarea, optional)",
+      "Date converted to RFC3339 via toRFC3339() before submission",
+      "Submit calls useRecordBuy(investmentId) mutation",
+      "Success: toast, form reset, dialog close",
+      "Error: display error message",
+      "Run npm run build from apps/web/"
+    ]
+  },
+  {
+    "id": "6.4",
+    "category": "frontend-components",
+    "passes": true,
+    "description": "Create Record Sell dialog with quantity validation against current holdings",
+    "steps": [
+      "Create apps/web/src/components/investments/record-sell-dialog.tsx",
+      "Props: investmentId: number, currentQuantity: number, open: boolean, onOpenChange",
+      "Same form fields as Record Buy dialog",
+      "Shows hint text: 'You hold X units' using currentQuantity prop",
+      "Client-side validation: quantity <= currentQuantity",
+      "Catches INSUFFICIENT_SHARES error code from backend and displays user-friendly message",
+      "Submit calls useRecordSell(investmentId) mutation",
+      "Success: toast, form reset, dialog close",
+      "Run npm run build from apps/web/"
+    ]
+  },
+  {
+    "id": "6.5",
+    "category": "frontend-components",
+    "passes": true,
+    "description": "Create Record Dividend dialog with amount, dividend type selector, and notes",
+    "steps": [
+      "Create apps/web/src/components/investments/record-dividend-dialog.tsx",
+      "Props: investmentId: number, open: boolean, onOpenChange",
+      "Form fields: Date (date input), Amount (CurrencyInput), Dividend Type (Select: Cash, Stock, Special), Notes (textarea, optional)",
+      "Submit calls useRecordDividend(investmentId) mutation",
+      "Success: toast, form reset, dialog close",
+      "Run npm run build from apps/web/"
+    ]
+  },
+  {
+    "id": "6.6",
+    "category": "frontend-components",
+    "passes": true,
+    "description": "Create Record Split dialog with split ratio input and notes",
+    "steps": [
+      "Create apps/web/src/components/investments/record-split-dialog.tsx",
+      "Props: investmentId: number, open: boolean, onOpenChange",
+      "Form fields: Date (date input), Split Ratio (number input step='any' min=0), Notes (textarea, optional)",
+      "Submit calls useRecordSplit(investmentId) mutation",
+      "Success: toast, form reset, dialog close",
+      "Run npm run build from apps/web/"
+    ]
+  },
+  {
+    "id": "7.1",
+    "category": "frontend-integration",
+    "passes": true,
+    "description": "Replace investment account placeholder card with real holdings table and Add Investment button",
+    "steps": [
+      "Open apps/web/src/app/(dashboard)/accounts/[id]/page.tsx",
+      "Add imports: useAccountInvestments from @/hooks/use-investments, AddInvestmentDialog from @/components/investments/add-investment-dialog",
+      "Add state variables: addInvestmentOpen (boolean), investmentPage (number, default 1)",
+      "Add query: useAccountInvestments(account?.type === 'investment' ? accountId : 0, { page: investmentPage, page_size: 20 })",
+      "Replace placeholder card (lines 420-430) with full investments Card component",
+      "Card header: 'Investments' title, item count CardDescription, 'Add Investment' button",
+      "Holdings table columns: Symbol (monospace, linked to /investments/:id), Name, Qty, Current Price, Market Value (qty * current_price), Gain/Loss per holding",
+      "Loading state: Skeleton rows while investmentsLoading",
+      "Empty state: 'No investments yet' with 'Add your first investment' message",
+      "Pagination controls for holdings table",
+      "Render AddInvestmentDialog at bottom with accountId prop",
+      "Run npm run build from apps/web/"
+    ]
+  },
+  {
+    "id": "8.1",
+    "category": "frontend-integration",
+    "passes": true,
+    "description": "Add Securities nav item to sidebar between Budgets and Investments",
+    "steps": [
+      "Open apps/web/src/components/layout/app-sidebar.tsx",
+      "Import Database icon from lucide-react",
+      "Add { title: 'Securities', href: '/securities', icon: Database } to navItems array between Budgets and Investments entries",
+      "Run npm run build from apps/web/"
+    ]
+  },
+  {
+    "id": "8.2",
+    "category": "frontend-integration",
+    "passes": true,
+    "description": "Enhance dashboard investments card to show real portfolio value and gain/loss from usePortfolio()",
+    "steps": [
+      "Open apps/web/src/app/(dashboard)/page.tsx",
+      "Import usePortfolio from @/hooks/use-investments",
+      "Call usePortfolio() in SummaryCards component (or pass data as prop from parent)",
+      "Replace Investments card content: use portfolio.total_value instead of account balance sum",
+      "Add gain/loss display below value: formatCurrency(portfolio.total_gain_loss) with formatPercentage(portfolio.gain_loss_pct)",
+      "Color: green for positive gain, red for negative",
+      "Graceful fallback: if usePortfolio() is loading or returns error, fall back to existing account-balance-based calculation",
+      "Update investment count to show portfolio holdings count if available",
+      "Run npm run build from apps/web/"
+    ]
+  },
+  {
+    "id": "9.1",
+    "category": "verification",
+    "passes": true,
+    "description": "Run frontend lint — zero warnings and errors",
+    "steps": [
+      "Run npm run lint from apps/web/",
+      "Fix any lint warnings or errors that appear",
+      "Re-run until clean"
+    ]
+  },
+  {
+    "id": "9.2",
+    "category": "verification",
+    "passes": true,
+    "description": "Run frontend build — all routes compile successfully",
+    "steps": [
+      "Run npm run build from apps/web/",
+      "Verify all routes compile: /, /accounts, /accounts/[id], /transactions, /categories, /budgets, /securities, /securities/[id], /investments, /investments/[id]",
+      "Fix any build errors"
+    ]
+  },
+  {
+    "id": "9.3",
+    "category": "verification",
+    "passes": true,
+    "description": "Run full backend verification — all 5 check.sh steps must pass",
+    "steps": [
+      "Run ./scripts/check.sh from apps/api/",
+      "All 5 steps: go build, go vet, golangci-lint, go test, go test -race",
+      "Fix any failures"
+    ]
+  },
+  {
+    "id": "9.4",
+    "category": "verification",
+    "passes": true,
+    "description": "Regenerate Swagger docs and verify search param appears on GET /securities",
+    "steps": [
+      "Run swag init -g cmd/api/main.go -d . --output internal/docs --parseDependency from apps/api/",
+      "Verify search query param appears on GET /api/v1/securities endpoint in swagger.json",
+      "Run go build ./... to ensure generated docs compile"
+    ]
+  },
+  {
+    "id": "9.5",
+    "category": "verification",
+    "passes": true,
+    "description": "Final verification checklist — all items must be confirmed",
+    "steps": [
+      "Verify ListSecurities backend endpoint supports search query parameter",
+      "Verify frontend Investment type matches backend model (security_id + Security relation)",
+      "Verify all new hooks follow established pattern (query key factories, unwrap wrappers, invalidate on mutation)",
+      "Verify securities page has working search with debounce",
+      "Verify security detail page shows asset-specific fields conditionally",
+      "Verify portfolio page shows summary cards, net worth chart, and holdings breakdown",
+      "Verify investment detail page shows stats, action buttons, and transaction history",
+      "Verify all 5 action dialogs (Add, Buy, Sell, Dividend, Split) work with correct API calls",
+      "Verify account detail page shows real holdings table for investment accounts",
+      "Verify sidebar includes Securities nav item",
+      "Verify dashboard investments card shows portfolio value (not account balance)",
+      "Verify no TypeScript any types",
+      "Verify no lint warnings",
+      "Verify frontend builds successfully",
+      "Verify backend passes full check.sh"
+    ]
+  }
+]

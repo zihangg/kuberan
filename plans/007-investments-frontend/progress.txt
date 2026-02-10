@@ -1,0 +1,213 @@
+## Phase 1: Backend — Add Search to ListSecurities (PRD 1.1–1.6) ✅
+
+Tasks completed: 1.1, 1.2, 1.3, 1.4, 1.5, 1.6
+
+Changes:
+- interfaces.go: ListSecurities now accepts `search string` as first param
+- security_service.go: When search non-empty, applies `LOWER(symbol) LIKE ? OR LOWER(name) LIKE ?` with %search% pattern; uses strings.TrimSpace+ToLower
+- security_handler.go: Parses `search` query param via c.Query("search"), passes to service; updated Swagger annotation
+- security_service_test.go: Updated existing calls to pass ""; added 4 subtests: search_by_symbol, search_by_name, search_case_insensitive, search_empty_returns_all
+- security_handler_test.go: Updated mock signature (search string param); added passes_search_to_service test
+
+Verification: ./scripts/check.sh — all 5 steps pass (build, vet, lint, test, test -race)
+
+## Phase 2: Frontend Types Update (PRD 2.1–2.2) ✅
+
+Tasks completed: 2.1, 2.2
+
+Changes:
+- models.ts: Added Security (extends BaseModel), SecurityPrice (no BaseModel), PortfolioSnapshot (no BaseModel)
+- models.ts: Refactored Investment — removed denormalized fields (symbol, name, asset_type, currency, exchange, maturity_date, yield_to_maturity, coupon_rate, network, property_type); added security_id + security (Security) + account? (Account)
+- models.ts: Added investment? optional relation to InvestmentTransaction
+- api.ts: Added imports for Investment, InvestmentTransaction, PortfolioSummary, Security
+- api.ts: Added response wrappers: InvestmentResponse, InvestmentTransactionResponse, SecurityResponse, PortfolioResponse
+- api.ts: Added request types: AddInvestmentRequest, RecordBuyRequest, RecordSellRequest, RecordDividendRequest, RecordSplitRequest, UpdatePriceRequest
+- api.ts: Added filter types: SecurityFilters, PortfolioSnapshotFilters
+
+No existing frontend code referenced old denormalized Investment fields — clean update.
+
+Verification: npm run build + npm run lint — both pass clean
+
+## Phase 3: React Query Hooks (PRD 3.1–3.3) ✅
+
+Tasks completed: 3.1, 3.2, 3.3
+
+Changes:
+- use-investments.ts: 10 hooks — usePortfolio, useInvestment, useAccountInvestments, useInvestmentTransactions, useAddInvestment, useRecordBuy, useRecordSell, useRecordDividend, useRecordSplit, useUpdateInvestmentPrice
+- use-securities.ts: 3 hooks — useSecurities (with search/pagination), useSecurity, useSecurityPriceHistory
+- use-portfolio-snapshots.ts: 1 hook — usePortfolioSnapshots (with from_date/to_date + pagination)
+- All follow established patterns: query key factories, response unwrapping, conditional enabled flags, cross-entity invalidation
+- Mutations invalidate investmentKeys.all + accountKeys.all where account balances may change (buy/sell/add/price update); dividend/split only invalidate investmentKeys.all
+
+Verification: npm run build + npm run lint — both pass clean
+
+## Phase 4.1: Securities Browse Page (PRD 4.1) ✅
+
+Task completed: 4.1
+
+Changes:
+- Created apps/web/src/app/(dashboard)/securities/page.tsx
+- "use client" page with debounced search input (300ms, useEffect timer pattern)
+- useSecurities({ search, page, page_size: 20 }) query
+- Three render states: loading (Skeleton rows), empty (search vs no-data messages), data table
+- Table columns: Symbol (monospace font-semibold), Name, Type (Badge), Currency, Exchange
+- Row click navigates to /securities/[id] via useRouter
+- Pagination: Previous/Next buttons, "Page X of Y"
+- Follows transactions page pattern exactly (skeleton, empty state, pagination)
+
+Verification: npm run build + npm run lint — both pass clean
+
+## Phase 4.2: Security Detail Page (PRD 4.2) ✅
+
+Task completed: 4.2
+
+Changes:
+- Created apps/web/src/app/(dashboard)/securities/[id]/page.tsx
+- "use client" page using useSecurity(id) + useSecurityPriceHistory(id, from, to)
+- Back button linking to /securities
+- Header: symbol (monospace bold), name, asset type badge
+- Info cards: Currency, Exchange (conditional)
+- Asset-specific fields: bonds (Maturity Date, YTM, Coupon Rate), crypto (Network), REITs (Property Type) — all conditional
+- Price history Card with Tabs period selector (1M, 3M, 6M, 1Y) using ShadCN Tabs
+- Price table: Date, Price (formatCurrency with security's currency)
+- Pagination, loading skeleton, not-found state, empty price data state
+- Follows accounts/[id] detail page patterns
+
+Verification: npm run build + npm run lint — both pass clean
+
+## Phase 5.1: Portfolio/Investments Page (PRD 5.1) ✅
+
+Task completed: 5.1
+
+Changes:
+- Created apps/web/src/app/(dashboard)/investments/page.tsx
+- "use client" page using usePortfolio() for summary data + usePortfolioSnapshots() for net worth chart
+- 4 summary cards: Total Value, Cost Basis, Gain/Loss (green/red + percentage), Holdings Count
+- Net worth AreaChart via ChartContainer with period selector tabs (1M, 3M, 6M, 1Y, ALL)
+- Gradient fill area chart with custom tooltip showing formatCurrency values
+- Holdings breakdown table from portfolio.holdings_by_type: Asset Type (Badge), Holdings count, Total Value, Allocation %
+- Empty/loading states for all sections: skeleton loader, no-data portfolio message, no-snapshot chart message
+- Follows established patterns: dashboard summary cards, spending-trend-chart AreaChart, ChartContainer/tooltip
+
+Decisions:
+- Chart data converts cents to dollars for Y-axis, tooltip reconverts for formatCurrency
+- Period selector uses ShadCN Tabs (matching security detail page pattern)
+- Holdings table shows allocation % computed from holding.value / total_value
+- page_size: 1000 for snapshots query to get all data points for chart
+
+Verification: npm run build + npm run lint — both pass clean
+
+## Phase 6.1: Investment Detail Page (PRD 6.1) ✅
+
+Task completed: 6.1
+
+Changes:
+- Created apps/web/src/app/(dashboard)/investments/[id]/page.tsx
+- "use client" page using useInvestment(id) + useInvestmentTransactions(id, params)
+- Back button linking to /investments
+- Header: security.symbol (monospace bold) + security.name, asset type badge
+- 6 stat cards: Current Price, Quantity, Market Value (qty * current_price), Cost Basis, Gain/Loss (green/red + percentage), Account (link to /accounts/:id)
+- Action buttons row: Buy, Sell, Dividend, Split — disabled placeholders for future dialog integration (6.2-6.6)
+- Transaction history table: Date, Type (colored badge), Quantity (split shows ratio), Price/Unit, Total, Fee, Notes
+- Split transactions show ratio as "X:1", dividend hides price/unit
+- Pagination, loading skeleton, not-found state, empty transaction state
+- Follows security detail page pattern exactly
+
+Verification: npm run build + npm run lint — both pass clean
+
+## Phase 6.2: Add Investment Dialog (PRD 6.2) ✅
+
+Task completed: 6.2
+
+Changes:
+- Created apps/web/src/components/investments/add-investment-dialog.tsx
+- Props: accountId, open, onOpenChange — matches plan spec
+- Security selector: Popover + Command combobox with shouldFilter={false} for server-side search
+- Debounced search (300ms, useEffect timer) via useSecurities({ search, page_size: 20 })
+- CommandItem shows: Symbol (monospace font-semibold), Name (truncated), Asset Type badge, Exchange
+- Check icon for currently selected security
+- Quantity: number input with step="any" min=0
+- Purchase Price: CurrencyInput (cents)
+- Wallet Address: text input, conditionally shown only when selectedSecurity.asset_type === 'crypto'
+- Submit calls useAddInvestment() mutation
+- Success: toast, form reset, dialog close
+- Error: ApiClientError message in destructive banner
+- Form reset on dialog close
+- Follows create-transaction-dialog pattern exactly
+
+Verification: npm run build + npm run lint — both pass clean
+
+## Phase 6.3–6.6: Action Dialogs + Integration (PRD 6.3–6.6) ✅
+
+Tasks completed: 6.3, 6.4, 6.5, 6.6
+
+Changes:
+- Created record-buy-dialog.tsx: Date, Quantity, Price/Unit (CurrencyInput), Fee (CurrencyInput, optional), Notes (Textarea). useRecordBuy mutation. toRFC3339 date conversion.
+- Created record-sell-dialog.tsx: Same fields as buy + currentQuantity prop. Shows "You hold X units" in description. Client-side qty <= currentQuantity validation. Catches INSUFFICIENT_SHARES error code.
+- Created record-dividend-dialog.tsx: Date, Amount (CurrencyInput), Dividend Type (Select: Cash/Stock/Special), Notes. useRecordDividend mutation.
+- Created record-split-dialog.tsx: Date, Split Ratio (number), Notes. useRecordSplit mutation.
+- Created textarea.tsx ShadCN component (was missing, needed for Notes fields). Matches Input component styling patterns.
+- Updated investments/[id]/page.tsx: Replaced disabled placeholder buttons with working dialog triggers. Added state (buyOpen, sellOpen, dividendOpen, splitOpen). Imported + rendered all 4 dialog components.
+- All dialogs follow add-investment-dialog pattern: getErrorMessage helper, form reset on close, toast on success, destructive error banner, disabled during submit.
+
+Verification: npm run build + npm run lint — both pass clean
+
+## Phase 7.1: Account Detail — Investment Holdings (PRD 7.1) ✅
+
+Task completed: 7.1
+
+Changes:
+- accounts/[id]/page.tsx: Replaced placeholder card (lines 420-430) with full investment holdings table
+- Added imports: useAccountInvestments, AddInvestmentDialog
+- Added state: addInvestmentOpen, investmentPage
+- Added query: useAccountInvestments(accountId, {page, page_size: 20}), enabled only for investment accounts (passes 0 as accountId when not investment type)
+- Holdings table columns: Symbol (monospace, row click navigates to /investments/:id), Name, Qty, Current Price, Market Value (qty * current_price), Gain/Loss (green/red)
+- Card header with item count + "Add Investment" button
+- Loading skeleton, empty state, pagination controls
+- AddInvestmentDialog rendered conditionally for investment accounts
+
+Verification: npm run build + npm run lint — both pass clean
+
+## Phase 8.1: Sidebar — Securities Nav Item (PRD 8.1) ✅
+
+Task completed: 8.1
+
+Changes:
+- app-sidebar.tsx: Imported Database icon from lucide-react
+- Added { title: "Securities", href: "/securities", icon: Database } between Budgets and Investments in navItems array
+
+## Phase 8.2: Dashboard — Portfolio Value Card (PRD 8.2) ✅
+
+Task completed: 8.2
+
+Changes:
+- page.tsx (dashboard): Imported usePortfolio from use-investments, formatPercentage from format
+- SummaryCards now calls usePortfolio(); uses portfolio.total_value for investments card when available, falls back to account balance sum
+- Net Worth card uses real portfolio value in calculation
+- Investments card shows gain/loss (green/red + percentage) and holdings count when portfolio data available
+- Falls back to investment account count when portfolio not loaded
+
+Verification: npm run build + npm run lint — both pass clean; backend check.sh all 5 steps pass
+
+## Phase 9: Final Verification (PRD 9.1–9.5) ✅
+
+Tasks completed: 9.1, 9.2, 9.3, 9.4, 9.5
+
+Results:
+- 9.1 Frontend lint: zero warnings/errors
+- 9.2 Frontend build: all routes compile (/, /accounts, /accounts/[id], /transactions, /categories, /budgets, /securities, /securities/[id], /investments, /investments/[id], /login, /register)
+- 9.3 Backend check.sh: all 5 steps pass (build, vet, lint, test, test -race)
+- 9.4 Swagger regen: `search` query param now appears on GET /api/v1/securities endpoint in swagger.json; docs compile clean
+- 9.5 Verification checklist — all 12 items confirmed:
+  - ListSecurities supports search param ✅
+  - Investment type has security_id + Security relation ✅
+  - All hooks follow established patterns (key factories, unwrap, invalidation) ✅
+  - Securities page has debounced search (300ms) ✅
+  - Security detail shows asset-specific fields conditionally ✅
+  - Portfolio page has summary cards, net worth chart, holdings breakdown ✅
+  - Investment detail has stats, action buttons, transaction history ✅
+  - All 5 action dialogs exist and use correct API calls ✅
+  - Account detail shows real holdings table for investment accounts ✅
+  - Sidebar includes Securities nav item ✅
+  - Dashboard investments card uses usePortfolio() total_value ✅
+  - No TypeScript `any` types ✅
