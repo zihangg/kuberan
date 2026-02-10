@@ -1,0 +1,41 @@
+2026-02-10: Completed Plan 008 — Live Investment Pricing
+
+All 10 phases implemented in a single pass:
+
+Phase 1-2: Migration + Model
+- Created migration 000015 to drop current_price and last_updated from investments table
+- Changed Investment.CurrentPrice to gorm:"-" (computed field), removed LastUpdated
+
+Phase 3: Service changes
+- Added getLatestPrices() batch helper using subquery on security_prices
+- Refactored AddInvestment, GetInvestmentByID, GetAccountInvestments, GetPortfolio
+- Refactored portfolio_snapshot_service computeSnapshot
+- Removed UpdateInvestmentPrice from service + interface
+
+Phase 4: Handler + route removal
+- Removed UpdatePriceRequest struct and UpdatePrice handler
+- Removed PUT /:id/price route from main.go and integration test setup
+
+Phase 5: Test fixtures
+- Removed CurrentPrice/LastUpdated from CreateTestInvestment
+- Added CreateTestSecurityPrice helper
+
+Phase 6-7: Service + handler test updates
+- Removed TestUpdateInvestmentPrice
+- Updated all tests to create SecurityPrice records instead of relying on stale CurrentPrice
+- Added live price lookup tests (zero fallback, latest price selection)
+- Removed UpdatePrice mock, handler test, and route from handler tests
+
+Phase 8: Integration test updates
+- Replaced PUT /investments/:id/price calls with POST /pipeline/securities/prices
+- Updated portfolio_snapshot_flow_test to record pipeline prices before computing snapshots
+
+Phase 9: Frontend cleanup
+- Removed last_updated from Investment type in models.ts
+- Removed UpdatePriceRequest from api.ts
+- Removed useUpdateInvestmentPrice hook from use-investments.ts
+
+Phase 10: Verification
+- check.sh: All 5 steps pass (build, vet, lint, test, test -race)
+- Frontend: npm run build passes
+- Swagger docs regenerated (PUT /investments/:id/price removed)
