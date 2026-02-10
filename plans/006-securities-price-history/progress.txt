@@ -1,0 +1,93 @@
+## Phase 1: Database Migrations — COMPLETE
+- PRD items: 1.1, 1.2, 1.3, 1.4
+- Created 000011 (securities), 000012 (security_prices), 000013 (portfolio_snapshots), 000014 (investments refactor)
+- All 8 migration files (up+down pairs)
+- go build + full check.sh passed
+- Commit: 20805bb
+
+## Phases 2-5 + 6 + 8 + 10 + 11.3-11.4 + 12.1: Models, Services, Handlers, Routes, Tests — COMPLETE
+- PRD items: 2.1-2.5, 3.1-3.3, 4.1-4.6, 5.1-5.4, 6.1-6.2, 8.1, 10.1, 11.3, 11.4, 12.1
+- New models: Security, SecurityPrice, PortfolioSnapshot (apps/api/internal/models/)
+- Investment model: removed denormalized fields, added SecurityID FK
+- Config: PipelineAPIKey loaded from env
+- Middleware: PipelineAuthMiddleware with constant-time API key comparison
+- Error sentinels: ErrSecurityNotFound, ErrDuplicateSecurity
+- New services: SecurityService (CRUD + bulk prices + price history), PortfolioSnapshotService (compute + query)
+- Modified: InvestmentService.AddInvestment now takes securityID, GetPortfolio preloads Security
+- New handlers: SecurityHandler (5 endpoints), PortfolioSnapshotHandler (2 endpoints)
+- Modified: InvestmentHandler.AddInvestment uses security_id, removed buildExtraFields
+- Routes: pipeline group (API key auth), securities group (JWT), snapshot route
+- Updated tests: investment_service_test, investment_handler_test, testutil_test, integration setup + flows
+- Full check.sh passed (build + vet + lint + test + race)
+- Commit: 7dd815f
+
+## PRD 3.4 + 10.2: Pipeline Auth Middleware Tests — COMPLETE
+- Created apps/api/internal/middleware/pipeline_auth_test.go
+- 6 table-driven subtests: valid_api_key, invalid_api_key, missing_api_key, empty_configured_key, both_empty, partial_match_rejected
+- Verifies 200 on valid key, 401 on invalid/missing, 503 when unconfigured
+- Full check.sh passed
+
+## PRD 7.1: Security Service Tests — COMPLETE
+- Created apps/api/internal/services/security_service_test.go
+- 16 subtests across 5 test functions:
+  - TestCreateSecurity: valid, with_extra_fields, duplicate_symbol_exchange, same_symbol_different_exchange, empty_symbol, empty_name, defaults_currency_to_usd
+  - TestGetSecurityByID: found, not_found
+  - TestListSecurities: returns_paginated, ordered_by_symbol
+  - TestRecordPrices: valid_bulk_insert, idempotent_retry, empty_input
+  - TestGetPriceHistory: returns_paginated, filters_by_date_range, filters_by_security, ordered_by_recorded_at_desc
+- Full check.sh passed (build + vet + lint + test + race)
+
+## PRD 7.2: Portfolio Snapshot Service Tests — COMPLETE
+- Created apps/api/internal/services/portfolio_snapshot_service_test.go
+- Added CreateTestDebtAccount fixture in testutil/fixtures.go
+- 11 subtests across 2 test functions:
+  - TestComputeAndRecordSnapshots: creates_snapshots_for_all_users, cash_balance_computed_correctly, investment_value_computed_correctly, debt_balance_computed_correctly, net_worth_computed_correctly, excludes_inactive_accounts, idempotent_retry
+  - TestGetSnapshots: returns_paginated, filters_by_date_range, user_isolation, ordered_by_recorded_at_desc
+- Note: GORM default:true on IsActive means false is treated as zero-value and overridden; workaround: create account active then Update("is_active", false)
+- Full check.sh passed (build + vet + lint + test + race)
+
+## PRD 9.1 + 9.2: Security & Portfolio Snapshot Handler Tests — COMPLETE
+- Created apps/api/internal/handlers/security_handler_test.go
+- Created apps/api/internal/handlers/portfolio_snapshot_handler_test.go
+- Security handler: 17 subtests across 5 test functions:
+  - TestSecurityHandler_CreateSecurity: returns_201_on_success, returns_400_missing_symbol, returns_400_missing_name, returns_400_invalid_asset_type, returns_409_duplicate
+  - TestSecurityHandler_ListSecurities: returns_200_with_data, returns_200_with_pagination_params
+  - TestSecurityHandler_GetSecurity: returns_200_on_success, returns_404_not_found, returns_400_invalid_id
+  - TestSecurityHandler_RecordPrices: returns_200_on_success, returns_400_empty_prices, returns_400_invalid_price, returns_400_missing_security_id, returns_500_on_service_error
+  - TestSecurityHandler_GetPriceHistory: returns_200_with_data, returns_400_missing_from_date, returns_400_missing_to_date, returns_400_invalid_id, passes_date_range_and_pagination_to_service
+- Snapshot handler: 9 subtests across 2 test functions:
+  - TestPortfolioSnapshotHandler_ComputeSnapshots: returns_200_on_success, returns_400_missing_recorded_at, returns_500_on_service_error
+  - TestPortfolioSnapshotHandler_GetSnapshots: returns_200_with_data, returns_400_missing_from_date, returns_400_missing_to_date, returns_200_empty_data, returns_401_without_auth, passes_user_id_and_pagination_to_service
+- Mock pattern: function-field mocks with interface compile checks (var _ services.X = (*mockX)(nil))
+- Full check.sh passed (build + vet + lint + test + race)
+
+## PRD 11.1 + 11.2: Integration Tests — COMPLETE
+- Created apps/api/tests/integration/security_flow_test.go
+- Created apps/api/tests/integration/portfolio_snapshot_flow_test.go
+- Security flow: 3 test functions
+  - TestSecurityFlow_FullLifecycle: create via pipeline, list via JWT, get by ID, record 3 prices, get price history ordered DESC
+  - TestSecurityFlow_DuplicateSymbolExchange: AAPL NYSE ok, duplicate 409, AAPL NASDAQ ok
+  - TestSecurityFlow_PipelineAuthRequired: no key 401, wrong key 401
+- Snapshot flow: 2 test functions
+  - TestPortfolioSnapshotFlow_ComputeAndQuery: cash $5000 + 10 shares@$150, compute, verify cash_balance=500000 investment_value=150000 total_net_worth=650000
+  - TestPortfolioSnapshotFlow_MultipleUsersComputed: 2 users different balances, compute once, verify isolation
+- Full check.sh passed (build + vet + lint + test + race)
+
+## PRD 12.2: Swagger Docs Regeneration — COMPLETE
+- Added ApiKeyAuth security definition to main.go for pipeline endpoints
+- Updated pipeline handler annotations: @Security ApiKeyAuth (was @Param X-API-Key header)
+- Added blank import of models to investment_handler.go + portfolio_snapshot_handler.go (swag needs import to resolve types in annotations)
+- Regenerated docs: swag init -g cmd/api/main.go --parseDependency
+- All 7 new endpoints verified in swagger.json: GET /securities, GET /securities/{id}, GET /securities/{id}/prices, POST /pipeline/securities, POST /pipeline/securities/prices, POST /pipeline/snapshots, GET /investments/snapshots
+- Both security defs present: BearerAuth (JWT) + ApiKeyAuth (X-API-Key)
+- Full check.sh passed
+
+## PRD 12.3: Final Verification Checklist — COMPLETE
+- No Investment.Symbol/Name/AssetType refs outside migrations
+- All new endpoints have Swagger annotations
+- All new services have interface defs + tests
+- All handler tests pass, all integration tests pass
+- Pipeline: 503 when key not set, 401 with wrong key, 200 with correct key
+- Securities shared (no user-scoping), snapshots user-scoped
+- Time-series models (SecurityPrice, PortfolioSnapshot) have no soft deletes
+- GetPortfolio uses inv.Security.AssetType correctly

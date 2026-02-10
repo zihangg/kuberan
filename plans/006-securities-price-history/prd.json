@@ -1,0 +1,546 @@
+[
+  {
+    "id": "1.1",
+    "category": "migrations",
+    "passes": true,
+    "description": "Create migration 000011: create_securities table with symbol, name, asset_type, currency, exchange, and asset-specific fields",
+    "steps": [
+      "Create apps/api/migrations/000011_create_securities.up.sql",
+      "Define securities table: id BIGSERIAL PRIMARY KEY, created_at, updated_at, deleted_at TIMESTAMPTZ, symbol VARCHAR(20) NOT NULL, name VARCHAR(200) NOT NULL, asset_type VARCHAR(20) NOT NULL, currency VARCHAR(10) NOT NULL DEFAULT 'USD', exchange VARCHAR(50) DEFAULT ''",
+      "Add bond fields: maturity_date TIMESTAMPTZ, yield_to_maturity DOUBLE PRECISION DEFAULT 0, coupon_rate DOUBLE PRECISION DEFAULT 0",
+      "Add crypto field: network VARCHAR(50) DEFAULT ''",
+      "Add REIT field: property_type VARCHAR(50) DEFAULT ''",
+      "Add CONSTRAINT uq_securities_symbol_exchange UNIQUE (symbol, exchange)",
+      "Add indexes: idx_securities_deleted_at, idx_securities_symbol, idx_securities_asset_type",
+      "Create apps/api/migrations/000011_create_securities.down.sql: DROP TABLE IF EXISTS securities",
+      "Run go build ./... from apps/api/ to verify no compilation impact"
+    ]
+  },
+  {
+    "id": "1.2",
+    "category": "migrations",
+    "passes": true,
+    "description": "Create migration 000012: create_security_prices table for time-series price history",
+    "steps": [
+      "Create apps/api/migrations/000012_create_security_prices.up.sql",
+      "Define security_prices table: id BIGSERIAL PRIMARY KEY, security_id BIGINT NOT NULL REFERENCES securities(id), price BIGINT NOT NULL, recorded_at TIMESTAMPTZ NOT NULL",
+      "No created_at/updated_at/deleted_at — immutable time-series data",
+      "Add CONSTRAINT uq_security_prices_security_recorded UNIQUE (security_id, recorded_at)",
+      "Add indexes: idx_security_prices_security_id, idx_security_prices_recorded_at",
+      "Create apps/api/migrations/000012_create_security_prices.down.sql: DROP TABLE IF EXISTS security_prices",
+      "Run go build ./... from apps/api/"
+    ]
+  },
+  {
+    "id": "1.3",
+    "category": "migrations",
+    "passes": true,
+    "description": "Create migration 000013: create_portfolio_snapshots table for user net worth history",
+    "steps": [
+      "Create apps/api/migrations/000013_create_portfolio_snapshots.up.sql",
+      "Define portfolio_snapshots table: id BIGSERIAL PRIMARY KEY, user_id BIGINT NOT NULL REFERENCES users(id), recorded_at TIMESTAMPTZ NOT NULL, total_net_worth BIGINT NOT NULL DEFAULT 0, cash_balance BIGINT NOT NULL DEFAULT 0, investment_value BIGINT NOT NULL DEFAULT 0, debt_balance BIGINT NOT NULL DEFAULT 0",
+      "No created_at/updated_at/deleted_at — immutable time-series data",
+      "Add CONSTRAINT uq_portfolio_snapshots_user_recorded UNIQUE (user_id, recorded_at)",
+      "Add indexes: idx_portfolio_snapshots_user_id, idx_portfolio_snapshots_recorded_at",
+      "Create apps/api/migrations/000013_create_portfolio_snapshots.down.sql: DROP TABLE IF EXISTS portfolio_snapshots",
+      "Run go build ./... from apps/api/"
+    ]
+  },
+  {
+    "id": "1.4",
+    "category": "migrations",
+    "passes": true,
+    "description": "Create migration 000014: refactor investments table — add security_id FK, drop denormalized security fields",
+    "steps": [
+      "Create apps/api/migrations/000014_refactor_investments_add_security_id.up.sql",
+      "ALTER TABLE investments ADD COLUMN security_id BIGINT REFERENCES securities(id)",
+      "CREATE INDEX idx_investments_security_id ON investments(security_id)",
+      "ALTER TABLE investments DROP COLUMN symbol, name, asset_type, currency, exchange, maturity_date, yield_to_maturity, coupon_rate, network, property_type",
+      "Create apps/api/migrations/000014_refactor_investments_add_security_id.down.sql",
+      "Down migration: re-add all dropped columns with safe defaults, drop security_id column and index",
+      "Run go build ./... from apps/api/"
+    ]
+  },
+  {
+    "id": "2.1",
+    "category": "models",
+    "passes": true,
+    "description": "Create Security model and move AssetType enum from investment.go to security.go",
+    "steps": [
+      "Create apps/api/internal/models/security.go",
+      "Move AssetType type definition and constants (AssetTypeStock, AssetTypeETF, AssetTypeBond, AssetTypeCrypto, AssetTypeREIT) from investment.go to security.go",
+      "Define Security struct embedding Base with fields: Symbol, Name, AssetType, Currency, Exchange (with composite unique index tag), MaturityDate, YieldToMaturity, CouponRate, Network, PropertyType",
+      "Remove AssetType definition and constants from investment.go (they are now in same package via security.go)",
+      "Run go build ./... — expect failures in services referencing removed Investment fields"
+    ]
+  },
+  {
+    "id": "2.2",
+    "category": "models",
+    "passes": true,
+    "description": "Create SecurityPrice model for time-series price data (no Base embed, no soft deletes)",
+    "steps": [
+      "Create apps/api/internal/models/security_price.go",
+      "Define SecurityPrice struct: ID uint (primarykey), SecurityID uint (not null), Price int64 (bigint, not null), RecordedAt time.Time (not null), Security Security (foreignKey:SecurityID)",
+      "Do NOT embed Base — this is immutable time-series data with no soft deletes",
+      "Run go build ./... from apps/api/"
+    ]
+  },
+  {
+    "id": "2.3",
+    "category": "models",
+    "passes": true,
+    "description": "Create PortfolioSnapshot model for user net worth history (no Base embed, no soft deletes)",
+    "steps": [
+      "Create apps/api/internal/models/portfolio_snapshot.go",
+      "Define PortfolioSnapshot struct: ID uint (primarykey), UserID uint (not null), RecordedAt time.Time (not null), TotalNetWorth int64 (bigint, not null), CashBalance int64 (bigint, not null), InvestmentValue int64 (bigint, not null), DebtBalance int64 (bigint, not null)",
+      "Do NOT embed Base — this is immutable time-series data with no soft deletes",
+      "Run go build ./... from apps/api/"
+    ]
+  },
+  {
+    "id": "2.4",
+    "category": "models",
+    "passes": true,
+    "description": "Modify Investment model — remove denormalized security fields, add SecurityID FK",
+    "steps": [
+      "Open apps/api/internal/models/investment.go",
+      "Remove fields: Symbol, Name, AssetType, Currency, Exchange, MaturityDate, YieldToMaturity, CouponRate, Network, PropertyType",
+      "Add fields: SecurityID uint `gorm:\"not null\" json:\"security_id\"`, Security Security `gorm:\"foreignKey:SecurityID\" json:\"security\"`",
+      "Keep fields: AccountID, Quantity, CostBasis, CurrentPrice, LastUpdated, WalletAddress, Account, Transactions",
+      "Run go build ./... — expect failures in services and handlers, fixed in later phases"
+    ]
+  },
+  {
+    "id": "2.5",
+    "category": "models",
+    "passes": true,
+    "description": "Update test database setup to AutoMigrate new models",
+    "steps": [
+      "Open apps/api/internal/testutil/database.go",
+      "Add models.Security{}, models.SecurityPrice{}, models.PortfolioSnapshot{} to the allModels slice",
+      "Ensure Security appears BEFORE Investment in the slice (foreign key dependency order)",
+      "Run go build ./... from apps/api/"
+    ]
+  },
+  {
+    "id": "3.1",
+    "category": "config-middleware",
+    "passes": true,
+    "description": "Add PipelineAPIKey field to Config struct, loaded from PIPELINE_API_KEY env var",
+    "steps": [
+      "Open apps/api/internal/config/config.go",
+      "Add PipelineAPIKey string field to Config struct",
+      "Load from os.Getenv(\"PIPELINE_API_KEY\") in LoadConfig()",
+      "No production enforcement — if empty, pipeline middleware returns 503",
+      "Run go build ./... from apps/api/"
+    ]
+  },
+  {
+    "id": "3.2",
+    "category": "config-middleware",
+    "passes": true,
+    "description": "Create PipelineAuthMiddleware with constant-time API key comparison",
+    "steps": [
+      "Create apps/api/internal/middleware/pipeline_auth.go",
+      "Import crypto/subtle for ConstantTimeCompare",
+      "PipelineAuthMiddleware(apiKey string) gin.HandlerFunc: if apiKey is empty, abort with 503 (PIPELINE_NOT_CONFIGURED); extract X-API-Key header; compare with subtle.ConstantTimeCompare; abort with 401 if mismatch; call c.Next() on success",
+      "Response format: {\"error\": {\"code\": \"...\", \"message\": \"...\"}} matching existing error format",
+      "Run go build ./... from apps/api/"
+    ]
+  },
+  {
+    "id": "3.3",
+    "category": "config-middleware",
+    "passes": true,
+    "description": "Add ErrSecurityNotFound and ErrDuplicateSecurity error sentinels",
+    "steps": [
+      "Open apps/api/internal/errors/errors.go",
+      "Add ErrSecurityNotFound: Code SECURITY_NOT_FOUND, Message 'Security not found', StatusCode 404",
+      "Add ErrDuplicateSecurity: Code DUPLICATE_SECURITY, Message 'A security with this symbol and exchange already exists', StatusCode 409",
+      "Run go build ./... from apps/api/"
+    ]
+  },
+  {
+    "id": "3.4",
+    "category": "config-middleware",
+    "passes": true,
+    "description": "Write tests for PipelineAuthMiddleware",
+    "steps": [
+      "Create apps/api/internal/middleware/pipeline_auth_test.go",
+      "Test valid_api_key: request with correct X-API-Key header reaches handler (200)",
+      "Test invalid_api_key: request with wrong key returns 401",
+      "Test missing_api_key: request without X-API-Key header returns 401",
+      "Test empty_configured_key: middleware created with empty string returns 503 PIPELINE_NOT_CONFIGURED",
+      "Use gin.TestMode, httptest.NewRecorder, gin.CreateTestContext pattern",
+      "Run go test ./internal/middleware/ -v -run TestPipelineAuth from apps/api/"
+    ]
+  },
+  {
+    "id": "4.1",
+    "category": "services",
+    "passes": true,
+    "description": "Add SecurityServicer interface with SecurityPriceInput struct to interfaces.go",
+    "steps": [
+      "Open apps/api/internal/services/interfaces.go",
+      "Add SecurityPriceInput struct: SecurityID uint, Price int64, RecordedAt time.Time",
+      "Add SecurityServicer interface: CreateSecurity, GetSecurityByID, ListSecurities, RecordPrices (returns int count), GetPriceHistory",
+      "Run go build ./... — will fail until service is implemented"
+    ]
+  },
+  {
+    "id": "4.2",
+    "category": "services",
+    "passes": true,
+    "description": "Add PortfolioSnapshotServicer interface to interfaces.go",
+    "steps": [
+      "Open apps/api/internal/services/interfaces.go",
+      "Add PortfolioSnapshotServicer interface: ComputeAndRecordSnapshots(recordedAt time.Time) (int, error), GetSnapshots(userID uint, from, to time.Time, page pagination.PageRequest) (*pagination.PageResponse[models.PortfolioSnapshot], error)",
+      "Run go build ./... from apps/api/"
+    ]
+  },
+  {
+    "id": "4.3",
+    "category": "services",
+    "passes": true,
+    "description": "Modify InvestmentServicer.AddInvestment signature to accept securityID instead of symbol/name/assetType",
+    "steps": [
+      "Open apps/api/internal/services/interfaces.go",
+      "Change AddInvestment from (userID, accountID uint, symbol, name string, assetType models.AssetType, quantity float64, purchasePrice int64, currency string, extraFields map[string]interface{}) to (userID, accountID, securityID uint, quantity float64, purchasePrice int64, walletAddress string)",
+      "Run go build ./... — will fail until service implementation is updated"
+    ]
+  },
+  {
+    "id": "4.4",
+    "category": "services",
+    "passes": true,
+    "description": "Implement SecurityService with CRUD, bulk price recording, and price history query",
+    "steps": [
+      "Create apps/api/internal/services/security_service.go",
+      "Define unexported securityService struct with db *gorm.DB",
+      "NewSecurityService(db) returns SecurityServicer",
+      "CreateSecurity: validate symbol/name non-empty, build Security model, apply extraFields for asset-specific fields, insert with unique constraint handling (ErrDuplicateSecurity on violation)",
+      "GetSecurityByID: query by ID (no user-scoping), return ErrSecurityNotFound if not found",
+      "ListSecurities: paginated query ordered by symbol ASC",
+      "RecordPrices: validate non-empty input, iterate and insert SecurityPrice records, use ON CONFLICT DO NOTHING or skip on duplicate for idempotent retries, return count of inserted records",
+      "GetPriceHistory: query SecurityPrice WHERE security_id = ? AND recorded_at BETWEEN from AND to, paginated, ordered by recorded_at DESC",
+      "Run go build ./... from apps/api/"
+    ]
+  },
+  {
+    "id": "4.5",
+    "category": "services",
+    "passes": true,
+    "description": "Implement PortfolioSnapshotService with compute-all and query methods",
+    "steps": [
+      "Create apps/api/internal/services/portfolio_snapshot_service.go",
+      "Define unexported portfolioSnapshotService struct with db *gorm.DB",
+      "NewPortfolioSnapshotService(db) returns PortfolioSnapshotServicer",
+      "ComputeAndRecordSnapshots: query all distinct active user IDs from accounts table",
+      "For each user: compute cash_balance (SUM of cash account balances), investment_value (SUM of quantity * current_price across all investments in active investment accounts), debt_balance (SUM of debt + credit_card account balances)",
+      "Calculate total_net_worth = cash_balance + investment_value - debt_balance",
+      "Insert PortfolioSnapshot with upsert on (user_id, recorded_at) for idempotent retries",
+      "Return count of snapshots created",
+      "GetSnapshots: query WHERE user_id = ? AND recorded_at BETWEEN from AND to, paginated, ordered by recorded_at DESC",
+      "Run go build ./... from apps/api/"
+    ]
+  },
+  {
+    "id": "4.6",
+    "category": "services",
+    "passes": true,
+    "description": "Modify InvestmentService — refactor AddInvestment to use securityID, update GetPortfolio to preload Security",
+    "steps": [
+      "Open apps/api/internal/services/investment_service.go",
+      "Refactor AddInvestment: remove symbol, name, assetType, currency, extraFields params; add securityID, walletAddress params",
+      "In AddInvestment: verify security exists (query db for security by ID, return ErrSecurityNotFound if not found), create Investment with SecurityID, use security.Currency for the investment",
+      "Remove applyExtraFields helper function entirely",
+      "Update GetPortfolio: add Preload(\"Security\") when loading investments, change inv.AssetType to inv.Security.AssetType",
+      "Update GetInvestmentByID: add Preload(\"Security\")",
+      "Update GetAccountInvestments: add Preload(\"Security\")",
+      "Run go build ./... from apps/api/ — should compile (handlers may still fail)"
+    ]
+  },
+  {
+    "id": "5.1",
+    "category": "handlers",
+    "passes": true,
+    "description": "Create SecurityHandler with CreateSecurity, ListSecurities, GetSecurity, RecordPrices, GetPriceHistory methods",
+    "steps": [
+      "Create apps/api/internal/handlers/security_handler.go",
+      "Define SecurityHandler struct with securityService and auditService",
+      "NewSecurityHandler constructor",
+      "CreateSecurityRequest DTO: Symbol (required, min=1, max=20), Name (required, min=1, max=200), AssetType (required, asset_type), Currency (omitempty, iso4217), Exchange, MaturityDate, YieldToMaturity, CouponRate, Network, PropertyType",
+      "RecordPricesRequest DTO: Prices []RecordPriceEntry (required, min=1, dive). RecordPriceEntry: SecurityID (required), Price (required, gt=0), RecordedAt (required)",
+      "CreateSecurity handler: bind request, build extraFields map, call service, audit log CREATE_SECURITY, return 201",
+      "ListSecurities handler: parse pagination, call service, return 200",
+      "GetSecurity handler: parse path ID, call service, return 200",
+      "RecordPrices handler: bind request, map to SecurityPriceInput slice, call service, return 200 with count",
+      "GetPriceHistory handler: parse path ID + from_date/to_date + pagination, call service, return 200",
+      "Full Swagger annotations on all methods",
+      "Run go build ./... from apps/api/"
+    ]
+  },
+  {
+    "id": "5.2",
+    "category": "handlers",
+    "passes": true,
+    "description": "Create PortfolioSnapshotHandler with ComputeSnapshots and GetSnapshots methods",
+    "steps": [
+      "Create apps/api/internal/handlers/portfolio_snapshot_handler.go",
+      "Define PortfolioSnapshotHandler struct with snapshotService",
+      "NewPortfolioSnapshotHandler constructor",
+      "ComputeSnapshots handler: call service.ComputeAndRecordSnapshots(time.Now()), return 200 with {snapshots_created, recorded_at}",
+      "GetSnapshots handler: extract userID from JWT, parse from_date/to_date + pagination, call service, return 200",
+      "Full Swagger annotations on both methods",
+      "Run go build ./... from apps/api/"
+    ]
+  },
+  {
+    "id": "5.3",
+    "category": "handlers",
+    "passes": true,
+    "description": "Modify InvestmentHandler — update AddInvestmentRequest to use security_id, remove buildExtraFields",
+    "steps": [
+      "Open apps/api/internal/handlers/investment_handler.go",
+      "Update AddInvestmentRequest: remove Symbol, Name, AssetType, Currency, Exchange, MaturityDate, YieldToMaturity, CouponRate, Network, PropertyType; add SecurityID uint (required), keep WalletAddress (omitempty)",
+      "Update AddInvestment handler: call service with securityID and walletAddress instead of old params",
+      "Remove buildExtraFields helper function",
+      "Update audit log in AddInvestment: log security_id instead of symbol",
+      "Run go build ./... from apps/api/"
+    ]
+  },
+  {
+    "id": "5.4",
+    "category": "handlers",
+    "passes": true,
+    "description": "Register new routes in main.go — JWT group for user endpoints, pipeline group for API key endpoints",
+    "steps": [
+      "Open apps/api/cmd/api/main.go",
+      "Instantiate securityService, portfolioSnapshotService, securityHandler, portfolioSnapshotHandler",
+      "Register JWT-protected user routes: GET /securities, GET /securities/:id, GET /securities/:id/prices, GET /portfolio/snapshots",
+      "Register pipeline routes with PipelineAuthMiddleware: POST /pipeline/securities, POST /pipeline/securities/prices, POST /pipeline/snapshots/compute",
+      "Pass cfg.PipelineAPIKey to PipelineAuthMiddleware",
+      "Run go build ./... from apps/api/",
+      "Run make check-fast from apps/api/"
+    ]
+  },
+  {
+    "id": "6.1",
+    "category": "test-utilities",
+    "passes": true,
+    "description": "Update test database setup to include new models in AutoMigrate",
+    "steps": [
+      "Open apps/api/internal/testutil/database.go",
+      "Ensure models.Security{}, models.SecurityPrice{}, models.PortfolioSnapshot{} are in allModels slice",
+      "Ensure Security appears before Investment in the slice for FK dependency ordering",
+      "Run go build ./... and go test ./internal/testutil/... from apps/api/"
+    ]
+  },
+  {
+    "id": "6.2",
+    "category": "test-utilities",
+    "passes": true,
+    "description": "Add CreateTestSecurity fixture and update CreateTestInvestment to accept securityID",
+    "steps": [
+      "Open apps/api/internal/testutil/fixtures.go",
+      "Add CreateTestSecurity(t, db) func: creates Security with symbol SEC{n}, name Test Security {n}, asset_type stock, currency USD, exchange NYSE. Returns *models.Security",
+      "Add CreateTestSecurityWithParams(t, db, symbol, name, assetType, exchange) func for custom securities",
+      "Update CreateTestInvestment(t, db, accountID) to CreateTestInvestment(t, db, accountID, securityID uint): remove Symbol, Name, AssetType, Currency fields, add SecurityID field",
+      "Run go build ./... and go test ./internal/testutil/... from apps/api/"
+    ]
+  },
+  {
+    "id": "7.1",
+    "category": "new-service-tests",
+    "passes": true,
+    "description": "Write security service tests covering CRUD, bulk price recording, and price history",
+    "steps": [
+      "Create apps/api/internal/services/security_service_test.go",
+      "TestCreateSecurity: valid, with_extra_fields (bond), duplicate_symbol_exchange (ErrDuplicateSecurity), same_symbol_different_exchange (succeeds), empty_symbol (ErrInvalidInput), empty_name (ErrInvalidInput)",
+      "TestGetSecurityByID: found, not_found (ErrSecurityNotFound)",
+      "TestListSecurities: returns_paginated (5 items, page_size=2, verify total_pages=3), ordered_by_symbol",
+      "TestRecordPrices: valid_bulk_insert (3 prices for 2 securities), idempotent_retry (same price twice, no error/duplicate), empty_input",
+      "TestGetPriceHistory: returns_paginated, filters_by_date_range, filters_by_security, ordered_by_recorded_at_desc",
+      "Run go test ./internal/services/ -v -run TestSecurity from apps/api/"
+    ]
+  },
+  {
+    "id": "7.2",
+    "category": "new-service-tests",
+    "passes": true,
+    "description": "Write portfolio snapshot service tests covering compute-all and query",
+    "steps": [
+      "Create apps/api/internal/services/portfolio_snapshot_service_test.go",
+      "TestComputeAndRecordSnapshots: creates_snapshots_for_all_users (2 users, verify 2 snapshots), cash_balance_computed_correctly (2 cash accounts summed), investment_value_computed_correctly (10 shares @ $100 + 5 shares @ $200 = $2000), debt_balance_computed_correctly (debt + credit card), net_worth_computed_correctly (cash + investment - debt), excludes_inactive_accounts, idempotent_retry (same recorded_at, no duplicate)",
+      "TestGetSnapshots: returns_paginated, filters_by_date_range, user_isolation, ordered_by_recorded_at_desc",
+      "Run go test ./internal/services/ -v -run TestPortfolioSnapshot from apps/api/"
+    ]
+  },
+  {
+    "id": "8.1",
+    "category": "modified-service-tests",
+    "passes": true,
+    "description": "Update investment service tests to create securities first and use securityID in AddInvestment calls",
+    "steps": [
+      "Open apps/api/internal/services/investment_service_test.go",
+      "In every test that calls AddInvestment: create a Security first via testutil.CreateTestSecurity(t, db), pass security.ID to AddInvestment",
+      "Update AddInvestment call signature: remove symbol, name, assetType, currency, extraFields; add securityID, walletAddress",
+      "Update assertions: check investment.SecurityID instead of investment.Symbol",
+      "Update TestGetPortfolio: verify HoldingsByType still groups correctly (AssetType now from Security relationship)",
+      "Update TestGetInvestmentByID: verify Security is preloaded in response",
+      "Update all record tests (buy, sell, dividend, split) to use updated AddInvestment calls",
+      "Run go test ./internal/services/ -v from apps/api/"
+    ]
+  },
+  {
+    "id": "9.1",
+    "category": "new-handler-tests",
+    "passes": true,
+    "description": "Write security handler tests with mock service",
+    "steps": [
+      "Create apps/api/internal/handlers/security_handler_test.go",
+      "Define mockSecurityService with function fields for each interface method",
+      "Add var _ services.SecurityServicer = (*mockSecurityService)(nil) compile check",
+      "TestSecurityHandler_CreateSecurity: returns_201_on_success, returns_400_missing_symbol, returns_400_invalid_asset_type, returns_409_duplicate",
+      "TestSecurityHandler_ListSecurities: returns_200_with_data, returns_200_with_pagination_params",
+      "TestSecurityHandler_GetSecurity: returns_200_on_success, returns_404_not_found, returns_400_invalid_id",
+      "TestSecurityHandler_RecordPrices: returns_200_on_success, returns_400_empty_prices, returns_400_invalid_price",
+      "TestSecurityHandler_GetPriceHistory: returns_200_with_data, returns_400_missing_from_date, returns_400_missing_to_date, returns_404_invalid_security",
+      "Run go test ./internal/handlers/ -v -run TestSecurityHandler from apps/api/"
+    ]
+  },
+  {
+    "id": "9.2",
+    "category": "new-handler-tests",
+    "passes": true,
+    "description": "Write portfolio snapshot handler tests with mock service",
+    "steps": [
+      "Create apps/api/internal/handlers/portfolio_snapshot_handler_test.go",
+      "Define mockPortfolioSnapshotService with function fields",
+      "Add var _ services.PortfolioSnapshotServicer = (*mockPortfolioSnapshotService)(nil) compile check",
+      "TestPortfolioSnapshotHandler_ComputeSnapshots: returns_200_on_success (verify snapshots_created and recorded_at in response), returns_500_on_service_error",
+      "TestPortfolioSnapshotHandler_GetSnapshots: returns_200_with_data, returns_400_missing_from_date, returns_400_missing_to_date, returns_200_empty_data",
+      "Run go test ./internal/handlers/ -v -run TestPortfolioSnapshotHandler from apps/api/"
+    ]
+  },
+  {
+    "id": "10.1",
+    "category": "modified-handler-tests",
+    "passes": true,
+    "description": "Update investment handler tests for new AddInvestment request format using security_id",
+    "steps": [
+      "Open apps/api/internal/handlers/investment_handler_test.go",
+      "Update mockInvestmentService.addInvestmentFn signature to match new AddInvestment interface (securityID, walletAddress instead of symbol, name, assetType, currency, extraFields)",
+      "Update test request bodies: replace {symbol, name, asset_type, ...} with {account_id, security_id, quantity, purchase_price}",
+      "Update validation tests: returns_400_missing_symbol becomes returns_400_missing_security_id",
+      "Verify all existing tests compile and pass with updated mocks",
+      "Run go test ./internal/handlers/ -v -run TestInvestmentHandler from apps/api/"
+    ]
+  },
+  {
+    "id": "10.2",
+    "category": "modified-handler-tests",
+    "passes": true,
+    "description": "Verify pipeline auth middleware tests pass (created in 3.4)",
+    "steps": [
+      "Run go test ./internal/middleware/ -v from apps/api/",
+      "Verify all pipeline auth tests pass: valid_api_key, invalid_api_key, missing_api_key, empty_configured_key"
+    ]
+  },
+  {
+    "id": "11.1",
+    "category": "integration-tests",
+    "passes": true,
+    "description": "Write security flow integration test covering full lifecycle with pipeline API key auth",
+    "steps": [
+      "Create apps/api/tests/integration/security_flow_test.go",
+      "TestSecurityFlow_FullLifecycle: create security via POST /pipeline/securities (with API key), list via GET /securities (JWT auth) verify 1 result, get by ID verify fields, record 3 prices via POST /pipeline/securities/prices (API key), get price history via GET /securities/:id/prices (JWT) verify 3 entries ordered DESC",
+      "TestSecurityFlow_DuplicateSymbolExchange: create AAPL NYSE, create same again expect 409, create AAPL NASDAQ expect 201",
+      "Run go test ./tests/integration/ -v -run TestSecurityFlow from apps/api/"
+    ]
+  },
+  {
+    "id": "11.2",
+    "category": "integration-tests",
+    "passes": true,
+    "description": "Write portfolio snapshot integration test covering compute-all and query with net worth breakdown",
+    "steps": [
+      "Create apps/api/tests/integration/portfolio_snapshot_flow_test.go",
+      "TestPortfolioSnapshotFlow_ComputeAndQuery: register user, create cash account ($5000), create investment account, create security, add investment (10 shares @ $150), call POST /pipeline/snapshots/compute (API key), GET /portfolio/snapshots (JWT) verify cash_balance=500000, investment_value=1500000, total_net_worth=2000000",
+      "TestPortfolioSnapshotFlow_MultipleUsers: register 2 users with different balances, compute once, query each user's snapshots independently, verify correct values per user",
+      "Run go test ./tests/integration/ -v -run TestPortfolioSnapshot from apps/api/"
+    ]
+  },
+  {
+    "id": "11.3",
+    "category": "integration-tests",
+    "passes": true,
+    "description": "Update investment flow integration tests to create securities before adding investments",
+    "steps": [
+      "Open apps/api/tests/integration/investment_flow_test.go",
+      "Update all tests: create security via pipeline endpoint (or directly via DB) before adding investments",
+      "Update add-investment request bodies: use security_id instead of symbol, name, asset_type, etc.",
+      "Verify investment responses include nested security object with correct fields",
+      "Run go test ./tests/integration/ -v -run TestInvestmentFlow from apps/api/"
+    ]
+  },
+  {
+    "id": "11.4",
+    "category": "integration-tests",
+    "passes": true,
+    "description": "Update integration test setup to wire security and snapshot services, add pipeline route group",
+    "steps": [
+      "Open apps/api/tests/integration/setup_test.go",
+      "Add securityService, portfolioSnapshotService to testApp struct",
+      "Add securityHandler, portfolioSnapshotHandler to testApp",
+      "Register pipeline routes with test API key (e.g., 'test-pipeline-key')",
+      "Register user-facing security and portfolio routes under JWT-protected group",
+      "Add helper method: pipelineRequest(method, path, body) that adds X-API-Key header automatically",
+      "Run go build ./tests/integration/ from apps/api/"
+    ]
+  },
+  {
+    "id": "12.1",
+    "category": "verification",
+    "passes": true,
+    "description": "Run full verification script (build + vet + lint + test + race) — all must pass",
+    "steps": [
+      "Run ./scripts/check.sh from apps/api/",
+      "All 5 steps must pass: go build, go vet, golangci-lint, go test, go test -race",
+      "If any step fails, fix the issues and re-run",
+      "No //nolint directives without justification"
+    ]
+  },
+  {
+    "id": "12.2",
+    "category": "verification",
+    "passes": true,
+    "description": "Regenerate Swagger docs with new endpoints",
+    "steps": [
+      "Run swag init -g cmd/api/main.go -d . --output internal/docs --parseDependency from apps/api/",
+      "Verify docs generate without errors",
+      "Verify new endpoints appear: GET /securities, GET /securities/:id, GET /securities/:id/prices, POST /pipeline/securities, POST /pipeline/securities/prices, POST /pipeline/snapshots/compute, GET /portfolio/snapshots"
+    ]
+  },
+  {
+    "id": "12.3",
+    "category": "verification",
+    "passes": true,
+    "description": "Final verification checklist — all items must be confirmed",
+    "steps": [
+      "Verify no Investment.Symbol, Investment.Name, Investment.AssetType references remain outside of down-migration files",
+      "Verify all new endpoints have Swagger annotations",
+      "Verify all new services have interface definitions and tests",
+      "Verify all handler tests pass with mocks",
+      "Verify all integration tests pass end-to-end",
+      "Verify pipeline endpoints return 503 when PIPELINE_API_KEY is not set",
+      "Verify pipeline endpoints return 401 with wrong API key",
+      "Verify pipeline endpoints work with correct API key",
+      "Verify securities are shared (no user-scoping)",
+      "Verify portfolio snapshots are user-scoped",
+      "Verify time-series models have no soft deletes",
+      "Verify GetPortfolio still works correctly with Security.AssetType"
+    ]
+  }
+]
