@@ -1,0 +1,162 @@
+## Phase 1: GET /api/v1/pipeline/securities — COMPLETE
+
+Tasks: 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7
+
+### What was done
+- Added `ListAllSecurities()` method to `securityService` — queries all active securities ordered by symbol ASC
+- Added `ListAllSecurities()` to `SecurityServicer` interface
+- Added `ListAllSecurities` handler on `SecurityHandler` — returns 200 with `{"securities": [...]}`
+- Registered `GET /pipeline/securities` route in pipeline group (API key auth)
+- Added 3 service tests: returns_all_securities, returns_empty_when_none, excludes_soft_deleted
+- Added 3 handler tests: returns_200_with_securities, returns_200_empty_list, returns_500_on_service_error
+- Updated mock in handler tests with `listAllSecuritiesFn` field and method
+- Added pipeline GET route to test router setup
+- Full check.sh passes (build, vet, lint, test, test -race)
+
+### Files changed
+- apps/api/internal/services/security_service.go — added ListAllSecurities method
+- apps/api/internal/services/interfaces.go — added ListAllSecurities to SecurityServicer
+- apps/api/internal/handlers/security_handler.go — added ListAllSecurities handler with Swagger annotations
+- apps/api/cmd/api/main.go — registered GET /pipeline/securities route
+- apps/api/internal/services/security_service_test.go — added TestListAllSecurities (3 subtests)
+- apps/api/internal/handlers/security_handler_test.go — added mock method, route, TestSecurityHandler_ListAllSecurities (3 subtests)
+
+### Decisions
+- No pagination for pipeline endpoint — machine client (oracle) needs full list
+- No audit logging for read-only endpoint (consistent with other GET endpoints)
+- GORM soft-delete filtering is automatic, no extra filter needed
+
+## Phases 2-4 + 7-8 (skeleton): Oracle Project Setup — COMPLETE
+
+Tasks: 2.1, 2.2, 3.1, 4.1, 5.1 (stub), 6.2 (stub), 7.1, 8.1
+
+### What was done
+- Created `apps/oracle/` with separate `go.mod` (module github.com/kuberan/oracle, go 1.24)
+- Created full directory structure: internal/{config,client,provider,oracle}
+- Implemented `config.Load()` — reads KUBERAN_API_URL, PIPELINE_API_KEY (required), LOG_LEVEL, REQUEST_TIMEOUT, COMPUTE_SNAPSHOTS (optional with defaults)
+- Implemented `KuberanClient` with GetSecurities, RecordPrices, ComputeSnapshots methods
+- Defined Provider interface with Security, PriceResult, FetchError types
+- Created YahooProvider and CoinGeckoProvider stubs (Name, Supports, stub FetchPrices)
+- Implemented Oracle orchestrator: fetches securities, groups by provider, fetches prices concurrently, records via API, triggers snapshots
+- Implemented main.go: config → logger → http client → kuberan client → providers → oracle → run → log summary → exit codes (0/1/2)
+- `go build ./...` and `go vet ./...` pass
+
+### Files created
+- apps/oracle/go.mod
+- apps/oracle/main.go — full entrypoint with config, logging, exit codes
+- apps/oracle/internal/config/config.go — env var loading + validation
+- apps/oracle/internal/client/kuberan.go — HTTP client for pipeline API
+- apps/oracle/internal/provider/provider.go — interface + Yahoo/CoinGecko stubs
+- apps/oracle/internal/oracle/oracle.go — orchestrator with concurrent provider execution
+
+### Decisions
+- Built full skeleton in one pass rather than phase-by-phase — all packages needed for main.go to compile
+- Provider implementations are stubs (return nil, nil) — will be filled in phases 5-6
+- No tests yet in oracle module — will add per-package tests in phases 3.2, 5.2, 6.3, 7.2
+- SecurityClient interface defined in oracle package for testability (KuberanClient satisfies it)
+
+## Task 3.2: Kuberan Client Tests — COMPLETE
+
+### What was done
+- Created `apps/oracle/internal/client/kuberan_test.go` with 6 tests using httptest mock servers
+- TestGetSecurities_Success: verifies 3 securities parsed with correct fields (ID, Symbol, AssetType, Currency, Exchange, Network)
+- TestGetSecurities_Unauthorized: verifies 401 returns error containing "unexpected status 401"
+- TestGetSecurities_ServerError: verifies 500 returns error containing "unexpected status 500"
+- TestRecordPrices_Success: verifies return value matches server response (5)
+- TestRecordPrices_ValidatesRequestBody: captures request body, verifies JSON structure, X-API-Key header, Content-Type
+- TestComputeSnapshots_Success: verifies recorded_at in body, return value (3), correct method/path/headers
+- All tests pass including race detector
+
+### Files created
+- apps/oracle/internal/client/kuberan_test.go
+
+## Tasks 5.1 + 5.2: Yahoo Finance Provider — COMPLETE
+
+### What was done
+- Extracted Yahoo/CoinGecko stubs from provider.go into separate files (yahoo.go, coingecko.go)
+- provider.go now contains only interface + shared types (Security, PriceResult, FetchError, Provider)
+- Implemented full YahooProvider in yahoo.go:
+  - Exchange suffix mapping (16 exchanges: TSX, LSE, HKEX, ASX, NSE, BSE, SGX, BURSA, JPX, etc.)
+  - buildYahooSymbol() converts symbol+exchange to Yahoo-compatible ticker
+  - Batch splitting at 50 symbols per HTTP request
+  - Parses Yahoo v7 /finance/quote endpoint response
+  - Converts float64 regularMarketPrice to int64 cents via math.Round
+  - Zero price treated as error (FetchError, not PriceResult)
+  - HTTP/decode errors produce FetchError for all securities in batch
+  - baseURL field overridable for tests
+- Added 7 tests in yahoo_test.go using httptest:
+  - Supports, Success, PartialFailure, ExchangeSuffix, BatchSplit, HTTPError, ZeroPrice
+- All pass including race detector
+
+### Files created
+- apps/oracle/internal/provider/yahoo.go
+- apps/oracle/internal/provider/yahoo_test.go
+- apps/oracle/internal/provider/coingecko.go (stub moved from provider.go)
+
+### Files modified
+- apps/oracle/internal/provider/provider.go (removed Yahoo/CoinGecko stubs, kept interface+types only)
+
+## Tasks 6.1 + 6.2 + 6.3: CoinGecko Provider — COMPLETE
+
+### What was done
+- Created coingecko_symbols.go with 65 ticker-to-slug mappings covering top cryptos (BTC, ETH, SOL, etc.), DeFi (UNI, AAVE, MKR, etc.), L2/infra (ARB, OP, IMX, etc.), meme (PEPE, WIF, BONK, FLOKI, SHIB)
+- Exported LookupCoinGeckoID() for case-insensitive symbol lookup
+- Implemented full CoinGeckoProvider.FetchPrices in coingecko.go:
+  - Maps symbols to CoinGecko IDs via lookup table; FetchError for unmapped
+  - Handles multiple tickers mapping to same CoinGecko ID (e.g., MATIC/POL both → matic-network)
+  - Determines target currency from first security's Currency field (lowercase), default "usd"
+  - Single bulk API call to /simple/price endpoint
+  - Converts float64 to int64 cents via math.Round
+  - HTTP errors produce FetchError for all mapped securities
+  - Missing IDs in response produce per-security FetchError
+  - baseURL overridable for httptest
+- Added 8 tests in coingecko_test.go:
+  - Supports, Success (cent conversion), UnknownSymbol (no HTTP call made), PartialResponse, HTTPError (429)
+  - LookupCoinGeckoID_Found, CaseInsensitive, NotFound
+- All 21 oracle tests pass including race detector
+
+### Files created
+- apps/oracle/internal/provider/coingecko_symbols.go
+- apps/oracle/internal/provider/coingecko_test.go
+
+### Files modified
+- apps/oracle/internal/provider/coingecko.go (replaced stub with full implementation)
+
+## Task 7.2: Oracle Orchestrator Tests — COMPLETE
+
+### What was done
+- Created `apps/oracle/internal/oracle/oracle_test.go` with 8 tests using mock client and mock providers
+- TestOracle_Run_FullFlow: 3 stocks + 2 crypto, both providers return all prices, verifies 5 prices recorded + snapshots triggered
+- TestOracle_Run_PartialProviderFailure: Yahoo returns 2/3 (1 FAIL symbol), CoinGecko returns 2/2; verifies 4 prices recorded + 1 error
+- TestOracle_Run_NoSecurities: empty list → early exit, no provider/record/snapshot calls
+- TestOracle_Run_UnsupportedAssetType: bond with crypto-only provider → warning logged, 0 prices, no crash
+- TestOracle_Run_GetSecuritiesFails: client error → oracle returns error
+- TestOracle_Run_RecordPricesFails: client error → oracle returns error (fatal)
+- TestOracle_Run_SnapshotFailureNonFatal: snapshot error → oracle returns success, prices still recorded
+- TestOracle_Run_SnapshotsDisabled: config ComputeSnapshots=false → ComputeSnapshots never called
+- All 29 oracle tests pass including race detector
+
+### Files created
+- apps/oracle/internal/oracle/oracle_test.go
+
+## Tasks 9.1 + 9.2 + 10.1 + 10.2 + 10.3: Docker & Final Verification — COMPLETE
+
+### What was done
+- Created `apps/oracle/Dockerfile` — multi-stage build (golang:1.24-alpine → alpine:3.20)
+  - CGO_ENABLED=0 for static binary, ca-certificates for HTTPS
+  - No go.sum needed (oracle has zero external dependencies)
+- Added `oracle` service to `docker-compose.yml` with profile-based activation
+  - `profiles: [oracle]` — doesn't start during normal `docker compose up`
+  - Run with: `docker compose --profile oracle run --rm oracle`
+  - Environment: KUBERAN_API_URL=http://api:8080, PIPELINE_API_KEY from host, COMPUTE_SNAPSHOTS=true
+  - depends_on: api, restart: "no" (one-shot)
+- No .env.example exists in repo — skipped that step
+- Ran full backend verification: `./scripts/check.sh` — all 5 steps pass
+- Ran full oracle verification: `go build`, `go vet`, `go test -v`, `go test -race` — all 29 tests pass
+- Docker image builds successfully: `docker compose --profile oracle build oracle`
+
+### Files created
+- apps/oracle/Dockerfile
+
+### Files modified
+- docker-compose.yml (added oracle service)

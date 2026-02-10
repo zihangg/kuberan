@@ -1,0 +1,442 @@
+[
+  {
+    "id": "1.1",
+    "category": "service",
+    "passes": true,
+    "description": "Add ListAllSecurities method to security service — returns all active securities ordered by symbol",
+    "steps": [
+      "Open apps/api/internal/services/security_service.go",
+      "Add new method: func (s *securityService) ListAllSecurities() ([]models.Security, error)",
+      "Query all securities with no pagination: db.Order(\"symbol ASC\").Find(&securities)",
+      "GORM default excludes soft-deleted records, so no extra filter needed",
+      "Return the full slice",
+      "Run go build ./... from apps/api/"
+    ]
+  },
+  {
+    "id": "1.2",
+    "category": "service",
+    "passes": true,
+    "description": "Add ListAllSecurities to SecurityServicer interface",
+    "steps": [
+      "Open apps/api/internal/services/interfaces.go",
+      "Add ListAllSecurities() ([]models.Security, error) to the SecurityServicer interface",
+      "Run go build ./... from apps/api/ — expect failure until handler mock is updated"
+    ]
+  },
+  {
+    "id": "1.3",
+    "category": "handler",
+    "passes": true,
+    "description": "Add ListAllSecurities handler for GET /api/v1/pipeline/securities",
+    "steps": [
+      "Open apps/api/internal/handlers/security_handler.go",
+      "Add new handler method: func (h *securityHandler) ListAllSecurities(c *gin.Context)",
+      "Call h.securityService.ListAllSecurities()",
+      "On error, return 500 with internal error",
+      "On success, return 200 with {\"securities\": [...]}",
+      "Add Swagger annotations for the endpoint",
+      "No user context extraction needed — pipeline endpoint, securities are global",
+      "Run go build ./... from apps/api/"
+    ]
+  },
+  {
+    "id": "1.4",
+    "category": "handler",
+    "passes": true,
+    "description": "Register GET /api/v1/pipeline/securities route in main.go",
+    "steps": [
+      "Open apps/api/cmd/api/main.go",
+      "In the pipeline route group (around line 222), add: pipeline.GET(\"/securities\", securityHandler.ListAllSecurities)",
+      "Place alongside existing pipeline.POST(\"/securities\", ...)",
+      "Run go build ./... from apps/api/"
+    ]
+  },
+  {
+    "id": "1.5",
+    "category": "service-tests",
+    "passes": true,
+    "description": "Add service tests for ListAllSecurities",
+    "steps": [
+      "Open apps/api/internal/services/security_service_test.go",
+      "Add TestListAllSecurities with subtests:",
+      "  returns_all_securities: create 3 securities via DB; call ListAllSecurities; verify all 3 returned, ordered by symbol ASC",
+      "  returns_empty_when_none: no securities in DB; verify empty slice returned (not nil)",
+      "  excludes_soft_deleted: create 2 securities, soft-delete one; verify only the active one is returned",
+      "Run go test ./internal/services/ -v -run TestListAllSecurities from apps/api/"
+    ]
+  },
+  {
+    "id": "1.6",
+    "category": "handler-tests",
+    "passes": true,
+    "description": "Add handler tests for ListAllSecurities endpoint",
+    "steps": [
+      "Open apps/api/internal/handlers/security_handler_test.go",
+      "Add listAllSecuritiesFn field to mockSecurityService struct",
+      "Add ListAllSecurities method to mockSecurityService that delegates to listAllSecuritiesFn",
+      "Add GET /pipeline/securities route to test router setup (without pipeline auth middleware, since middleware has its own tests)",
+      "Add TestSecurityHandler_ListAllSecurities with subtests:",
+      "  returns_200_with_securities: mock returns 2 securities; verify JSON response has securities array with correct fields",
+      "  returns_200_empty_list: mock returns empty slice; verify {\"securities\": []}",
+      "  returns_500_on_service_error: mock returns error; verify error response",
+      "Run go test ./internal/handlers/ -v -run TestSecurityHandler_ListAllSecurities from apps/api/"
+    ]
+  },
+  {
+    "id": "1.7",
+    "category": "verification",
+    "passes": true,
+    "description": "Full backend verification after pipeline securities endpoint",
+    "steps": [
+      "Run ./scripts/check.sh from apps/api/",
+      "All 5 steps must pass: go build, go vet, golangci-lint, go test, go test -race"
+    ]
+  },
+  {
+    "id": "2.1",
+    "category": "oracle-skeleton",
+    "passes": true,
+    "description": "Initialize oracle Go module and create directory structure",
+    "steps": [
+      "Create apps/oracle/ directory",
+      "Create apps/oracle/go.mod with module path github.com/kuberan/oracle and go 1.24",
+      "Create directory structure: internal/config/, internal/client/, internal/provider/, internal/oracle/",
+      "Create minimal main.go with package main and empty main func",
+      "Run go build ./... from apps/oracle/ to verify module setup"
+    ]
+  },
+  {
+    "id": "2.2",
+    "category": "oracle-skeleton",
+    "passes": true,
+    "description": "Implement oracle configuration from environment variables",
+    "steps": [
+      "Create apps/oracle/internal/config/config.go",
+      "Define Config struct with fields: KuberanAPIURL (string), PipelineAPIKey (string), LogLevel (slog.Level), RequestTimeout (time.Duration), ComputeSnapshots (bool)",
+      "Implement Load() (*Config, error) function that reads from os.Getenv",
+      "Validate required vars: KUBERAN_API_URL and PIPELINE_API_KEY must be non-empty",
+      "Parse REQUEST_TIMEOUT as time.Duration (default 30s)",
+      "Parse COMPUTE_SNAPSHOTS as bool (default true, accept true/false/1/0)",
+      "Parse LOG_LEVEL to slog.Level (default info, accept debug/info/warn/error)",
+      "Return descriptive error on validation failure",
+      "Run go build ./... from apps/oracle/"
+    ]
+  },
+  {
+    "id": "3.1",
+    "category": "oracle-client",
+    "passes": true,
+    "description": "Implement Kuberan API client with GetSecurities, RecordPrices, and ComputeSnapshots methods",
+    "steps": [
+      "Create apps/oracle/internal/client/kuberan.go",
+      "Define Security struct mirroring pipeline API response fields: ID, Symbol, Name, AssetType, Currency, Exchange, Network",
+      "Define RecordPriceEntry struct: SecurityID, Price (int64), RecordedAt (string, RFC3339)",
+      "Define KuberanClient struct with baseURL, apiKey, httpClient fields",
+      "Implement NewKuberanClient constructor",
+      "Implement GetSecurities(ctx) — GET /api/v1/pipeline/securities with X-API-Key header; parse {\"securities\": [...]} response",
+      "Implement RecordPrices(ctx, prices) — POST /api/v1/pipeline/securities/prices with X-API-Key; parse {\"prices_recorded\": N}",
+      "Implement ComputeSnapshots(ctx) — POST /api/v1/pipeline/snapshots with X-API-Key; body {\"recorded_at\": now}; parse {\"snapshots_recorded\": N}",
+      "All methods: set Content-Type and X-API-Key headers, check non-2xx status, return descriptive errors",
+      "Run go build ./... from apps/oracle/"
+    ]
+  },
+  {
+    "id": "3.2",
+    "category": "oracle-client-tests",
+    "passes": true,
+    "description": "Add Kuberan client tests using httptest mock server",
+    "steps": [
+      "Create apps/oracle/internal/client/kuberan_test.go",
+      "Use httptest.NewServer to mock Kuberan API responses",
+      "TestGetSecurities_Success: mock returns 200 with 3 securities; verify all parsed correctly with correct field values",
+      "TestGetSecurities_Unauthorized: mock returns 401; verify error message includes status info",
+      "TestGetSecurities_ServerError: mock returns 500; verify error returned",
+      "TestRecordPrices_Success: mock returns 200 with {\"prices_recorded\": 5}; verify return value is 5",
+      "TestRecordPrices_ValidatesRequestBody: mock captures request body; verify JSON has correct structure with prices array, X-API-Key header present",
+      "TestComputeSnapshots_Success: mock returns 200 with {\"snapshots_recorded\": 3}; verify return value is 3",
+      "Run go test ./internal/client/ -v from apps/oracle/"
+    ]
+  },
+  {
+    "id": "4.1",
+    "category": "oracle-provider",
+    "passes": true,
+    "description": "Define provider interface, shared types (Security, PriceResult, FetchError)",
+    "steps": [
+      "Create apps/oracle/internal/provider/provider.go",
+      "Define Security struct: ID (uint), Symbol, AssetType, Exchange, Network, Currency (strings)",
+      "Define PriceResult struct: SecurityID (uint), Price (int64 cents), RecordedAt (time.Time)",
+      "Define FetchError struct: SecurityID (uint), Symbol (string), Err (error); implement Error() string method",
+      "Define Provider interface: Name() string, Supports(assetType string) bool, FetchPrices(ctx, securities) ([]PriceResult, []FetchError)",
+      "Run go build ./... from apps/oracle/"
+    ]
+  },
+  {
+    "id": "5.1",
+    "category": "oracle-yahoo",
+    "passes": true,
+    "description": "Implement Yahoo Finance provider for stocks, ETFs, REITs",
+    "steps": [
+      "Create apps/oracle/internal/provider/yahoo.go",
+      "Define YahooProvider struct with httpClient field",
+      "Implement NewYahooProvider constructor",
+      "Implement Name() — returns \"Yahoo Finance\"",
+      "Implement Supports() — returns true for stock, etf, bond, reit",
+      "Define exchangeSuffixes map: TSX->.TO, LSE->.L, HKEX->.HK, ASX->.AX, NSE->.NS, BSE->.BO, SGX->.SI, BURSA->.KL, JPX->.T, FRA->.F, XETRA->.DE, SIX->.SW, etc.",
+      "Implement buildYahooSymbol(symbol, exchange) — appends suffix from map, no suffix for NYSE/NASDAQ/AMEX/empty",
+      "Implement FetchPrices: build ticker list with exchange suffixes, maintain ticker-to-securityID map",
+      "Batch into groups of max 50 symbols per HTTP request",
+      "Call Yahoo v7 quote endpoint: https://query1.finance.yahoo.com/v7/finance/quote?symbols={comma-separated}",
+      "Set User-Agent header to avoid blocks",
+      "Parse response {\"quoteResponse\": {\"result\": [{\"symbol\": ..., \"regularMarketPrice\": ...}]}}",
+      "Convert regularMarketPrice (float64) to int64 cents via math.Round(price * 100)",
+      "Map results back to security IDs; create FetchError for missing symbols or zero prices",
+      "Handle HTTP errors: create FetchError for all securities in failed batch",
+      "Run go build ./... from apps/oracle/"
+    ]
+  },
+  {
+    "id": "5.2",
+    "category": "oracle-yahoo-tests",
+    "passes": true,
+    "description": "Add Yahoo Finance provider tests using httptest mock server",
+    "steps": [
+      "Create apps/oracle/internal/provider/yahoo_test.go",
+      "TestYahooProvider_Supports: verify true for stock/etf/bond/reit, false for crypto",
+      "TestYahooProvider_FetchPrices_Success: mock returns valid quote for 3 symbols (AAPL, MSFT, GOOGL); verify 3 PriceResults with correct cent conversion",
+      "TestYahooProvider_FetchPrices_PartialFailure: mock returns 2 of 3 symbols; verify 2 results + 1 FetchError",
+      "TestYahooProvider_FetchPrices_ExchangeSuffix: security with Exchange=TSX, Symbol=SHOP; verify HTTP request URL includes SHOP.TO",
+      "TestYahooProvider_FetchPrices_BatchSplit: create 60 securities; verify 2 HTTP requests made (50 + 10)",
+      "TestYahooProvider_FetchPrices_HTTPError: mock returns 500; verify all securities get FetchErrors",
+      "TestYahooProvider_FetchPrices_ZeroPrice: mock returns regularMarketPrice=0; verify FetchError (not PriceResult with 0)",
+      "Run go test ./internal/provider/ -v -run TestYahoo from apps/oracle/"
+    ]
+  },
+  {
+    "id": "6.1",
+    "category": "oracle-coingecko",
+    "passes": true,
+    "description": "Implement CoinGecko symbol-to-slug lookup table with top 60+ cryptocurrencies",
+    "steps": [
+      "Create apps/oracle/internal/provider/coingecko_symbols.go",
+      "Define package-level var coinGeckoIDs = map[string]string{} with top 60+ mappings",
+      "Include major coins: BTC->bitcoin, ETH->ethereum, USDT->tether, BNB->binancecoin, SOL->solana, XRP->ripple, USDC->usd-coin, ADA->cardano, DOGE->dogecoin, AVAX->avalanche-2, etc.",
+      "Include DeFi: UNI->uniswap, AAVE->aave, MKR->maker, COMP->compound-governance-token, CRV->curve-dao-token, etc.",
+      "Include L2/infra: MATIC->matic-network, ARB->arbitrum, OP->optimism, IMX->immutable-x, etc.",
+      "Include meme: PEPE->pepe, WIF->dogwifcoin, BONK->bonk, FLOKI->floki, SHIB->shiba-inu, etc.",
+      "Export LookupCoinGeckoID(symbol string) (string, bool) — uses strings.ToUpper for case-insensitive lookup",
+      "Run go build ./... from apps/oracle/"
+    ]
+  },
+  {
+    "id": "6.2",
+    "category": "oracle-coingecko",
+    "passes": true,
+    "description": "Implement CoinGecko provider for crypto prices using /simple/price bulk endpoint",
+    "steps": [
+      "Create apps/oracle/internal/provider/coingecko.go",
+      "Define CoinGeckoProvider struct with httpClient field",
+      "Implement NewCoinGeckoProvider constructor",
+      "Implement Name() — returns \"CoinGecko\"",
+      "Implement Supports() — returns true for crypto only",
+      "Implement FetchPrices:",
+      "  Map each security symbol to CoinGecko ID via LookupCoinGeckoID; create FetchError for unmapped symbols",
+      "  Build comma-separated list of CoinGecko IDs; maintain ID-to-security map for result mapping",
+      "  Determine target currency from first security's Currency field (lowercase); default to 'usd'",
+      "  Call https://api.coingecko.com/api/v3/simple/price?ids={ids}&vs_currencies={currency}",
+      "  Parse response {\"bitcoin\": {\"usd\": 67234.56}, ...}",
+      "  Convert price (float64) to int64 cents via math.Round(price * 100)",
+      "  Map results back to security IDs; create FetchError for IDs not in response",
+      "  Handle HTTP errors: create FetchError for all securities",
+      "Run go build ./... from apps/oracle/"
+    ]
+  },
+  {
+    "id": "6.3",
+    "category": "oracle-coingecko-tests",
+    "passes": true,
+    "description": "Add CoinGecko provider and symbol lookup tests",
+    "steps": [
+      "Create apps/oracle/internal/provider/coingecko_test.go",
+      "TestCoinGeckoProvider_Supports: verify true for crypto, false for stock/etf/bond/reit",
+      "TestCoinGeckoProvider_FetchPrices_Success: mock returns prices for BTC and ETH; verify 2 PriceResults with correct cent conversion",
+      "TestCoinGeckoProvider_FetchPrices_UnknownSymbol: security with unmapped symbol OBSCURECOIN; verify FetchError",
+      "TestCoinGeckoProvider_FetchPrices_PartialResponse: mock returns BTC price but not ETH; verify 1 result + 1 FetchError",
+      "TestCoinGeckoProvider_FetchPrices_HTTPError: mock returns 429 (rate limit); verify all FetchErrors",
+      "TestLookupCoinGeckoID_Found: verify BTC -> bitcoin, ETH -> ethereum",
+      "TestLookupCoinGeckoID_CaseInsensitive: verify btc (lowercase) -> bitcoin",
+      "TestLookupCoinGeckoID_NotFound: verify unknown symbol returns empty string and false",
+      "Run go test ./internal/provider/ -v -run TestCoinGecko from apps/oracle/",
+      "Run go test ./internal/provider/ -v -run TestLookup from apps/oracle/"
+    ]
+  },
+  {
+    "id": "7.1",
+    "category": "oracle-orchestrator",
+    "passes": true,
+    "description": "Implement oracle orchestrator — groups securities by provider, fetches in parallel, pushes results",
+    "steps": [
+      "Create apps/oracle/internal/oracle/oracle.go",
+      "Define SecurityClient interface: GetSecurities(ctx) ([]client.Security, error), RecordPrices(ctx, prices) (int, error), ComputeSnapshots(ctx) (int, error)",
+      "Define Oracle struct with client (SecurityClient), providers ([]provider.Provider), config (*config.Config), logger (*slog.Logger)",
+      "Define RunResult struct: SecuritiesFetched, PricesRecorded, SnapshotsRecorded (int), Errors ([]provider.FetchError), Duration (time.Duration)",
+      "Implement NewOracle constructor",
+      "Implement Run(ctx) (*RunResult, error):",
+      "  1. Call client.GetSecurities — if error, return error (fatal)",
+      "  2. Convert client.Security to provider.Security types",
+      "  3. Group securities by matching provider (first provider where Supports(assetType) is true); log warnings for unmatched",
+      "  4. Launch provider FetchPrices calls concurrently using sync.WaitGroup + mutex for collecting results",
+      "  5. Collect all PriceResults and FetchErrors",
+      "  6. If no prices, log info and return early (nothing to record)",
+      "  7. Convert PriceResults to client.RecordPriceEntry (time.Time -> RFC3339 string, price in cents)",
+      "  8. Call client.RecordPrices — if error, return error (fatal)",
+      "  9. If config.ComputeSnapshots, call client.ComputeSnapshots — if error, log warning but don't fail",
+      "  10. Return RunResult with counts and duration",
+      "Run go build ./... from apps/oracle/"
+    ]
+  },
+  {
+    "id": "7.2",
+    "category": "oracle-orchestrator-tests",
+    "passes": true,
+    "description": "Add orchestrator tests with mock client and mock providers",
+    "steps": [
+      "Create apps/oracle/internal/oracle/oracle_test.go",
+      "Create mock implementations of SecurityClient interface and Provider interface",
+      "TestOracle_Run_FullFlow: 3 stock + 2 crypto securities; mock Yahoo returns 3 prices, mock CoinGecko returns 2; verify client receives all 5 prices and snapshots triggered",
+      "TestOracle_Run_PartialProviderFailure: Yahoo returns 2/3, CoinGecko returns 2/2; verify 4 prices recorded, 1 error in result",
+      "TestOracle_Run_NoSecurities: mock client returns empty list; verify early exit, 0 prices, no provider calls",
+      "TestOracle_Run_UnsupportedAssetType: 1 bond security with no matching provider; verify warning logged, 0 prices for it, no crash",
+      "TestOracle_Run_GetSecuritiesFails: mock client GetSecurities returns error; verify oracle returns error",
+      "TestOracle_Run_RecordPricesFails: mock client RecordPrices returns error; verify oracle returns error",
+      "TestOracle_Run_SnapshotFailureNonFatal: mock client ComputeSnapshots returns error; verify oracle returns success with prices recorded",
+      "TestOracle_Run_SnapshotsDisabled: config ComputeSnapshots=false; verify ComputeSnapshots never called",
+      "Run go test ./internal/oracle/ -v from apps/oracle/"
+    ]
+  },
+  {
+    "id": "8.1",
+    "category": "oracle-main",
+    "passes": true,
+    "description": "Implement main.go entrypoint — loads config, creates dependencies, runs oracle, logs summary",
+    "steps": [
+      "Open apps/oracle/main.go",
+      "Load config via config.Load(); exit code 1 on error",
+      "Set up slog.Logger with JSON handler and configured log level",
+      "Create http.Client with configured timeout",
+      "Create KuberanClient with URL, API key, and http client",
+      "Create providers slice: [YahooProvider, CoinGeckoProvider]",
+      "Create Oracle with client, providers, config, logger",
+      "Call oracle.Run(context.Background())",
+      "On error: log error, exit code 1",
+      "On success: log summary (securities fetched, prices recorded, snapshots, errors count, duration)",
+      "Log individual FetchErrors at warn level",
+      "Exit code 0 for full success, exit code 2 for partial success (some errors but prices recorded)",
+      "Run go build ./... from apps/oracle/"
+    ]
+  },
+  {
+    "id": "8.2",
+    "category": "oracle-verification",
+    "passes": true,
+    "description": "Full oracle verification — build, vet, test, race",
+    "steps": [
+      "Run go build ./... from apps/oracle/",
+      "Run go vet ./... from apps/oracle/",
+      "Run go test ./... -v from apps/oracle/",
+      "Run go test ./... -race from apps/oracle/",
+      "All must pass"
+    ]
+  },
+  {
+    "id": "9.1",
+    "category": "docker",
+    "passes": true,
+    "description": "Create Dockerfile for oracle — multi-stage build, static binary",
+    "steps": [
+      "Create apps/oracle/Dockerfile",
+      "Stage 1 (builder): golang:1.24-alpine, copy go.mod/go.sum, go mod download, copy source, CGO_ENABLED=0 go build -o /oracle ./main.go",
+      "Stage 2 (runtime): alpine:3.20, install ca-certificates (needed for HTTPS), copy binary from builder",
+      "ENTRYPOINT [\"/oracle\"]",
+      "Verify: docker build -t kuberan-oracle apps/oracle/ (or docker compose --profile oracle build)"
+    ]
+  },
+  {
+    "id": "9.2",
+    "category": "docker",
+    "passes": true,
+    "description": "Add oracle service to docker-compose.yml with profile-based activation",
+    "steps": [
+      "Open docker-compose.yml in repo root",
+      "Add oracle service: build context ./apps/oracle, environment vars (KUBERAN_API_URL=http://api:8080, PIPELINE_API_KEY from host env, COMPUTE_SNAPSHOTS=true, LOG_LEVEL=info)",
+      "Set depends_on: [api]",
+      "Set profiles: [oracle] so it doesn't run during normal docker compose up",
+      "Set restart: no (one-shot process)",
+      "Update .env.example if it exists to include PIPELINE_API_KEY placeholder",
+      "Verify: docker compose --profile oracle build oracle"
+    ]
+  },
+  {
+    "id": "10.1",
+    "category": "verification",
+    "passes": true,
+    "description": "Full backend verification — check.sh must pass",
+    "steps": [
+      "Run ./scripts/check.sh from apps/api/",
+      "All 5 steps must pass: go build, go vet, golangci-lint, go test, go test -race"
+    ]
+  },
+  {
+    "id": "10.2",
+    "category": "verification",
+    "passes": true,
+    "description": "Full oracle verification — build, vet, test, race must all pass",
+    "steps": [
+      "Run go build ./... from apps/oracle/",
+      "Run go vet ./... from apps/oracle/",
+      "Run go test ./... -v from apps/oracle/",
+      "Run go test ./... -race from apps/oracle/",
+      "All must pass"
+    ]
+  },
+  {
+    "id": "10.3",
+    "category": "verification",
+    "passes": true,
+    "description": "Docker build verification",
+    "steps": [
+      "Run docker compose --profile oracle build oracle from repo root",
+      "Build must succeed"
+    ]
+  },
+  {
+    "id": "10.4",
+    "category": "verification",
+    "passes": true,
+    "description": "Final verification checklist — all items must be confirmed",
+    "steps": [
+      "Verify GET /api/v1/pipeline/securities returns all active securities with API key auth",
+      "Verify GET /api/v1/pipeline/securities returns 401 without valid API key",
+      "Verify GET /api/v1/pipeline/securities returns 503 when PIPELINE_API_KEY is not configured",
+      "Verify oracle binary compiles and runs with valid config",
+      "Verify oracle exits with code 1 on missing required config",
+      "Verify oracle fetches securities from Kuberan API",
+      "Verify Yahoo Finance provider fetches prices for stocks, ETFs, REITs",
+      "Verify Yahoo Finance provider handles exchange suffixes correctly",
+      "Verify Yahoo Finance provider batches requests for >50 symbols",
+      "Verify CoinGecko provider fetches prices for crypto",
+      "Verify CoinGecko symbol mapping covers top 60+ cryptocurrencies",
+      "Verify CoinGecko provider handles unmapped symbols gracefully",
+      "Verify oracle records fetched prices via pipeline API",
+      "Verify oracle triggers portfolio snapshot computation when configured",
+      "Verify oracle handles partial failures — records successes, logs failures",
+      "Verify oracle exit code 0 for full success, 1 for fatal, 2 for partial success",
+      "Verify all service and handler tests pass for new pipeline endpoint",
+      "Verify all oracle unit tests pass (client, providers, orchestrator)",
+      "Verify all oracle tests pass with race detector",
+      "Verify Docker image builds successfully",
+      "Verify no //nolint directives without justification"
+    ]
+  }
+]
