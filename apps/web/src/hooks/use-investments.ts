@@ -18,6 +18,8 @@ import { accountKeys } from "./use-accounts";
 export const investmentKeys = {
   all: ["investments"] as const,
   portfolio: () => [...investmentKeys.all, "portfolio"] as const,
+  allList: (params?: PaginationParams) =>
+    [...investmentKeys.all, "all", params] as const,
   lists: () => [...investmentKeys.all, "list"] as const,
   list: (accountId: number, params?: PaginationParams) =>
     [...investmentKeys.lists(), accountId, params] as const,
@@ -36,6 +38,16 @@ export function usePortfolio() {
       );
       return res.portfolio;
     },
+  });
+}
+
+export function useAllInvestments(params?: PaginationParams) {
+  return useQuery({
+    queryKey: investmentKeys.allList(params),
+    queryFn: () =>
+      apiClient.get<PageResponse<Investment>>("/api/v1/investments", {
+        ...params,
+      }),
   });
 }
 

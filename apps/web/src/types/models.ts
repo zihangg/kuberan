@@ -134,6 +134,7 @@ export interface Investment extends BaseModel {
   security_id: number;
   quantity: number; // float
   cost_basis: number; // cents
+  realized_gain_loss: number; // cents — accumulated realized P&L from sells
   current_price: number; // cents per unit, populated at query time from security_prices
   wallet_address?: string; // crypto
   security: Security; // preloaded relation
@@ -157,6 +158,7 @@ export interface InvestmentTransaction extends BaseModel {
   total_amount: number; // cents
   fee: number; // cents
   notes: string;
+  realized_gain_loss: number; // cents — realized P&L for this specific sell
   split_ratio?: number; // float, for splits
   dividend_type?: string; // for dividends
   investment?: Investment; // preloaded relation
@@ -167,5 +169,6 @@ export interface PortfolioSummary {
   total_cost_basis: number; // cents
   total_gain_loss: number; // cents
   gain_loss_pct: number; // float percentage
+  total_realized_gain_loss: number; // cents
   holdings_by_type: Record<AssetType, { value: number; count: number }>;
 }
