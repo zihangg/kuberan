@@ -147,6 +147,10 @@ func (s *accountService) GetUserAccounts(userID uint, page pagination.PageReques
 		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
 
+	if err := s.enrichInvestmentBalances(accounts); err != nil {
+		return nil, err
+	}
+
 	result := pagination.NewPageResponse(accounts, page.Page, page.PageSize, totalItems)
 	return &result, nil
 }
@@ -160,6 +164,15 @@ func (s *accountService) GetAccountByID(userID, accountID uint) (*models.Account
 		}
 		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
+
+	if account.Type == models.AccountTypeInvestment {
+		accounts := []models.Account{account}
+		if err := s.enrichInvestmentBalances(accounts); err != nil {
+			return nil, err
+		}
+		account = accounts[0]
+	}
+
 	return &account, nil
 }
 
@@ -244,5 +257,69 @@ func (s *accountService) UpdateAccountBalance(tx *gorm.DB, account *models.Accou
 	if err := tx.Model(account).Update("balance", account.Balance).Error; err != nil {
 		return apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
+	return nil
+}
+
+// enrichInvestmentBalances computes market-value balances for investment accounts
+// in the given slice. Non-investment accounts are left unchanged.
+func (s *accountService) enrichInvestmentBalances(accounts []models.Account) error {
+	// Collect investment account IDs
+	var investmentAccountIDs []uint
+	for i := range accounts {
+		if accounts[i].Type == models.AccountTypeInvestment {
+			investmentAccountIDs = append(investmentAccountIDs, accounts[i].ID)
+		}
+	}
+	if len(investmentAccountIDs) == 0 {
+		return nil
+	}
+
+	// Fetch investments for those accounts
+	type holding struct {
+		AccountID  uint
+		SecurityID uint
+		Quantity   float64
+	}
+	var holdings []holding
+	if err := s.db.Table("investments").
+		Select("account_id, security_id, quantity").
+		Where("account_id IN ? AND deleted_at IS NULL", investmentAccountIDs).
+		Scan(&holdings).Error; err != nil {
+		return apperrors.Wrap(apperrors.ErrInternalServer, err)
+	}
+
+	if len(holdings) == 0 {
+		return nil
+	}
+
+	// Collect distinct security IDs
+	secIDSet := make(map[uint]struct{})
+	for _, h := range holdings {
+		secIDSet[h.SecurityID] = struct{}{}
+	}
+	secIDs := make([]uint, 0, len(secIDSet))
+	for id := range secIDSet {
+		secIDs = append(secIDs, id)
+	}
+
+	// Batch-fetch latest prices
+	prices, err := getLatestPrices(s.db, secIDs)
+	if err != nil {
+		return err
+	}
+
+	// Accumulate market value per account
+	balances := make(map[uint]int64)
+	for _, h := range holdings {
+		balances[h.AccountID] += int64(h.Quantity * float64(prices[h.SecurityID]))
+	}
+
+	// Set balances on the account slice
+	for i := range accounts {
+		if accounts[i].Type == models.AccountTypeInvestment {
+			accounts[i].Balance = balances[accounts[i].ID]
+		}
+	}
+
 	return nil
 }
