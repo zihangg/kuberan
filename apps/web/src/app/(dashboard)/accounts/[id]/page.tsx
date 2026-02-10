@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { useAccount } from "@/hooks/use-accounts";
 import { useAccountTransactions } from "@/hooks/use-transactions";
+import { useAccountInvestments } from "@/hooks/use-investments";
 import { useCategories } from "@/hooks/use-categories";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { Button } from "@/components/ui/button";
@@ -48,6 +49,7 @@ import {
 import { CreateTransactionDialog } from "@/components/transactions/create-transaction-dialog";
 import { EditAccountDialog } from "@/components/accounts/edit-account-dialog";
 import { EditTransactionDialog } from "@/components/transactions/edit-transaction-dialog";
+import { AddInvestmentDialog } from "@/components/investments/add-investment-dialog";
 import type { Transaction, TransactionType } from "@/types/models";
 import type { TransactionFilters } from "@/types/api";
 
@@ -151,6 +153,8 @@ export default function AccountDetailPage() {
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [editTxOpen, setEditTxOpen] = useState(false);
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
+  const [addInvestmentOpen, setAddInvestmentOpen] = useState(false);
+  const [investmentPage, setInvestmentPage] = useState(1);
 
   const { data: account, isLoading: accountLoading } = useAccount(accountId);
   const { data: transactionsData, isLoading: transactionsLoading } =
@@ -160,11 +164,19 @@ export default function AccountDetailPage() {
       page_size: PAGE_SIZE,
     });
   const { data: categoriesData } = useCategories({ page_size: 100 });
+  const { data: investmentsData, isLoading: investmentsLoading } =
+    useAccountInvestments(
+      account?.type === "investment" ? accountId : 0,
+      { page: investmentPage, page_size: PAGE_SIZE }
+    );
 
   const transactions = transactionsData?.data ?? [];
   const totalPages = transactionsData?.total_pages ?? 1;
   const totalItems = transactionsData?.total_items ?? 0;
   const categories = categoriesData?.data ?? [];
+  const investments = investmentsData?.data ?? [];
+  const investmentTotalPages = investmentsData?.total_pages ?? 1;
+  const investmentTotalItems = investmentsData?.total_items ?? 0;
 
   if (accountLoading) {
     return <AccountDetailSkeleton />;
@@ -417,15 +429,136 @@ export default function AccountDetailPage() {
         </CardContent>
       </Card>
 
-      {/* Investment accounts: placeholder for investments tab */}
+      {/* Investment holdings */}
       {account.type === "investment" && (
         <Card>
           <CardHeader>
-            <CardTitle>Investments</CardTitle>
-            <CardDescription>
-              Investment holdings for this account will be shown here.
-            </CardDescription>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle>Investments</CardTitle>
+                {investmentTotalItems > 0 && (
+                  <CardDescription>
+                    {investmentTotalItems} holding
+                    {investmentTotalItems !== 1 ? "s" : ""}
+                  </CardDescription>
+                )}
+              </div>
+              <Button
+                size="sm"
+                onClick={() => setAddInvestmentOpen(true)}
+              >
+                <Plus className="mr-2 h-4 w-4" />
+                Add Investment
+              </Button>
+            </div>
           </CardHeader>
+          <CardContent>
+            {investmentsLoading ? (
+              <div className="space-y-3">
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <Skeleton key={i} className="h-12 w-full" />
+                ))}
+              </div>
+            ) : investments.length === 0 ? (
+              <div className="flex flex-col items-center justify-center rounded-lg border border-dashed p-8 text-center">
+                <h3 className="text-lg font-semibold">No investments yet</h3>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Add your first investment to start tracking your portfolio.
+                </p>
+              </div>
+            ) : (
+              <>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Symbol</TableHead>
+                      <TableHead>Name</TableHead>
+                      <TableHead className="text-right">Qty</TableHead>
+                      <TableHead className="text-right">Price</TableHead>
+                      <TableHead className="text-right">
+                        Market Value
+                      </TableHead>
+                      <TableHead className="text-right">Gain/Loss</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {investments.map((inv) => {
+                      const marketValue = Math.round(
+                        inv.quantity * inv.current_price
+                      );
+                      const gainLoss = marketValue - inv.cost_basis;
+                      const isPositive = gainLoss >= 0;
+                      return (
+                        <TableRow
+                          key={inv.id}
+                          className="cursor-pointer"
+                          onClick={() =>
+                            router.push(`/investments/${inv.id}`)
+                          }
+                        >
+                          <TableCell className="font-mono font-semibold">
+                            {inv.security.symbol}
+                          </TableCell>
+                          <TableCell>{inv.security.name}</TableCell>
+                          <TableCell className="text-right">
+                            {inv.quantity}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {formatCurrency(inv.current_price)}
+                          </TableCell>
+                          <TableCell className="text-right font-medium">
+                            {formatCurrency(marketValue)}
+                          </TableCell>
+                          <TableCell
+                            className={`text-right font-medium ${
+                              isPositive
+                                ? "text-green-600"
+                                : "text-red-600"
+                            }`}
+                          >
+                            {isPositive ? "+" : ""}
+                            {formatCurrency(gainLoss)}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+
+                {investmentTotalPages > 1 && (
+                  <div className="mt-4 flex items-center justify-between">
+                    <span className="text-sm text-muted-foreground">
+                      Page {investmentPage} of {investmentTotalPages}
+                    </span>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={investmentPage <= 1}
+                        onClick={() =>
+                          setInvestmentPage((p) => p - 1)
+                        }
+                      >
+                        <ChevronLeft className="h-4 w-4" />
+                        Previous
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={investmentPage >= investmentTotalPages}
+                        onClick={() =>
+                          setInvestmentPage((p) => p + 1)
+                        }
+                      >
+                        Next
+                        <ChevronRight className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </CardContent>
         </Card>
       )}
 
@@ -445,6 +578,14 @@ export default function AccountDetailPage() {
         onOpenChange={setEditTxOpen}
         transaction={selectedTransaction}
       />
+
+      {account.type === "investment" && (
+        <AddInvestmentDialog
+          accountId={accountId}
+          open={addInvestmentOpen}
+          onOpenChange={setAddInvestmentOpen}
+        />
+      )}
     </div>
   );
 }
