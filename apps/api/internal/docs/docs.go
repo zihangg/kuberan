@@ -2284,7 +2284,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Get a paginated list of all securities",
+                "description": "Get a paginated list of all securities, optionally filtered by search term",
                 "consumes": [
                     "application/json"
                 ],
@@ -2296,6 +2296,12 @@ const docTemplate = `{
                 ],
                 "summary": "List securities",
                 "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Search by symbol or name (case-insensitive)",
+                        "name": "search",
+                        "in": "query"
+                    },
                     {
                         "type": "integer",
                         "description": "Page number (default 1)",

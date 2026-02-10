@@ -2524,8 +2524,13 @@ paths:
     get:
       consumes:
       - application/json
-      description: Get a paginated list of all securities
+      description: Get a paginated list of all securities, optionally filtered by
+        search term
       parameters:
+      - description: Search by symbol or name (case-insensitive)
+        in: query
+        name: search
+        type: string
       - description: Page number (default 1)
         in: query
         name: page
