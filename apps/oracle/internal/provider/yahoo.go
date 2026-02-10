@@ -103,10 +103,7 @@ func (p *YahooProvider) FetchPrices(ctx context.Context, securities []Security) 
 	now := time.Now().UTC()
 
 	for i := 0; i < len(tickers); i += yahooBatchMax {
-		end := i + yahooBatchMax
-		if end > len(tickers) {
-			end = len(tickers)
-		}
+		end := min(i+yahooBatchMax, len(tickers))
 		batch := tickers[i:end]
 
 		results, fetchErrors := p.fetchBatch(ctx, batch, tickerToSec, now)
