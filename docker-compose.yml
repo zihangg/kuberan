@@ -18,6 +18,7 @@ services:
       - DB_PASSWORD=kuberan
       - DB_NAME=kuberan
       - DB_SSLMODE=disable
+      - PIPELINE_API_KEY=${PIPELINE_API_KEY}
     depends_on:
       postgres:
         condition: service_healthy
