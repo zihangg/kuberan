@@ -1,7 +1,23 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-cd "$(dirname "$0")/.."
+if [ $# -ne 1 ]; then
+  echo "Usage: $0 <module-directory>"
+  echo "Example: $0 apps/api"
+  exit 1
+fi
+
+MODULE_DIR="$1"
+
+if [ ! -f "$MODULE_DIR/go.mod" ]; then
+  echo "Error: $MODULE_DIR/go.mod not found. Is this a Go module?"
+  exit 1
+fi
+
+cd "$MODULE_DIR"
+
+echo "=== Checking $(head -1 go.mod | awk '{print $2}') ==="
+echo ""
 
 echo "=== Step 1/5: go build ==="
 go build ./...

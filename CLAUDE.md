@@ -15,7 +15,7 @@ Monorepo with two main applications:
 │   └── web/          # Next.js frontend (React 19 + Tailwind CSS v4)
 ├── packages/         # Shared code between apps
 ├── plans/            # Architecture and upgrade plans
-├── scripts/          # Utility scripts
+├── scripts/          # Shared scripts (check-go.sh, etc.)
 ├── tools/            # Development tools
 └── docker-compose.yml
 ```
@@ -60,8 +60,6 @@ apps/api/
 │   ├── api/main.go           # Application entrypoint
 │   └── migrate/main.go       # Migration CLI tool
 ├── migrations/               # SQL migration files (golang-migrate)
-├── scripts/
-│   └── check.sh              # Full verification (build+vet+lint+test+race)
 ├── Makefile                  # Dev targets (build, test, lint, migrate, etc.)
 ├── internal/
 │   ├── config/               # Environment-based configuration
@@ -214,7 +212,8 @@ cd apps/api && golangci-lint run ./...
 
 **Primary check command** (run after any code change):
 ```bash
-cd apps/api && ./scripts/check.sh
+./scripts/check-go.sh apps/api
+./scripts/check-go.sh apps/oracle
 ```
 
 This runs, in order: `go build` -> `go vet` -> `golangci-lint` -> `go test` -> `go test -race`. All must pass.
@@ -230,7 +229,7 @@ When using AI coding agents (Claude Code, Cursor, Copilot, etc.) to modify this 
 
 1. **After each file change**: Run `go build ./...` from `apps/api/` to catch compile errors immediately.
 2. **After completing a logical unit of work**: Run `make check-fast` (build + vet + lint).
-3. **After completing a feature or phase**: Run `./scripts/check.sh` (full verification).
+3. **After completing a feature or phase**: Run `./scripts/check-go.sh apps/<app>` (full verification).
 4. **Never skip tests**: If tests exist, they must pass before moving on.
 5. **Never suppress lint errors**: Fix them properly. No `//nolint` without justification comments.
 6. **Fix errors in order**: Compilation first, then vet, then lint, then tests. If step 1 fails, do not proceed to step 2.
