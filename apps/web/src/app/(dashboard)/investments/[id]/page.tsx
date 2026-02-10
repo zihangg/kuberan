@@ -21,6 +21,10 @@ import {
   useInvestmentTransactions,
 } from "@/hooks/use-investments";
 import { formatCurrency, formatDate } from "@/lib/format";
+import { RecordBuyDialog } from "@/components/investments/record-buy-dialog";
+import { RecordSellDialog } from "@/components/investments/record-sell-dialog";
+import { RecordDividendDialog } from "@/components/investments/record-dividend-dialog";
+import { RecordSplitDialog } from "@/components/investments/record-split-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -85,6 +89,10 @@ export default function InvestmentDetailPage() {
   const investmentId = Number(params.id);
 
   const [txPage, setTxPage] = useState(1);
+  const [buyOpen, setBuyOpen] = useState(false);
+  const [sellOpen, setSellOpen] = useState(false);
+  const [dividendOpen, setDividendOpen] = useState(false);
+  const [splitOpen, setSplitOpen] = useState(false);
 
   const { data: investment, isLoading } = useInvestment(investmentId);
   const { data: txData, isLoading: txLoading } = useInvestmentTransactions(
@@ -243,21 +251,43 @@ export default function InvestmentDetailPage() {
         </Card>
       </div>
 
-      {/* Action buttons — placeholder row for future dialog integration */}
+      {/* Action buttons */}
       <div className="flex flex-wrap gap-2">
-        <Button size="sm" variant="default" disabled>
+        <Button size="sm" variant="default" onClick={() => setBuyOpen(true)}>
           Buy
         </Button>
-        <Button size="sm" variant="outline" disabled>
+        <Button size="sm" variant="outline" onClick={() => setSellOpen(true)}>
           Sell
         </Button>
-        <Button size="sm" variant="outline" disabled>
+        <Button size="sm" variant="outline" onClick={() => setDividendOpen(true)}>
           Dividend
         </Button>
-        <Button size="sm" variant="outline" disabled>
+        <Button size="sm" variant="outline" onClick={() => setSplitOpen(true)}>
           Split
         </Button>
       </div>
+
+      <RecordBuyDialog
+        investmentId={investmentId}
+        open={buyOpen}
+        onOpenChange={setBuyOpen}
+      />
+      <RecordSellDialog
+        investmentId={investmentId}
+        currentQuantity={investment.quantity}
+        open={sellOpen}
+        onOpenChange={setSellOpen}
+      />
+      <RecordDividendDialog
+        investmentId={investmentId}
+        open={dividendOpen}
+        onOpenChange={setDividendOpen}
+      />
+      <RecordSplitDialog
+        investmentId={investmentId}
+        open={splitOpen}
+        onOpenChange={setSplitOpen}
+      />
 
       {/* Transaction history */}
       <Card>
