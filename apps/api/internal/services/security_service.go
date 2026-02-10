@@ -72,11 +72,18 @@ func (s *securityService) GetSecurityByID(id uint) (*models.Security, error) {
 }
 
 // ListSecurities returns a paginated list of securities ordered by symbol.
-func (s *securityService) ListSecurities(page pagination.PageRequest) (*pagination.PageResponse[models.Security], error) {
+// When search is non-empty, results are filtered by case-insensitive match on symbol or name.
+func (s *securityService) ListSecurities(search string, page pagination.PageRequest) (*pagination.PageResponse[models.Security], error) {
 	page.Defaults()
 
 	var totalItems int64
 	base := s.db.Model(&models.Security{})
+
+	if search = strings.TrimSpace(search); search != "" {
+		pattern := "%" + strings.ToLower(search) + "%"
+		base = base.Where("LOWER(symbol) LIKE ? OR LOWER(name) LIKE ?", pattern, pattern)
+	}
+
 	if err := base.Count(&totalItems).Error; err != nil {
 		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}

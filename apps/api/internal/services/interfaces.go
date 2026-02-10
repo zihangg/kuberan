@@ -180,7 +180,7 @@ type SecurityPriceInput struct {
 type SecurityServicer interface {
 	CreateSecurity(symbol, name string, assetType models.AssetType, currency, exchange string, extraFields map[string]interface{}) (*models.Security, error)
 	GetSecurityByID(id uint) (*models.Security, error)
-	ListSecurities(page pagination.PageRequest) (*pagination.PageResponse[models.Security], error)
+	ListSecurities(search string, page pagination.PageRequest) (*pagination.PageResponse[models.Security], error)
 	RecordPrices(prices []SecurityPriceInput) (int, error)
 	GetPriceHistory(securityID uint, from, to time.Time, page pagination.PageRequest) (*pagination.PageResponse[models.SecurityPrice], error)
 }

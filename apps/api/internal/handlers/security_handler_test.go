@@ -19,7 +19,7 @@ import (
 type mockSecurityService struct {
 	createSecurityFn  func(symbol, name string, assetType models.AssetType, currency, exchange string, extraFields map[string]interface{}) (*models.Security, error)
 	getSecurityByIDFn func(id uint) (*models.Security, error)
-	listSecuritiesFn  func(page pagination.PageRequest) (*pagination.PageResponse[models.Security], error)
+	listSecuritiesFn  func(search string, page pagination.PageRequest) (*pagination.PageResponse[models.Security], error)
 	recordPricesFn    func(prices []services.SecurityPriceInput) (int, error)
 	getPriceHistoryFn func(securityID uint, from, to time.Time, page pagination.PageRequest) (*pagination.PageResponse[models.SecurityPrice], error)
 }
@@ -40,9 +40,9 @@ func (m *mockSecurityService) GetSecurityByID(id uint) (*models.Security, error)
 	return &models.Security{}, nil
 }
 
-func (m *mockSecurityService) ListSecurities(page pagination.PageRequest) (*pagination.PageResponse[models.Security], error) {
+func (m *mockSecurityService) ListSecurities(search string, page pagination.PageRequest) (*pagination.PageResponse[models.Security], error) {
 	if m.listSecuritiesFn != nil {
-		return m.listSecuritiesFn(page)
+		return m.listSecuritiesFn(search, page)
 	}
 	resp := pagination.NewPageResponse([]models.Security{}, 1, 20, 0)
 	return &resp, nil
@@ -174,7 +174,7 @@ func TestSecurityHandler_CreateSecurity(t *testing.T) {
 func TestSecurityHandler_ListSecurities(t *testing.T) {
 	t.Run("returns_200_with_data", func(t *testing.T) {
 		svc := &mockSecurityService{
-			listSecuritiesFn: func(_ pagination.PageRequest) (*pagination.PageResponse[models.Security], error) {
+			listSecuritiesFn: func(_ string, _ pagination.PageRequest) (*pagination.PageResponse[models.Security], error) {
 				resp := pagination.NewPageResponse([]models.Security{
 					{Base: models.Base{ID: 1}, Symbol: "AAPL", Name: "Apple Inc.", AssetType: models.AssetTypeStock},
 					{Base: models.Base{ID: 2}, Symbol: "GOOGL", Name: "Alphabet Inc.", AssetType: models.AssetTypeStock},
@@ -203,7 +203,7 @@ func TestSecurityHandler_ListSecurities(t *testing.T) {
 	t.Run("returns_200_with_pagination_params", func(t *testing.T) {
 		var capturedPage pagination.PageRequest
 		svc := &mockSecurityService{
-			listSecuritiesFn: func(page pagination.PageRequest) (*pagination.PageResponse[models.Security], error) {
+			listSecuritiesFn: func(_ string, page pagination.PageRequest) (*pagination.PageResponse[models.Security], error) {
 				capturedPage = page
 				resp := pagination.NewPageResponse([]models.Security{}, 2, 5, 10)
 				return &resp, nil
@@ -222,6 +222,28 @@ func TestSecurityHandler_ListSecurities(t *testing.T) {
 		}
 		if capturedPage.PageSize != 5 {
 			t.Errorf("expected page_size=5, got %d", capturedPage.PageSize)
+		}
+	})
+
+	t.Run("passes_search_to_service", func(t *testing.T) {
+		var capturedSearch string
+		svc := &mockSecurityService{
+			listSecuritiesFn: func(search string, _ pagination.PageRequest) (*pagination.PageResponse[models.Security], error) {
+				capturedSearch = search
+				resp := pagination.NewPageResponse([]models.Security{}, 1, 20, 0)
+				return &resp, nil
+			},
+		}
+		handler := NewSecurityHandler(svc, &mockAuditService{})
+		r := setupSecurityRouter(handler)
+
+		rec := doRequest(r, "GET", "/securities?search=aapl", "")
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		if capturedSearch != "aapl" {
+			t.Errorf("expected search='aapl', got '%s'", capturedSearch)
 		}
 	})
 }

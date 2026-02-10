@@ -88,13 +88,14 @@ func (h *SecurityHandler) CreateSecurity(c *gin.Context) {
 
 // ListSecurities handles listing all securities.
 // @Summary     List securities
-// @Description Get a paginated list of all securities
+// @Description Get a paginated list of all securities, optionally filtered by search term
 // @Tags        securities
 // @Accept      json
 // @Produce     json
 // @Security    BearerAuth
-// @Param       page      query int false "Page number (default 1)"
-// @Param       page_size query int false "Items per page (default 20, max 100)"
+// @Param       search    query string false "Search by symbol or name (case-insensitive)"
+// @Param       page      query int    false "Page number (default 1)"
+// @Param       page_size query int    false "Items per page (default 20, max 100)"
 // @Success     200 {object} pagination.PageResponse[models.Security] "Paginated securities"
 // @Failure     401 {object} ErrorResponse "Unauthorized"
 // @Failure     500 {object} ErrorResponse "Server error"
@@ -106,7 +107,9 @@ func (h *SecurityHandler) ListSecurities(c *gin.Context) {
 		return
 	}
 
-	result, err := h.securityService.ListSecurities(page)
+	search := c.Query("search")
+
+	result, err := h.securityService.ListSecurities(search, page)
 	if err != nil {
 		respondWithError(c, err)
 		return

@@ -167,7 +167,7 @@ func TestListSecurities(t *testing.T) {
 		}
 
 		page := pagination.PageRequest{Page: 1, PageSize: 2}
-		result, err := svc.ListSecurities(page)
+		result, err := svc.ListSecurities("", page)
 		testutil.AssertNoError(t, err)
 
 		if len(result.Data) != 2 {
@@ -191,7 +191,7 @@ func TestListSecurities(t *testing.T) {
 		testutil.CreateTestSecurityWithParams(t, db, "MMM", "Mmm Corp", models.AssetTypeStock, "NYSE")
 
 		page := pagination.PageRequest{Page: 1, PageSize: 10}
-		result, err := svc.ListSecurities(page)
+		result, err := svc.ListSecurities("", page)
 		testutil.AssertNoError(t, err)
 
 		if len(result.Data) != 3 {
@@ -205,6 +205,89 @@ func TestListSecurities(t *testing.T) {
 		}
 		if result.Data[2].Symbol != "ZZZ" {
 			t.Errorf("expected third symbol ZZZ, got %s", result.Data[2].Symbol)
+		}
+	})
+
+	t.Run("search_by_symbol", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		svc := NewSecurityService(db)
+
+		testutil.CreateTestSecurityWithParams(t, db, "AAPL", "Apple Inc", models.AssetTypeStock, "NASDAQ")
+		testutil.CreateTestSecurityWithParams(t, db, "GOOGL", "Alphabet Inc", models.AssetTypeStock, "NASDAQ")
+		testutil.CreateTestSecurityWithParams(t, db, "MSFT", "Microsoft Corp", models.AssetTypeStock, "NASDAQ")
+
+		page := pagination.PageRequest{Page: 1, PageSize: 20}
+		result, err := svc.ListSecurities("aapl", page)
+		testutil.AssertNoError(t, err)
+
+		if result.TotalItems != 1 {
+			t.Errorf("expected 1 result for 'aapl', got %d", result.TotalItems)
+		}
+		if len(result.Data) != 1 || result.Data[0].Symbol != "AAPL" {
+			t.Errorf("expected AAPL, got %v", result.Data)
+		}
+	})
+
+	t.Run("search_by_name", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		svc := NewSecurityService(db)
+
+		testutil.CreateTestSecurityWithParams(t, db, "AAPL", "Apple Inc", models.AssetTypeStock, "NASDAQ")
+		testutil.CreateTestSecurityWithParams(t, db, "GOOGL", "Alphabet Inc", models.AssetTypeStock, "NASDAQ")
+
+		page := pagination.PageRequest{Page: 1, PageSize: 20}
+		result, err := svc.ListSecurities("apple", page)
+		testutil.AssertNoError(t, err)
+
+		if result.TotalItems != 1 {
+			t.Errorf("expected 1 result for 'apple', got %d", result.TotalItems)
+		}
+		if len(result.Data) != 1 || result.Data[0].Symbol != "AAPL" {
+			t.Errorf("expected AAPL, got %v", result.Data)
+		}
+	})
+
+	t.Run("search_case_insensitive", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		svc := NewSecurityService(db)
+
+		testutil.CreateTestSecurityWithParams(t, db, "AAPL", "Apple Inc", models.AssetTypeStock, "NASDAQ")
+		testutil.CreateTestSecurityWithParams(t, db, "GOOGL", "Alphabet Inc", models.AssetTypeStock, "NASDAQ")
+
+		page := pagination.PageRequest{Page: 1, PageSize: 20}
+
+		upper, err := svc.ListSecurities("AAPL", page)
+		testutil.AssertNoError(t, err)
+
+		lower, err := svc.ListSecurities("aapl", page)
+		testutil.AssertNoError(t, err)
+
+		if upper.TotalItems != lower.TotalItems {
+			t.Errorf("case-insensitive mismatch: upper=%d, lower=%d", upper.TotalItems, lower.TotalItems)
+		}
+		if upper.TotalItems != 1 {
+			t.Errorf("expected 1 result, got %d", upper.TotalItems)
+		}
+	})
+
+	t.Run("search_empty_returns_all", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		svc := NewSecurityService(db)
+
+		testutil.CreateTestSecurityWithParams(t, db, "AAPL", "Apple Inc", models.AssetTypeStock, "NASDAQ")
+		testutil.CreateTestSecurityWithParams(t, db, "GOOGL", "Alphabet Inc", models.AssetTypeStock, "NASDAQ")
+		testutil.CreateTestSecurityWithParams(t, db, "MSFT", "Microsoft Corp", models.AssetTypeStock, "NASDAQ")
+
+		page := pagination.PageRequest{Page: 1, PageSize: 20}
+		result, err := svc.ListSecurities("", page)
+		testutil.AssertNoError(t, err)
+
+		if result.TotalItems != 3 {
+			t.Errorf("expected 3 results for empty search, got %d", result.TotalItems)
 		}
 	})
 }
