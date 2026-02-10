@@ -134,8 +134,7 @@ export interface Investment extends BaseModel {
   security_id: number;
   quantity: number; // float
   cost_basis: number; // cents
-  current_price: number; // cents per unit
-  last_updated: string; // ISO 8601
+  current_price: number; // cents per unit, populated at query time from security_prices
   wallet_address?: string; // crypto
   security: Security; // preloaded relation
   account?: Account; // preloaded relation

@@ -35,7 +35,15 @@ func TestPortfolioSnapshotFlow_ComputeAndQuery(t *testing.T) {
 		t.Fatalf("expected 201 adding investment, got %d: %s", rec.Code, rec.Body.String())
 	}
 
-	// Step 4: Compute snapshots via pipeline endpoint
+	// Step 4: Record live price via pipeline ($150/share)
+	priceTime := time.Now().UTC().Format(time.RFC3339)
+	rec = app.pipelineRequest("POST", "/api/v1/pipeline/securities/prices",
+		fmt.Sprintf(`{"prices":[{"security_id":%.0f,"price":15000,"recorded_at":%q}]}`, securityID, priceTime))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for pipeline price, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	// Step 6: Compute snapshots via pipeline endpoint
 	recordedAt := time.Now().UTC().Format(time.RFC3339)
 	rec = app.pipelineRequest("POST", "/api/v1/pipeline/snapshots",
 		fmt.Sprintf(`{"recorded_at":%q}`, recordedAt))
@@ -47,7 +55,7 @@ func TestPortfolioSnapshotFlow_ComputeAndQuery(t *testing.T) {
 		t.Errorf("expected 1 snapshot, got %.0f", computeResult["snapshots_recorded"].(float64))
 	}
 
-	// Step 5: Get snapshots (JWT auth) — verify correct breakdown
+	// Step 7: Get snapshots (JWT auth) — verify correct breakdown
 	fromDate := time.Now().UTC().Add(-1 * time.Hour).Format(time.RFC3339)
 	toDate := time.Now().UTC().Add(1 * time.Hour).Format(time.RFC3339)
 

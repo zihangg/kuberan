@@ -204,15 +204,28 @@ func CreateTestInvestment(t *testing.T, db *gorm.DB, accountID, securityID uint)
 	t.Helper()
 
 	inv := &models.Investment{
-		AccountID:    accountID,
-		SecurityID:   securityID,
-		Quantity:     10.0,
-		CostBasis:    100000, // $1000.00
-		CurrentPrice: 10000,  // $100.00 per share
-		LastUpdated:  time.Now(),
+		AccountID:  accountID,
+		SecurityID: securityID,
+		Quantity:   10.0,
+		CostBasis:  100000, // $1000.00
 	}
 	if err := db.Create(inv).Error; err != nil {
 		t.Fatalf("failed to create test investment: %v", err)
 	}
 	return inv
+}
+
+// CreateTestSecurityPrice creates a security price record for testing.
+func CreateTestSecurityPrice(t *testing.T, db *gorm.DB, securityID uint, price int64, recordedAt time.Time) *models.SecurityPrice {
+	t.Helper()
+
+	sp := &models.SecurityPrice{
+		SecurityID: securityID,
+		Price:      price,
+		RecordedAt: recordedAt,
+	}
+	if err := db.Create(sp).Error; err != nil {
+		t.Fatalf("failed to create test security price: %v", err)
+	}
+	return sp
 }

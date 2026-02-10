@@ -71,27 +71,25 @@ func TestComputeAndRecordSnapshots(t *testing.T) {
 		sec1 := testutil.CreateTestSecurity(t, db)
 		sec2 := testutil.CreateTestSecurity(t, db)
 
-		// 10 shares @ $100 = $1,000
+		// 10 shares, cost $1,000
 		inv1 := &models.Investment{
-			AccountID:    investAcct.ID,
-			SecurityID:   sec1.ID,
-			Quantity:     10.0,
-			CostBasis:    100000,
-			CurrentPrice: 10000,
-			LastUpdated:  time.Now(),
+			AccountID:  investAcct.ID,
+			SecurityID: sec1.ID,
+			Quantity:   10.0,
+			CostBasis:  100000,
 		}
 		db.Create(inv1)
+		testutil.CreateTestSecurityPrice(t, db, sec1.ID, 10000, time.Now()) // $100/share
 
-		// 5 shares @ $200 = $1,000
+		// 5 shares, cost $1,000
 		inv2 := &models.Investment{
-			AccountID:    investAcct.ID,
-			SecurityID:   sec2.ID,
-			Quantity:     5.0,
-			CostBasis:    100000,
-			CurrentPrice: 20000,
-			LastUpdated:  time.Now(),
+			AccountID:  investAcct.ID,
+			SecurityID: sec2.ID,
+			Quantity:   5.0,
+			CostBasis:  100000,
 		}
 		db.Create(inv2)
+		testutil.CreateTestSecurityPrice(t, db, sec2.ID, 20000, time.Now()) // $200/share
 
 		recordedAt := time.Now().Truncate(time.Second)
 		count, err := svc.ComputeAndRecordSnapshots(recordedAt)
@@ -153,12 +151,14 @@ func TestComputeAndRecordSnapshots(t *testing.T) {
 		sec2 := testutil.CreateTestSecurity(t, db)
 		db.Create(&models.Investment{
 			AccountID: investAcct.ID, SecurityID: sec1.ID,
-			Quantity: 10.0, CostBasis: 100000, CurrentPrice: 10000, LastUpdated: time.Now(),
+			Quantity: 10.0, CostBasis: 100000,
 		})
+		testutil.CreateTestSecurityPrice(t, db, sec1.ID, 10000, time.Now())
 		db.Create(&models.Investment{
 			AccountID: investAcct.ID, SecurityID: sec2.ID,
-			Quantity: 5.0, CostBasis: 100000, CurrentPrice: 20000, LastUpdated: time.Now(),
+			Quantity: 5.0, CostBasis: 100000,
 		})
+		testutil.CreateTestSecurityPrice(t, db, sec2.ID, 20000, time.Now())
 
 		// Debt: $7,000
 		testutil.CreateTestDebtAccount(t, db, user.ID, 500000)

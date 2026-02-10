@@ -145,7 +145,6 @@ func setupApp(t *testing.T) *testApp {
 	investments.GET("/portfolio", investmentHandler.GetPortfolio)
 	investments.GET("/snapshots", snapshotHandler.GetSnapshots)
 	investments.GET("/:id", investmentHandler.GetInvestment)
-	investments.PUT("/:id/price", investmentHandler.UpdatePrice)
 	investments.POST("/:id/buy", investmentHandler.RecordBuy)
 	investments.POST("/:id/sell", investmentHandler.RecordSell)
 	investments.POST("/:id/dividend", investmentHandler.RecordDividend)

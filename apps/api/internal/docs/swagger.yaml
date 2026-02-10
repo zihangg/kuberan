@@ -31,6 +31,17 @@ definitions:
     properties:
       account_id:
         type: integer
+      date:
+        description: optional, defaults to now
+        type: string
+      fee:
+        description: optional, defaults to 0
+        minimum: 0
+        type: integer
+      notes:
+        description: optional, defaults to "Initial purchase"
+        maxLength: 500
+        type: string
       purchase_price:
         type: integer
       quantity:
@@ -473,13 +484,6 @@ definitions:
       parent_id:
         type: integer
     type: object
-  internal_handlers.UpdatePriceRequest:
-    properties:
-      current_price:
-        type: integer
-    required:
-    - current_price
-    type: object
   internal_handlers.UpdateTransactionRequest:
     properties:
       account_id:
@@ -678,13 +682,12 @@ definitions:
       created_at:
         type: string
       current_price:
+        description: Populated at query time from security_prices
         type: integer
       deleted_at:
         $ref: '#/definitions/gorm.DeletedAt'
       id:
         type: integer
-      last_updated:
-        type: string
       quantity:
         type: number
       security:
@@ -2125,51 +2128,6 @@ paths:
       security:
       - BearerAuth: []
       summary: Record dividend
-      tags:
-      - investments
-  /investments/{id}/price:
-    put:
-      consumes:
-      - application/json
-      description: Update the current market price of an investment
-      parameters:
-      - description: Investment ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      - description: Price update
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/internal_handlers.UpdatePriceRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: Updated investment
-          schema:
-            $ref: '#/definitions/kuberan_internal_models.Investment'
-        "400":
-          description: Invalid input
-          schema:
-            $ref: '#/definitions/internal_handlers.ErrorResponse'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/internal_handlers.ErrorResponse'
-        "404":
-          description: Investment not found
-          schema:
-            $ref: '#/definitions/internal_handlers.ErrorResponse'
-        "500":
-          description: Server error
-          schema:
-            $ref: '#/definitions/internal_handlers.ErrorResponse'
-      security:
-      - BearerAuth: []
-      summary: Update investment price
       tags:
       - investments
   /investments/{id}/sell:

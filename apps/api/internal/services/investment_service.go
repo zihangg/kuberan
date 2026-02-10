@@ -11,6 +11,39 @@ import (
 	"kuberan/internal/pagination"
 )
 
+// getLatestPrices fetches the most recent price for each security ID from security_prices.
+// Returns a map of security_id -> price (int64 cents). Securities with no price entries
+// are not included in the map.
+func getLatestPrices(db *gorm.DB, securityIDs []uint) (map[uint]int64, error) {
+	if len(securityIDs) == 0 {
+		return map[uint]int64{}, nil
+	}
+
+	type priceRow struct {
+		SecurityID uint
+		Price      int64
+	}
+	var rows []priceRow
+
+	subq := db.Table("security_prices").
+		Select("security_id, MAX(recorded_at) AS max_recorded").
+		Where("security_id IN ?", securityIDs).
+		Group("security_id")
+
+	if err := db.Table("security_prices sp").
+		Select("sp.security_id, sp.price").
+		Joins("INNER JOIN (?) latest ON sp.security_id = latest.security_id AND sp.recorded_at = latest.max_recorded", subq).
+		Scan(&rows).Error; err != nil {
+		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
+	}
+
+	result := make(map[uint]int64, len(rows))
+	for _, r := range rows {
+		result[r.SecurityID] = r.Price
+	}
+	return result, nil
+}
+
 // investmentService handles investment-related business logic.
 type investmentService struct {
 	db             *gorm.DB
@@ -67,8 +100,6 @@ func (s *investmentService) AddInvestment(
 		SecurityID:    securityID,
 		Quantity:      quantity,
 		CostBasis:     costBasis,
-		CurrentPrice:  purchasePrice,
-		LastUpdated:   time.Now(),
 		WalletAddress: walletAddress,
 	}
 
@@ -98,6 +129,13 @@ func (s *investmentService) AddInvestment(
 		return nil, err
 	}
 
+	// Populate current price from security_prices for the response
+	prices, err := getLatestPrices(s.db, []uint{securityID})
+	if err != nil {
+		return nil, err
+	}
+	investment.CurrentPrice = prices[securityID]
+
 	investment.Security = security
 	return investment, nil
 }
@@ -123,6 +161,19 @@ func (s *investmentService) GetAccountInvestments(userID, accountID uint, page p
 		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
 
+	// Batch populate current prices from security_prices
+	secIDs := make([]uint, 0, len(investments))
+	for i := range investments {
+		secIDs = append(secIDs, investments[i].SecurityID)
+	}
+	prices, err := getLatestPrices(s.db, secIDs)
+	if err != nil {
+		return nil, err
+	}
+	for i := range investments {
+		investments[i].CurrentPrice = prices[investments[i].SecurityID]
+	}
+
 	result := pagination.NewPageResponse(investments, page.Page, page.PageSize, totalItems)
 	return &result, nil
 }
@@ -142,27 +193,14 @@ func (s *investmentService) GetInvestmentByID(userID, investmentID uint) (*model
 		return nil, apperrors.ErrInvestmentNotFound
 	}
 
-	return &investment, nil
-}
-
-// UpdateInvestmentPrice updates the current market price of an investment.
-func (s *investmentService) UpdateInvestmentPrice(userID, investmentID uint, currentPrice int64) (*models.Investment, error) {
-	investment, err := s.GetInvestmentByID(userID, investmentID)
+	// Populate current price from security_prices
+	prices, err := getLatestPrices(s.db, []uint{investment.SecurityID})
 	if err != nil {
 		return nil, err
 	}
+	investment.CurrentPrice = prices[investment.SecurityID]
 
-	now := time.Now()
-	if err := s.db.Model(investment).Updates(map[string]interface{}{
-		"current_price": currentPrice,
-		"last_updated":  now,
-	}).Error; err != nil {
-		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
-	}
-
-	investment.CurrentPrice = currentPrice
-	investment.LastUpdated = now
-	return investment, nil
+	return &investment, nil
 }
 
 // GetPortfolio returns an aggregated portfolio summary across all investment accounts.
@@ -193,9 +231,19 @@ func (s *investmentService) GetPortfolio(userID uint) (*PortfolioSummary, error)
 		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
 
+	// Batch fetch live prices from security_prices
+	secIDs := make([]uint, 0, len(investments))
+	for i := range investments {
+		secIDs = append(secIDs, investments[i].SecurityID)
+	}
+	prices, err := getLatestPrices(s.db, secIDs)
+	if err != nil {
+		return nil, err
+	}
+
 	for i := range investments {
 		inv := &investments[i]
-		value := int64(inv.Quantity * float64(inv.CurrentPrice))
+		value := int64(inv.Quantity * float64(prices[inv.SecurityID]))
 		summary.TotalValue += value
 		summary.TotalCostBasis += inv.CostBasis
 

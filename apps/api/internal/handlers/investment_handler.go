@@ -35,11 +35,6 @@ type AddInvestmentRequest struct {
 	Notes         string     `json:"notes" binding:"max=500"` // optional, defaults to "Initial purchase"
 }
 
-// UpdatePriceRequest represents the request payload for updating an investment price.
-type UpdatePriceRequest struct {
-	CurrentPrice int64 `json:"current_price" binding:"required,gt=0"`
-}
-
 // RecordBuyRequest represents the request payload for recording a buy transaction.
 type RecordBuyRequest struct {
 	Date         time.Time `json:"date" binding:"required"`
@@ -190,52 +185,6 @@ func (h *InvestmentHandler) GetInvestment(c *gin.Context) {
 		respondWithError(c, err)
 		return
 	}
-
-	c.JSON(http.StatusOK, gin.H{"investment": investment})
-}
-
-// UpdatePrice handles updating the market price of an investment.
-// @Summary     Update investment price
-// @Description Update the current market price of an investment
-// @Tags        investments
-// @Accept      json
-// @Produce     json
-// @Security    BearerAuth
-// @Param       id      path int                true "Investment ID"
-// @Param       request body UpdatePriceRequest  true "Price update"
-// @Success     200 {object} models.Investment "Updated investment"
-// @Failure     400 {object} ErrorResponse "Invalid input"
-// @Failure     401 {object} ErrorResponse "Unauthorized"
-// @Failure     404 {object} ErrorResponse "Investment not found"
-// @Failure     500 {object} ErrorResponse "Server error"
-// @Router      /investments/{id}/price [put]
-func (h *InvestmentHandler) UpdatePrice(c *gin.Context) {
-	userID, err := getUserID(c)
-	if err != nil {
-		respondWithError(c, err)
-		return
-	}
-
-	investmentID, err := parsePathID(c, "id")
-	if err != nil {
-		respondWithError(c, err)
-		return
-	}
-
-	var req UpdatePriceRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, err.Error()))
-		return
-	}
-
-	investment, err := h.investmentService.UpdateInvestmentPrice(userID, investmentID, req.CurrentPrice)
-	if err != nil {
-		respondWithError(c, err)
-		return
-	}
-
-	h.auditService.Log(userID, "UPDATE_INVESTMENT_PRICE", "investment", investmentID, c.ClientIP(),
-		map[string]interface{}{"current_price": req.CurrentPrice})
 
 	c.JSON(http.StatusOK, gin.H{"investment": investment})
 }

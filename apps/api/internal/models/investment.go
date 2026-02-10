@@ -5,13 +5,12 @@ import "time"
 // Investment represents a holding of a specific investment asset.
 type Investment struct {
 	Base
-	AccountID     uint      `gorm:"not null" json:"account_id"`
-	SecurityID    uint      `gorm:"not null" json:"security_id"`
-	Quantity      float64   `gorm:"not null" json:"quantity"`
-	CostBasis     int64     `gorm:"type:bigint;not null" json:"cost_basis"`
-	CurrentPrice  int64     `gorm:"type:bigint" json:"current_price"`
-	LastUpdated   time.Time `json:"last_updated"`
-	WalletAddress string    `json:"wallet_address,omitempty"`
+	AccountID     uint    `gorm:"not null" json:"account_id"`
+	SecurityID    uint    `gorm:"not null" json:"security_id"`
+	Quantity      float64 `gorm:"not null" json:"quantity"`
+	CostBasis     int64   `gorm:"type:bigint;not null" json:"cost_basis"`
+	CurrentPrice  int64   `gorm:"-" json:"current_price"` // Populated at query time from security_prices
+	WalletAddress string  `json:"wallet_address,omitempty"`
 
 	// Relationships
 	Security     Security                `gorm:"foreignKey:SecurityID" json:"security"`

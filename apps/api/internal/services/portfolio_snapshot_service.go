@@ -73,7 +73,7 @@ func (s *portfolioSnapshotService) computeSnapshot(userID uint, recordedAt time.
 		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
 
-	// Investment value: sum of quantity * current_price for all investments in active investment accounts
+	// Investment value: sum of quantity * latest security price for all investments in active investment accounts
 	var investmentValue int64
 	var investments []models.Investment
 	if err := s.db.Joins("JOIN accounts ON accounts.id = investments.account_id").
@@ -82,8 +82,16 @@ func (s *portfolioSnapshotService) computeSnapshot(userID uint, recordedAt time.
 		Find(&investments).Error; err != nil {
 		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
+	secIDs := make([]uint, 0, len(investments))
 	for i := range investments {
-		investmentValue += int64(investments[i].Quantity * float64(investments[i].CurrentPrice))
+		secIDs = append(secIDs, investments[i].SecurityID)
+	}
+	prices, err := getLatestPrices(s.db, secIDs)
+	if err != nil {
+		return nil, err
+	}
+	for i := range investments {
+		investmentValue += int64(investments[i].Quantity * float64(prices[investments[i].SecurityID]))
 	}
 
 	// Debt balance: sum of debt + credit_card account balances

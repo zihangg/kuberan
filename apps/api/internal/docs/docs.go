@@ -1771,76 +1771,6 @@ const docTemplate = `{
                 }
             }
         },
-        "/investments/{id}/price": {
-            "put": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "Update the current market price of an investment",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "investments"
-                ],
-                "summary": "Update investment price",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "Investment ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "Price update",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/internal_handlers.UpdatePriceRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "Updated investment",
-                        "schema": {
-                            "$ref": "#/definitions/kuberan_internal_models.Investment"
-                        }
-                    },
-                    "400": {
-                        "description": "Invalid input",
-                        "schema": {
-                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "Investment not found",
-                        "schema": {
-                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Server error",
-                        "schema": {
-                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
-                        }
-                    }
-                }
-            }
-        },
         "/investments/{id}/sell": {
             "post": {
                 "security": [
@@ -3104,6 +3034,20 @@ const docTemplate = `{
                 "account_id": {
                     "type": "integer"
                 },
+                "date": {
+                    "description": "optional, defaults to now",
+                    "type": "string"
+                },
+                "fee": {
+                    "description": "optional, defaults to 0",
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "notes": {
+                    "description": "optional, defaults to \"Initial purchase\"",
+                    "type": "string",
+                    "maxLength": 500
+                },
                 "purchase_price": {
                     "type": "integer"
                 },
@@ -3736,17 +3680,6 @@ const docTemplate = `{
                 }
             }
         },
-        "internal_handlers.UpdatePriceRequest": {
-            "type": "object",
-            "required": [
-                "current_price"
-            ],
-            "properties": {
-                "current_price": {
-                    "type": "integer"
-                }
-            }
-        },
         "internal_handlers.UpdateTransactionRequest": {
             "type": "object",
             "properties": {
@@ -4039,6 +3972,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "current_price": {
+                    "description": "Populated at query time from security_prices",
                     "type": "integer"
                 },
                 "deleted_at": {
@@ -4046,9 +3980,6 @@ const docTemplate = `{
                 },
                 "id": {
                     "type": "integer"
-                },
-                "last_updated": {
-                    "type": "string"
                 },
                 "quantity": {
                     "type": "number"

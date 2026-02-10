@@ -12,7 +12,6 @@ import type {
   RecordSellRequest,
   RecordDividendRequest,
   RecordSplitRequest,
-  UpdatePriceRequest,
 } from "@/types/api";
 import { accountKeys } from "./use-accounts";
 
@@ -166,19 +165,3 @@ export function useRecordSplit(investmentId: number) {
   });
 }
 
-export function useUpdateInvestmentPrice(investmentId: number) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async (data: UpdatePriceRequest) => {
-      const res = await apiClient.put<InvestmentResponse>(
-        `/api/v1/investments/${investmentId}/price`,
-        data
-      );
-      return res.investment;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: investmentKeys.all });
-      queryClient.invalidateQueries({ queryKey: accountKeys.all });
-    },
-  });
-}

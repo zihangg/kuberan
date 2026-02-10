@@ -19,7 +19,6 @@ type mockInvestmentService struct {
 	addInvestmentFn             func(userID, accountID, securityID uint, quantity float64, purchasePrice int64, walletAddress string, date *time.Time, fee int64, notes string) (*models.Investment, error)
 	getAccountInvestmentsFn     func(userID, accountID uint, page pagination.PageRequest) (*pagination.PageResponse[models.Investment], error)
 	getInvestmentByIDFn         func(userID, investmentID uint) (*models.Investment, error)
-	updateInvestmentPriceFn     func(userID, investmentID uint, currentPrice int64) (*models.Investment, error)
 	getPortfolioFn              func(userID uint) (*services.PortfolioSummary, error)
 	recordBuyFn                 func(userID, investmentID uint, date time.Time, quantity float64, pricePerUnit int64, fee int64, notes string) (*models.InvestmentTransaction, error)
 	recordSellFn                func(userID, investmentID uint, date time.Time, quantity float64, pricePerUnit int64, fee int64, notes string) (*models.InvestmentTransaction, error)
@@ -46,13 +45,6 @@ func (m *mockInvestmentService) GetAccountInvestments(userID, accountID uint, pa
 func (m *mockInvestmentService) GetInvestmentByID(userID, investmentID uint) (*models.Investment, error) {
 	if m.getInvestmentByIDFn != nil {
 		return m.getInvestmentByIDFn(userID, investmentID)
-	}
-	return &models.Investment{}, nil
-}
-
-func (m *mockInvestmentService) UpdateInvestmentPrice(userID, investmentID uint, currentPrice int64) (*models.Investment, error) {
-	if m.updateInvestmentPriceFn != nil {
-		return m.updateInvestmentPriceFn(userID, investmentID, currentPrice)
 	}
 	return &models.Investment{}, nil
 }
@@ -108,7 +100,6 @@ func setupInvestmentRouter(handler *InvestmentHandler) *gin.Engine {
 	auth.POST("/investments", handler.AddInvestment)
 	auth.GET("/investments/portfolio", handler.GetPortfolio)
 	auth.GET("/investments/:id", handler.GetInvestment)
-	auth.PUT("/investments/:id/price", handler.UpdatePrice)
 	auth.POST("/investments/:id/buy", handler.RecordBuy)
 	auth.POST("/investments/:id/sell", handler.RecordSell)
 	auth.POST("/investments/:id/dividend", handler.RecordDividend)
@@ -123,12 +114,11 @@ func TestInvestmentHandler_AddInvestment(t *testing.T) {
 		svc := &mockInvestmentService{
 			addInvestmentFn: func(_ uint, accountID, securityID uint, quantity float64, price int64, _ string, _ *time.Time, _ int64, _ string) (*models.Investment, error) {
 				return &models.Investment{
-					Base:         models.Base{ID: 1},
-					AccountID:    accountID,
-					SecurityID:   securityID,
-					Quantity:     quantity,
-					CurrentPrice: price,
-					CostBasis:    int64(quantity * float64(price)),
+					Base:       models.Base{ID: 1},
+					AccountID:  accountID,
+					SecurityID: securityID,
+					Quantity:   quantity,
+					CostBasis:  int64(quantity * float64(price)),
 				}, nil
 			},
 		}
@@ -209,16 +199,15 @@ func TestInvestmentHandler_AddInvestment(t *testing.T) {
 		var capturedFee int64
 		var capturedNotes string
 		svc := &mockInvestmentService{
-			addInvestmentFn: func(_ uint, accountID, securityID uint, quantity float64, price int64, _ string, date *time.Time, fee int64, notes string) (*models.Investment, error) {
+			addInvestmentFn: func(_ uint, accountID, securityID uint, quantity float64, _ int64, _ string, date *time.Time, fee int64, notes string) (*models.Investment, error) {
 				capturedDate = date
 				capturedFee = fee
 				capturedNotes = notes
 				return &models.Investment{
-					Base:         models.Base{ID: 1},
-					AccountID:    accountID,
-					SecurityID:   securityID,
-					Quantity:     quantity,
-					CurrentPrice: price,
+					Base:       models.Base{ID: 1},
+					AccountID:  accountID,
+					SecurityID: securityID,
+					Quantity:   quantity,
 				}, nil
 			},
 		}
@@ -330,59 +319,6 @@ func TestInvestmentHandler_GetInvestment(t *testing.T) {
 
 		if rec.Code != http.StatusBadRequest {
 			t.Fatalf("expected 400, got %d", rec.Code)
-		}
-	})
-}
-
-func TestInvestmentHandler_UpdatePrice(t *testing.T) {
-	t.Run("returns 200 on success", func(t *testing.T) {
-		svc := &mockInvestmentService{
-			updateInvestmentPriceFn: func(_, investmentID uint, price int64) (*models.Investment, error) {
-				return &models.Investment{
-					Base:         models.Base{ID: investmentID},
-					CurrentPrice: price,
-				}, nil
-			},
-		}
-		handler := NewInvestmentHandler(svc, &mockAuditService{})
-		r := setupInvestmentRouter(handler)
-
-		rec := doRequest(r, "PUT", "/investments/1/price", `{"current_price":17500}`)
-
-		if rec.Code != http.StatusOK {
-			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
-		}
-		result := parseJSON(t, rec)
-		inv := result["investment"].(map[string]interface{})
-		if inv["current_price"].(float64) != 17500 {
-			t.Errorf("expected current_price=17500, got %v", inv["current_price"])
-		}
-	})
-
-	t.Run("returns 400 on zero price", func(t *testing.T) {
-		handler := NewInvestmentHandler(&mockInvestmentService{}, &mockAuditService{})
-		r := setupInvestmentRouter(handler)
-
-		rec := doRequest(r, "PUT", "/investments/1/price", `{"current_price":0}`)
-
-		if rec.Code != http.StatusBadRequest {
-			t.Fatalf("expected 400, got %d", rec.Code)
-		}
-	})
-
-	t.Run("returns 404 when not found", func(t *testing.T) {
-		svc := &mockInvestmentService{
-			updateInvestmentPriceFn: func(_, _ uint, _ int64) (*models.Investment, error) {
-				return nil, apperrors.ErrInvestmentNotFound
-			},
-		}
-		handler := NewInvestmentHandler(svc, &mockAuditService{})
-		r := setupInvestmentRouter(handler)
-
-		rec := doRequest(r, "PUT", "/investments/999/price", `{"current_price":17500}`)
-
-		if rec.Code != http.StatusNotFound {
-			t.Fatalf("expected 404, got %d", rec.Code)
 		}
 	})
 }

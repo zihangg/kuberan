@@ -64,15 +64,12 @@ func TestInvestmentFlow_FullLifecycle(t *testing.T) {
 		t.Errorf("expected cost basis 231000, got %.0f", inv["cost_basis"].(float64))
 	}
 
-	// Step 5: Update price to $170/share
-	rec = app.request("PUT", fmt.Sprintf("/api/v1/investments/%.0f/price", investmentID),
-		`{"current_price":17000}`, token)
+	// Step 5: Record live price via pipeline ($170/share)
+	now := time.Now().Format(time.RFC3339)
+	rec = app.pipelineRequest("POST", "/api/v1/pipeline/securities/prices",
+		fmt.Sprintf(`{"prices":[{"security_id":%.0f,"price":17000,"recorded_at":%q}]}`, securityID, now))
 	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200 for price update, got %d: %s", rec.Code, rec.Body.String())
-	}
-	inv = parseJSON(t, rec)["investment"].(map[string]interface{})
-	if inv["current_price"].(float64) != 17000 {
-		t.Errorf("expected current price 17000, got %.0f", inv["current_price"].(float64))
+		t.Fatalf("expected 200 for pipeline price, got %d: %s", rec.Code, rec.Body.String())
 	}
 
 	// Step 6: Record sell (5 shares at $170/share, $10 fee)
@@ -247,20 +244,23 @@ func TestInvestmentFlow_PortfolioMultipleHoldings(t *testing.T) {
 	accountID := parseJSON(t, rec)["account"].(map[string]interface{})["id"].(float64)
 
 	// Add stock: 10 shares at $100
-	rec = app.request("POST", "/api/v1/investments",
+	app.request("POST", "/api/v1/investments",
 		fmt.Sprintf(`{"account_id":%.0f,"security_id":%.0f,"quantity":10,"purchase_price":10000}`,
 			accountID, aaplID), token)
-	stockInvID := parseJSON(t, rec)["investment"].(map[string]interface{})["id"].(float64)
 
 	// Add ETF: 20 shares at $50
-	rec = app.request("POST", "/api/v1/investments",
+	app.request("POST", "/api/v1/investments",
 		fmt.Sprintf(`{"account_id":%.0f,"security_id":%.0f,"quantity":20,"purchase_price":5000}`,
 			accountID, vooID), token)
-	etfInvID := parseJSON(t, rec)["investment"].(map[string]interface{})["id"].(float64)
 
-	// Update prices
-	app.request("PUT", fmt.Sprintf("/api/v1/investments/%.0f/price", stockInvID), `{"current_price":12000}`, token)
-	app.request("PUT", fmt.Sprintf("/api/v1/investments/%.0f/price", etfInvID), `{"current_price":5500}`, token)
+	// Record live prices via pipeline
+	now := time.Now().Format(time.RFC3339)
+	rec = app.pipelineRequest("POST", "/api/v1/pipeline/securities/prices",
+		fmt.Sprintf(`{"prices":[{"security_id":%.0f,"price":12000,"recorded_at":%q},{"security_id":%.0f,"price":5500,"recorded_at":%q}]}`,
+			aaplID, now, vooID, now))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for pipeline prices, got %d: %s", rec.Code, rec.Body.String())
+	}
 
 	// Check portfolio
 	rec = app.request("GET", "/api/v1/investments/portfolio", "", token)

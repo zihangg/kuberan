@@ -293,10 +293,6 @@ export interface RecordSplitRequest {
   notes?: string;
 }
 
-export interface UpdatePriceRequest {
-  current_price: number; // cents, > 0
-}
-
 // Security filters
 export interface SecurityFilters extends PaginationParams {
   search?: string;

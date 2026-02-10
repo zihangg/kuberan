@@ -35,8 +35,9 @@ func TestAddInvestment(t *testing.T) {
 		if inv.CostBasis != 150000 {
 			t.Errorf("expected cost basis 150000, got %d", inv.CostBasis)
 		}
-		if inv.CurrentPrice != 15000 {
-			t.Errorf("expected current price 15000, got %d", inv.CurrentPrice)
+		// No security price exists yet, so CurrentPrice should be 0
+		if inv.CurrentPrice != 0 {
+			t.Errorf("expected current price 0 (no security price), got %d", inv.CurrentPrice)
 		}
 
 		// Verify initial buy transaction was created
@@ -187,7 +188,34 @@ func TestAddInvestment(t *testing.T) {
 }
 
 func TestGetInvestmentByID(t *testing.T) {
-	t.Run("found", func(t *testing.T) {
+	t.Run("found_with_live_price", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		acctSvc := NewAccountService(db)
+		svc := NewInvestmentService(db, acctSvc)
+		user := testutil.CreateTestUser(t, db)
+		account := testutil.CreateTestInvestmentAccount(t, db, user.ID)
+		sec := testutil.CreateTestSecurity(t, db)
+		inv := testutil.CreateTestInvestment(t, db, account.ID, sec.ID)
+
+		// Record a security price
+		testutil.CreateTestSecurityPrice(t, db, sec.ID, 15000, time.Now())
+
+		result, err := svc.GetInvestmentByID(user.ID, inv.ID)
+		testutil.AssertNoError(t, err)
+
+		if result.ID != inv.ID {
+			t.Errorf("expected ID %d, got %d", inv.ID, result.ID)
+		}
+		if result.SecurityID != sec.ID {
+			t.Errorf("expected security ID %d, got %d", sec.ID, result.SecurityID)
+		}
+		if result.CurrentPrice != 15000 {
+			t.Errorf("expected current price 15000 from security_prices, got %d", result.CurrentPrice)
+		}
+	})
+
+	t.Run("no_price_returns_zero", func(t *testing.T) {
 		db := testutil.SetupTestDB(t)
 		defer testutil.TeardownTestDB(t, db)
 		acctSvc := NewAccountService(db)
@@ -200,11 +228,32 @@ func TestGetInvestmentByID(t *testing.T) {
 		result, err := svc.GetInvestmentByID(user.ID, inv.ID)
 		testutil.AssertNoError(t, err)
 
-		if result.ID != inv.ID {
-			t.Errorf("expected ID %d, got %d", inv.ID, result.ID)
+		if result.CurrentPrice != 0 {
+			t.Errorf("expected current price 0 when no security price exists, got %d", result.CurrentPrice)
 		}
-		if result.SecurityID != sec.ID {
-			t.Errorf("expected security ID %d, got %d", sec.ID, result.SecurityID)
+	})
+
+	t.Run("returns_latest_price", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		acctSvc := NewAccountService(db)
+		svc := NewInvestmentService(db, acctSvc)
+		user := testutil.CreateTestUser(t, db)
+		account := testutil.CreateTestInvestmentAccount(t, db, user.ID)
+		sec := testutil.CreateTestSecurity(t, db)
+		inv := testutil.CreateTestInvestment(t, db, account.ID, sec.ID)
+
+		// Create multiple prices at different timestamps
+		base := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+		testutil.CreateTestSecurityPrice(t, db, sec.ID, 10000, base)
+		testutil.CreateTestSecurityPrice(t, db, sec.ID, 12000, base.Add(time.Hour))
+		testutil.CreateTestSecurityPrice(t, db, sec.ID, 15000, base.Add(2*time.Hour))
+
+		result, err := svc.GetInvestmentByID(user.ID, inv.ID)
+		testutil.AssertNoError(t, err)
+
+		if result.CurrentPrice != 15000 {
+			t.Errorf("expected latest price 15000, got %d", result.CurrentPrice)
 		}
 	})
 
@@ -297,48 +346,6 @@ func TestGetAccountInvestments(t *testing.T) {
 		page := pagination.PageRequest{Page: 1, PageSize: 20}
 		_, err := svc.GetAccountInvestments(user.ID, 9999, page)
 		testutil.AssertAppError(t, err, "ACCOUNT_NOT_FOUND")
-	})
-}
-
-func TestUpdateInvestmentPrice(t *testing.T) {
-	t.Run("valid", func(t *testing.T) {
-		db := testutil.SetupTestDB(t)
-		defer testutil.TeardownTestDB(t, db)
-		acctSvc := NewAccountService(db)
-		svc := NewInvestmentService(db, acctSvc)
-		user := testutil.CreateTestUser(t, db)
-		account := testutil.CreateTestInvestmentAccount(t, db, user.ID)
-		sec := testutil.CreateTestSecurity(t, db)
-		inv := testutil.CreateTestInvestment(t, db, account.ID, sec.ID)
-
-		beforeUpdate := time.Now()
-		updated, err := svc.UpdateInvestmentPrice(user.ID, inv.ID, 12500)
-		testutil.AssertNoError(t, err)
-
-		if updated.CurrentPrice != 12500 {
-			t.Errorf("expected price 12500, got %d", updated.CurrentPrice)
-		}
-		if updated.LastUpdated.Before(beforeUpdate) {
-			t.Error("expected last_updated to be updated")
-		}
-
-		// Verify in DB
-		var dbInv models.Investment
-		db.First(&dbInv, inv.ID)
-		if dbInv.CurrentPrice != 12500 {
-			t.Errorf("expected DB price 12500, got %d", dbInv.CurrentPrice)
-		}
-	})
-
-	t.Run("not_found", func(t *testing.T) {
-		db := testutil.SetupTestDB(t)
-		defer testutil.TeardownTestDB(t, db)
-		acctSvc := NewAccountService(db)
-		svc := NewInvestmentService(db, acctSvc)
-		user := testutil.CreateTestUser(t, db)
-
-		_, err := svc.UpdateInvestmentPrice(user.ID, 9999, 12500)
-		testutil.AssertAppError(t, err, "INVESTMENT_NOT_FOUND")
 	})
 }
 
@@ -581,23 +588,23 @@ func TestGetPortfolio(t *testing.T) {
 		acct1 := testutil.CreateTestInvestmentAccount(t, db, user.ID)
 		acct2 := testutil.CreateTestInvestmentAccount(t, db, user.ID)
 
-		// Account 1: stock - 10 shares @ $100 current, cost basis $1000
+		// Account 1: stock - 10 shares, cost basis $1000
 		sec1 := testutil.CreateTestSecurityWithParams(t, db, "AAPL", "Apple Inc", models.AssetTypeStock, "NASDAQ")
-		testutil.CreateTestInvestment(t, db, acct1.ID, sec1.ID) // stock, 10 qty, cost 100000, price 10000
+		testutil.CreateTestInvestment(t, db, acct1.ID, sec1.ID)
+		testutil.CreateTestSecurityPrice(t, db, sec1.ID, 10000, time.Now()) // $100/share
 
-		// Account 2: create an ETF manually
+		// Account 2: ETF - 20 shares, cost basis $2000
 		secETF := testutil.CreateTestSecurityWithParams(t, db, "VTI", "Vanguard Total", models.AssetTypeETF, "NYSE")
 		etfInv := &models.Investment{
-			AccountID:    acct2.ID,
-			SecurityID:   secETF.ID,
-			Quantity:     20.0,
-			CostBasis:    200000, // $2000
-			CurrentPrice: 12000,  // $120 per share
-			LastUpdated:  time.Now(),
+			AccountID:  acct2.ID,
+			SecurityID: secETF.ID,
+			Quantity:   20.0,
+			CostBasis:  200000, // $2000
 		}
 		if err := db.Create(etfInv).Error; err != nil {
 			t.Fatalf("failed to create ETF investment: %v", err)
 		}
+		testutil.CreateTestSecurityPrice(t, db, secETF.ID, 12000, time.Now()) // $120/share
 
 		portfolio, err := svc.GetPortfolio(user.ID)
 		testutil.AssertNoError(t, err)
@@ -684,10 +691,12 @@ func TestGetPortfolio(t *testing.T) {
 		acct1 := testutil.CreateTestInvestmentAccount(t, db, user1.ID)
 		sec1 := testutil.CreateTestSecurity(t, db)
 		testutil.CreateTestInvestment(t, db, acct1.ID, sec1.ID)
+		testutil.CreateTestSecurityPrice(t, db, sec1.ID, 10000, time.Now())
 
 		acct2 := testutil.CreateTestInvestmentAccount(t, db, user2.ID)
 		sec2 := testutil.CreateTestSecurity(t, db)
 		testutil.CreateTestInvestment(t, db, acct2.ID, sec2.ID)
+		testutil.CreateTestSecurityPrice(t, db, sec2.ID, 10000, time.Now())
 
 		portfolio1, err := svc.GetPortfolio(user1.ID)
 		testutil.AssertNoError(t, err)
