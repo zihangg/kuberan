@@ -142,11 +142,12 @@ type BudgetServicer interface {
 
 // PortfolioSummary contains aggregated portfolio data across all investment accounts.
 type PortfolioSummary struct {
-	TotalValue     int64                            `json:"total_value"`
-	TotalCostBasis int64                            `json:"total_cost_basis"`
-	TotalGainLoss  int64                            `json:"total_gain_loss"`
-	GainLossPct    float64                          `json:"gain_loss_pct"`
-	HoldingsByType map[models.AssetType]TypeSummary `json:"holdings_by_type"`
+	TotalValue            int64                            `json:"total_value"`
+	TotalCostBasis        int64                            `json:"total_cost_basis"`
+	TotalGainLoss         int64                            `json:"total_gain_loss"`
+	GainLossPct           float64                          `json:"gain_loss_pct"`
+	TotalRealizedGainLoss int64                            `json:"total_realized_gain_loss"`
+	HoldingsByType        map[models.AssetType]TypeSummary `json:"holdings_by_type"`
 }
 
 // TypeSummary contains summary data for a single asset type.

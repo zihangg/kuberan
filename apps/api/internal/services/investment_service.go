@@ -294,6 +294,7 @@ func (s *investmentService) GetPortfolio(userID uint) (*PortfolioSummary, error)
 		value := int64(inv.Quantity * float64(prices[inv.SecurityID]))
 		summary.TotalValue += value
 		summary.TotalCostBasis += inv.CostBasis
+		summary.TotalRealizedGainLoss += inv.RealizedGainLoss
 
 		ts := summary.HoldingsByType[inv.Security.AssetType]
 		ts.Value += value
@@ -383,17 +384,21 @@ func (s *investmentService) RecordSell(
 	// Proportional cost basis reduction
 	costBasisReduction := int64(float64(investment.CostBasis) * (quantity / investment.Quantity))
 
+	// Realized gain/loss = sell proceeds - proportional cost basis
+	realizedGainLoss := totalAmount - costBasisReduction
+
 	var invTx models.InvestmentTransaction
 	err = s.db.Transaction(func(tx *gorm.DB) error {
 		invTx = models.InvestmentTransaction{
-			InvestmentID: investmentID,
-			Type:         models.InvestmentTransactionSell,
-			Date:         date,
-			Quantity:     quantity,
-			PricePerUnit: pricePerUnit,
-			TotalAmount:  totalAmount,
-			Fee:          fee,
-			Notes:        notes,
+			InvestmentID:     investmentID,
+			Type:             models.InvestmentTransactionSell,
+			Date:             date,
+			Quantity:         quantity,
+			PricePerUnit:     pricePerUnit,
+			TotalAmount:      totalAmount,
+			Fee:              fee,
+			Notes:            notes,
+			RealizedGainLoss: realizedGainLoss,
 		}
 		if txErr := tx.Create(&invTx).Error; txErr != nil {
 			return apperrors.Wrap(apperrors.ErrInternalServer, txErr)
@@ -401,9 +406,11 @@ func (s *investmentService) RecordSell(
 
 		newQuantity := investment.Quantity - quantity
 		newCostBasis := investment.CostBasis - costBasisReduction
+		newRealizedGainLoss := investment.RealizedGainLoss + realizedGainLoss
 		if txErr := tx.Model(investment).Updates(map[string]interface{}{
-			"quantity":   newQuantity,
-			"cost_basis": newCostBasis,
+			"quantity":           newQuantity,
+			"cost_basis":         newCostBasis,
+			"realized_gain_loss": newRealizedGainLoss,
 		}).Error; txErr != nil {
 			return apperrors.Wrap(apperrors.ErrInternalServer, txErr)
 		}
