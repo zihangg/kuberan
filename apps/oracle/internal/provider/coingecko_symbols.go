@@ -1,0 +1,78 @@
+package provider
+
+import "strings"
+
+// coinGeckoIDs maps uppercase ticker symbols to CoinGecko API slugs.
+var coinGeckoIDs = map[string]string{
+	"BTC":   "bitcoin",
+	"ETH":   "ethereum",
+	"USDT":  "tether",
+	"BNB":   "binancecoin",
+	"SOL":   "solana",
+	"XRP":   "ripple",
+	"USDC":  "usd-coin",
+	"ADA":   "cardano",
+	"DOGE":  "dogecoin",
+	"AVAX":  "avalanche-2",
+	"TRX":   "tron",
+	"DOT":   "polkadot",
+	"LINK":  "chainlink",
+	"MATIC": "matic-network",
+	"POL":   "matic-network",
+	"SHIB":  "shiba-inu",
+	"TON":   "the-open-network",
+	"DAI":   "dai",
+	"LTC":   "litecoin",
+	"BCH":   "bitcoin-cash",
+	"UNI":   "uniswap",
+	"ATOM":  "cosmos",
+	"XLM":   "stellar",
+	"ETC":   "ethereum-classic",
+	"XMR":   "monero",
+	"FIL":   "filecoin",
+	"ARB":   "arbitrum",
+	"OP":    "optimism",
+	"APT":   "aptos",
+	"SUI":   "sui",
+	"NEAR":  "near",
+	"AAVE":  "aave",
+	"MKR":   "maker",
+	"GRT":   "the-graph",
+	"ALGO":  "algorand",
+	"FTM":   "fantom",
+	"SAND":  "the-sandbox",
+	"MANA":  "decentraland",
+	"AXS":   "axie-infinity",
+	"HBAR":  "hedera-hashgraph",
+	"ICP":   "internet-computer",
+	"VET":   "vechain",
+	"THETA": "theta-token",
+	"EGLD":  "elrond-erd-2",
+	"FLOW":  "flow",
+	"XTZ":   "tezos",
+	"NEO":   "neo",
+	"KLAY":  "klay-token",
+	"QNT":   "quant-network",
+	"CRV":   "curve-dao-token",
+	"SNX":   "havven",
+	"RPL":   "rocket-pool",
+	"COMP":  "compound-governance-token",
+	"1INCH": "1inch",
+	"ENS":   "ethereum-name-service",
+	"LDO":   "lido-dao",
+	"IMX":   "immutable-x",
+	"RNDR":  "render-token",
+	"INJ":   "injective-protocol",
+	"FET":   "fetch-ai",
+	"PEPE":  "pepe",
+	"WIF":   "dogwifcoin",
+	"BONK":  "bonk",
+	"FLOKI": "floki",
+}
+
+// LookupCoinGeckoID returns the CoinGecko API slug for a ticker symbol.
+// Returns the slug and true if found, or empty string and false if not.
+func LookupCoinGeckoID(symbol string) (string, bool) {
+	id, ok := coinGeckoIDs[strings.ToUpper(symbol)]
+	return id, ok
+}
