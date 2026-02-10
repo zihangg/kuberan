@@ -78,8 +78,8 @@ function InvestmentsSkeleton() {
   return (
     <div className="space-y-6">
       <Skeleton className="h-8 w-48" />
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {Array.from({ length: 4 }).map((_, i) => (
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+        {Array.from({ length: 5 }).map((_, i) => (
           <Skeleton key={i} className="h-28" />
         ))}
       </div>
@@ -269,7 +269,8 @@ function AllHoldingsTable() {
                   <TableHead className="text-right">Qty</TableHead>
                   <TableHead className="text-right">Price</TableHead>
                   <TableHead className="text-right">Market Value</TableHead>
-                  <TableHead className="text-right">Gain/Loss</TableHead>
+                  <TableHead className="text-right">Unrealized G/L</TableHead>
+                  <TableHead className="text-right">Realized G/L</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -316,6 +317,16 @@ function AllHoldingsTable() {
                       >
                         {isPositive ? "+" : ""}
                         {formatCurrency(gainLoss)}
+                      </TableCell>
+                      <TableCell
+                        className={`text-right font-medium font-mono tabular-nums ${
+                          inv.realized_gain_loss >= 0
+                            ? "text-green-600"
+                            : "text-red-600"
+                        }`}
+                      >
+                        {inv.realized_gain_loss >= 0 ? "+" : ""}
+                        {formatCurrency(inv.realized_gain_loss)}
                       </TableCell>
                     </TableRow>
                   );
@@ -395,6 +406,11 @@ export default function InvestmentsPage() {
       ? "text-green-600 dark:text-green-400"
       : "text-red-600 dark:text-red-400";
 
+  const realizedGainLossColor =
+    portfolio.total_realized_gain_loss >= 0
+      ? "text-green-600 dark:text-green-400"
+      : "text-red-600 dark:text-red-400";
+
   const holdingsCount = Object.values(portfolio.holdings_by_type).reduce(
     (sum, h) => sum + h.count,
     0
@@ -409,14 +425,14 @@ export default function InvestmentsPage() {
       <h1 className="text-2xl font-bold">Investments</h1>
 
       {/* Summary Cards */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <Card>
           <CardHeader>
             <div className="flex items-center justify-between">
               <CardDescription>Total Value</CardDescription>
               <DollarSign className="h-4 w-4 text-muted-foreground" />
             </div>
-            <CardTitle className="text-3xl">
+            <CardTitle className="text-2xl">
               {formatCurrency(portfolio.total_value)}
             </CardTitle>
           </CardHeader>
@@ -433,7 +449,7 @@ export default function InvestmentsPage() {
               <CardDescription>Cost Basis</CardDescription>
               <Landmark className="h-4 w-4 text-muted-foreground" />
             </div>
-            <CardTitle className="text-3xl">
+            <CardTitle className="text-2xl">
               {formatCurrency(portfolio.total_cost_basis)}
             </CardTitle>
           </CardHeader>
@@ -445,22 +461,48 @@ export default function InvestmentsPage() {
         <Card>
           <CardHeader>
             <div className="flex items-center justify-between">
-              <CardDescription>Gain / Loss</CardDescription>
+              <CardDescription>Unrealized G/L</CardDescription>
               {portfolio.total_gain_loss >= 0 ? (
                 <TrendingUp className="h-4 w-4 text-green-600" />
               ) : (
                 <TrendingDown className="h-4 w-4 text-red-600" />
               )}
             </div>
-            <CardTitle className={`text-3xl ${gainLossColor}`}>
-              {portfolio.total_gain_loss >= 0 ? "+" : ""}
-              {formatCurrency(portfolio.total_gain_loss)}
+            <CardTitle
+              className={`text-2xl whitespace-nowrap ${gainLossColor}`}
+            >
+              {portfolio.total_gain_loss >= 0 ? "+" : "-"}{" "}
+              {formatCurrency(Math.abs(portfolio.total_gain_loss))}
             </CardTitle>
           </CardHeader>
           <CardContent>
             <p className={`text-sm ${gainLossColor}`}>
-              {portfolio.total_gain_loss >= 0 ? "+" : ""}
-              {formatPercentage(portfolio.gain_loss_pct)}
+              {portfolio.total_gain_loss >= 0 ? "+" : "-"}
+              {formatPercentage(Math.abs(portfolio.gain_loss_pct))}
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardDescription>Realized G/L</CardDescription>
+              {portfolio.total_realized_gain_loss >= 0 ? (
+                <TrendingUp className="h-4 w-4 text-green-600" />
+              ) : (
+                <TrendingDown className="h-4 w-4 text-red-600" />
+              )}
+            </div>
+            <CardTitle
+              className={`text-2xl whitespace-nowrap ${realizedGainLossColor}`}
+            >
+              {portfolio.total_realized_gain_loss >= 0 ? "+" : "-"}{" "}
+              {formatCurrency(Math.abs(portfolio.total_realized_gain_loss))}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-muted-foreground">
+              From closed positions
             </p>
           </CardContent>
         </Card>
@@ -471,7 +513,7 @@ export default function InvestmentsPage() {
               <CardDescription>Holdings</CardDescription>
               <BarChart3 className="h-4 w-4 text-muted-foreground" />
             </div>
-            <CardTitle className="text-3xl">{holdingsCount}</CardTitle>
+            <CardTitle className="text-2xl">{holdingsCount}</CardTitle>
           </CardHeader>
           <CardContent>
             <p className="text-sm text-muted-foreground">

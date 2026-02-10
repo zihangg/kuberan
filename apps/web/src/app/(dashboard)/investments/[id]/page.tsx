@@ -178,10 +178,10 @@ export default function InvestmentDetailPage() {
             </CardHeader>
             <CardContent>
               <p
-                className={`text-2xl font-bold font-mono ${isRealizedPositive ? "text-green-600" : "text-red-600"}`}
+                className={`text-2xl font-bold font-mono whitespace-nowrap ${isRealizedPositive ? "text-green-600" : "text-red-600"}`}
               >
-                {isRealizedPositive ? "+" : ""}
-                {formatCurrency(investment.realized_gain_loss)}
+                {isRealizedPositive ? "+" : "-"}{" "}
+                {formatCurrency(Math.abs(investment.realized_gain_loss))}
               </p>
             </CardContent>
           </Card>
@@ -276,16 +276,16 @@ export default function InvestmentDetailPage() {
             </CardHeader>
             <CardContent>
               <p
-                className={`text-2xl font-bold font-mono ${isPositive ? "text-green-600" : "text-red-600"}`}
+                className={`text-2xl font-bold font-mono whitespace-nowrap ${isPositive ? "text-green-600" : "text-red-600"}`}
               >
-                {isPositive ? "+" : ""}
-                {formatCurrency(gainLoss)}
+                {isPositive ? "+" : "-"}{" "}
+                {formatCurrency(Math.abs(gainLoss))}
               </p>
               <p
                 className={`text-sm ${isPositive ? "text-green-600" : "text-red-600"}`}
               >
-                {isPositive ? "+" : ""}
-                {gainLossPct.toFixed(2)}%
+                {isPositive ? "+" : "-"}
+                {Math.abs(gainLossPct).toFixed(2)}%
               </p>
             </CardContent>
           </Card>
@@ -302,10 +302,10 @@ export default function InvestmentDetailPage() {
               </CardHeader>
               <CardContent>
                 <p
-                  className={`text-2xl font-bold font-mono ${isRealizedPositive ? "text-green-600" : "text-red-600"}`}
+                  className={`text-2xl font-bold font-mono whitespace-nowrap ${isRealizedPositive ? "text-green-600" : "text-red-600"}`}
                 >
-                  {isRealizedPositive ? "+" : ""}
-                  {formatCurrency(investment.realized_gain_loss)}
+                  {isRealizedPositive ? "+" : "-"}{" "}
+                  {formatCurrency(Math.abs(investment.realized_gain_loss))}
                 </p>
               </CardContent>
             </Card>
