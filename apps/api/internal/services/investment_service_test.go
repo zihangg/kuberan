@@ -440,6 +440,108 @@ func TestRecordSell(t *testing.T) {
 		}
 	})
 
+	t.Run("computes_realized_gain_loss_on_sell", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		acctSvc := NewAccountService(db)
+		svc := NewInvestmentService(db, acctSvc)
+		user := testutil.CreateTestUser(t, db)
+		account := testutil.CreateTestInvestmentAccount(t, db, user.ID)
+		sec := testutil.CreateTestSecurity(t, db)
+		inv := testutil.CreateTestInvestment(t, db, account.ID, sec.ID) // 10 shares @ $100, cost basis 100000
+
+		// Sell 5 shares at $150/share, no fee
+		// totalAmount = 5 * 15000 - 0 = 75000
+		// costBasisReduction = 100000 * (5/10) = 50000
+		// realizedGainLoss = 75000 - 50000 = 25000
+		sellTx, err := svc.RecordSell(user.ID, inv.ID, time.Now(), 5.0, 15000, 0, "Sell half at profit")
+		testutil.AssertNoError(t, err)
+
+		if sellTx.RealizedGainLoss != 25000 {
+			t.Errorf("expected tx realized gain/loss 25000, got %d", sellTx.RealizedGainLoss)
+		}
+
+		var dbInv models.Investment
+		db.First(&dbInv, inv.ID)
+		if dbInv.RealizedGainLoss != 25000 {
+			t.Errorf("expected investment realized gain/loss 25000, got %d", dbInv.RealizedGainLoss)
+		}
+	})
+
+	t.Run("accumulates_realized_gain_loss_on_investment", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		acctSvc := NewAccountService(db)
+		svc := NewInvestmentService(db, acctSvc)
+		user := testutil.CreateTestUser(t, db)
+		account := testutil.CreateTestInvestmentAccount(t, db, user.ID)
+		sec := testutil.CreateTestSecurity(t, db)
+		inv := testutil.CreateTestInvestment(t, db, account.ID, sec.ID) // 10 shares @ $100, cost basis 100000
+
+		// Sell 1: 3 shares at $120, no fee
+		// totalAmount = 3 * 12000 = 36000
+		// costBasisReduction = 100000 * (3/10) = 30000
+		// realizedGL1 = 36000 - 30000 = 6000
+		sell1, err := svc.RecordSell(user.ID, inv.ID, time.Now(), 3.0, 12000, 0, "Sell 1")
+		testutil.AssertNoError(t, err)
+		if sell1.RealizedGainLoss != 6000 {
+			t.Errorf("expected sell1 realized gain/loss 6000, got %d", sell1.RealizedGainLoss)
+		}
+
+		// After sell 1: 7 shares, cost basis 70000, realized 6000
+
+		// Sell 2: 2 shares at $80, no fee
+		// totalAmount = 2 * 8000 = 16000
+		// costBasisReduction = 70000 * (2/7) = 20000
+		// realizedGL2 = 16000 - 20000 = -4000
+		sell2, err := svc.RecordSell(user.ID, inv.ID, time.Now(), 2.0, 8000, 0, "Sell 2")
+		testutil.AssertNoError(t, err)
+		if sell2.RealizedGainLoss != -4000 {
+			t.Errorf("expected sell2 realized gain/loss -4000, got %d", sell2.RealizedGainLoss)
+		}
+
+		// Investment should have accumulated: 6000 + (-4000) = 2000
+		var dbInv models.Investment
+		db.First(&dbInv, inv.ID)
+		if dbInv.RealizedGainLoss != 2000 {
+			t.Errorf("expected accumulated realized gain/loss 2000, got %d", dbInv.RealizedGainLoss)
+		}
+	})
+
+	t.Run("realized_gain_loss_for_losing_trade", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		acctSvc := NewAccountService(db)
+		svc := NewInvestmentService(db, acctSvc)
+		user := testutil.CreateTestUser(t, db)
+		account := testutil.CreateTestInvestmentAccount(t, db, user.ID)
+		sec := testutil.CreateTestSecurity(t, db)
+		inv := testutil.CreateTestInvestment(t, db, account.ID, sec.ID) // 10 shares @ $100, cost basis 100000
+
+		// Sell 10 shares at $50/share, no fee (full liquidation at a loss)
+		// totalAmount = 10 * 5000 = 50000
+		// costBasisReduction = 100000 * (10/10) = 100000
+		// realizedGainLoss = 50000 - 100000 = -50000
+		sellTx, err := svc.RecordSell(user.ID, inv.ID, time.Now(), 10.0, 5000, 0, "Sell all at loss")
+		testutil.AssertNoError(t, err)
+
+		if sellTx.RealizedGainLoss != -50000 {
+			t.Errorf("expected tx realized gain/loss -50000, got %d", sellTx.RealizedGainLoss)
+		}
+
+		var dbInv models.Investment
+		db.First(&dbInv, inv.ID)
+		if dbInv.RealizedGainLoss != -50000 {
+			t.Errorf("expected investment realized gain/loss -50000, got %d", dbInv.RealizedGainLoss)
+		}
+		if dbInv.Quantity != 0 {
+			t.Errorf("expected quantity 0, got %f", dbInv.Quantity)
+		}
+		if dbInv.CostBasis != 0 {
+			t.Errorf("expected cost basis 0, got %d", dbInv.CostBasis)
+		}
+	})
+
 	t.Run("insufficient_shares", func(t *testing.T) {
 		db := testutil.SetupTestDB(t)
 		defer testutil.TeardownTestDB(t, db)
@@ -471,8 +573,16 @@ func TestRecordSell(t *testing.T) {
 		sec := testutil.CreateTestSecurity(t, db)
 		inv := testutil.CreateTestInvestment(t, db, account.ID, sec.ID) // 10 shares, cost basis 100000
 
-		_, err := svc.RecordSell(user.ID, inv.ID, time.Now(), 10.0, 12000, 0, "Sell all")
+		// Sell all 10 at $120/share, no fee
+		// totalAmount = 10 * 12000 = 120000
+		// costBasisReduction = 100000 * (10/10) = 100000
+		// realizedGainLoss = 120000 - 100000 = 20000
+		sellTx, err := svc.RecordSell(user.ID, inv.ID, time.Now(), 10.0, 12000, 0, "Sell all")
 		testutil.AssertNoError(t, err)
+
+		if sellTx.RealizedGainLoss != 20000 {
+			t.Errorf("expected tx realized gain/loss 20000, got %d", sellTx.RealizedGainLoss)
+		}
 
 		var dbInv models.Investment
 		db.First(&dbInv, inv.ID)
@@ -481,6 +591,9 @@ func TestRecordSell(t *testing.T) {
 		}
 		if dbInv.CostBasis != 0 {
 			t.Errorf("expected cost basis 0, got %d", dbInv.CostBasis)
+		}
+		if dbInv.RealizedGainLoss != 20000 {
+			t.Errorf("expected realized gain/loss 20000, got %d", dbInv.RealizedGainLoss)
 		}
 	})
 }
@@ -656,6 +769,47 @@ func TestGetPortfolio(t *testing.T) {
 		}
 		if etfSummary.Value != 240000 {
 			t.Errorf("expected ETF value 240000, got %d", etfSummary.Value)
+		}
+
+		// No sells yet, so TotalRealizedGainLoss should be 0
+		if portfolio.TotalRealizedGainLoss != 0 {
+			t.Errorf("expected total realized gain/loss 0, got %d", portfolio.TotalRealizedGainLoss)
+		}
+	})
+
+	t.Run("includes_realized_gain_loss", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		acctSvc := NewAccountService(db)
+		svc := NewInvestmentService(db, acctSvc)
+		user := testutil.CreateTestUser(t, db)
+		acct := testutil.CreateTestInvestmentAccount(t, db, user.ID)
+
+		sec1 := testutil.CreateTestSecurityWithParams(t, db, "AAPL", "Apple Inc", models.AssetTypeStock, "NASDAQ")
+		sec2 := testutil.CreateTestSecurityWithParams(t, db, "GOOG", "Alphabet Inc", models.AssetTypeStock, "NASDAQ")
+
+		inv1 := testutil.CreateTestInvestment(t, db, acct.ID, sec1.ID) // 10 shares, cost basis 100000
+		inv2 := testutil.CreateTestInvestment(t, db, acct.ID, sec2.ID) // 10 shares, cost basis 100000
+
+		testutil.CreateTestSecurityPrice(t, db, sec1.ID, 10000, time.Now())
+		testutil.CreateTestSecurityPrice(t, db, sec2.ID, 10000, time.Now())
+
+		// Sell 5 shares of AAPL at $150 (profit)
+		// totalAmount = 5 * 15000 = 75000, costBasisReduction = 50000, realized = 25000
+		_, err := svc.RecordSell(user.ID, inv1.ID, time.Now(), 5.0, 15000, 0, "")
+		testutil.AssertNoError(t, err)
+
+		// Sell 3 shares of GOOG at $80 (loss)
+		// totalAmount = 3 * 8000 = 24000, costBasisReduction = 30000, realized = -6000
+		_, err = svc.RecordSell(user.ID, inv2.ID, time.Now(), 3.0, 8000, 0, "")
+		testutil.AssertNoError(t, err)
+
+		portfolio, err := svc.GetPortfolio(user.ID)
+		testutil.AssertNoError(t, err)
+
+		// Total realized: 25000 + (-6000) = 19000
+		if portfolio.TotalRealizedGainLoss != 19000 {
+			t.Errorf("expected total realized gain/loss 19000, got %d", portfolio.TotalRealizedGainLoss)
 		}
 	})
 
