@@ -17,21 +17,13 @@ import {
 import { formatCurrency } from "@/lib/format";
 import type { AssetType } from "@/types/models";
 
-const ASSET_TYPE_LABELS: Record<AssetType, string> = {
-  stock: "Stocks",
-  etf: "ETFs",
-  bond: "Bonds",
-  crypto: "Crypto",
-  reit: "REITs",
-};
-
-const ASSET_TYPE_COLORS: Record<AssetType, string> = {
-  stock: "var(--chart-1)", // blue
-  etf: "var(--chart-2)", // green
-  bond: "var(--chart-3)", // amber
-  crypto: "var(--chart-4)", // purple
-  reit: "var(--chart-5)", // orange
-};
+const CHART_COLORS = [
+  "var(--chart-1)",
+  "var(--chart-2)",
+  "var(--chart-3)",
+  "var(--chart-4)",
+  "var(--chart-5)",
+];
 
 interface AssetAllocationChartProps {
   holdingsByType: Record<AssetType, { value: number; count: number }>;
@@ -43,31 +35,31 @@ export function AssetAllocationChart({
   totalValue,
 }: AssetAllocationChartProps) {
   const { chartConfig, chartData } = useMemo(() => {
-    // Filter to types with count > 0
-    const activeTypes = (Object.keys(holdingsByType) as AssetType[]).filter(
-      (type) => holdingsByType[type].count > 0
-    );
+    // Filter to types with count > 0 and sort alphabetically for deterministic color assignment
+    const activeTypes = (Object.keys(holdingsByType) as AssetType[])
+      .filter((type) => holdingsByType[type].count > 0)
+      .sort();
 
     if (activeTypes.length === 0) {
       return { chartConfig: {} as ChartConfig, chartData: [] };
     }
 
-    // Build chart config
+    // Build chart config - assign theme colors based on sorted order
     const config: ChartConfig = {
       value: { label: "Value" },
     };
-    for (const type of activeTypes) {
+    activeTypes.forEach((type, index) => {
       config[type] = {
-        label: ASSET_TYPE_LABELS[type],
-        color: ASSET_TYPE_COLORS[type],
+        label: type,
+        color: CHART_COLORS[index % CHART_COLORS.length],
       };
-    }
+    });
 
     // Build chart data (convert cents to dollars)
     const cData = activeTypes.map((type) => ({
-      name: ASSET_TYPE_LABELS[type],
+      name: type,
       value: holdingsByType[type].value / 100,
-      fill: ASSET_TYPE_COLORS[type],
+      fill: `var(--color-${type})`,
       assetType: type,
     }));
 
@@ -106,6 +98,8 @@ export function AssetAllocationChart({
                 if (!active || !payload?.length) return null;
                 const item = payload[0];
                 const value = item.value as number;
+                // Access assetType from payload and lookup the label
+                const assetType = item.payload.assetType as AssetType;
                 const pct =
                   totalValue > 0
                     ? ((value * 100) / (totalValue / 100)).toFixed(1)
@@ -117,7 +111,7 @@ export function AssetAllocationChart({
                         className="h-2.5 w-2.5 shrink-0 rounded-[2px]"
                         style={{ backgroundColor: item.payload.fill }}
                       />
-                      <span className="font-medium">{item.name}</span>
+                      <span className="font-medium">{assetType}</span>
                     </div>
                     <div className="text-muted-foreground mt-1">
                       {formatCurrency(value * 100)} ({pct}%)
