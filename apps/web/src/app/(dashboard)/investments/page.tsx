@@ -13,6 +13,9 @@ import {
   ChevronLeft,
   ChevronRight,
   List,
+  ArrowUp,
+  ArrowDown,
+  ArrowUpDown,
 } from "lucide-react";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid } from "recharts";
 import {
@@ -220,9 +223,21 @@ function NetWorthChart() {
 
 const HOLDINGS_PAGE_SIZE = 20;
 
+type SortColumn =
+  | "symbol"
+  | "name"
+  | "qty"
+  | "price"
+  | "market_value"
+  | "unrealized_gl"
+  | "realized_gl";
+type SortDirection = "asc" | "desc" | null;
+
 function AllHoldingsTable() {
   const router = useRouter();
   const [page, setPage] = useState(1);
+  const [sortColumn, setSortColumn] = useState<SortColumn | null>(null);
+  const [sortDirection, setSortDirection] = useState<SortDirection>(null);
   const { data, isLoading } = useAllInvestments({
     page,
     page_size: HOLDINGS_PAGE_SIZE,
@@ -231,6 +246,103 @@ function AllHoldingsTable() {
   const investments = data?.data ?? [];
   const totalPages = data?.total_pages ?? 1;
   const totalItems = data?.total_items ?? 0;
+
+  const handleSort = (column: SortColumn) => {
+    if (sortColumn !== column) {
+      setSortColumn(column);
+      setSortDirection("asc");
+    } else if (sortDirection === "asc") {
+      setSortDirection("desc");
+    } else if (sortDirection === "desc") {
+      setSortColumn(null);
+      setSortDirection(null);
+    } else {
+      setSortDirection("asc");
+    }
+  };
+
+  const sortedInvestments = useMemo(() => {
+    if (!sortColumn || !sortDirection) return investments;
+    return [...investments].sort((a, b) => {
+      let aVal: number | string;
+      let bVal: number | string;
+      switch (sortColumn) {
+        case "symbol":
+          aVal = a.security.symbol;
+          bVal = b.security.symbol;
+          break;
+        case "name":
+          aVal = a.security.name;
+          bVal = b.security.name;
+          break;
+        case "qty":
+          aVal = a.quantity;
+          bVal = b.quantity;
+          break;
+        case "price":
+          aVal = a.current_price;
+          bVal = b.current_price;
+          break;
+        case "market_value":
+          aVal = Math.round(a.quantity * a.current_price);
+          bVal = Math.round(b.quantity * b.current_price);
+          break;
+        case "unrealized_gl":
+          aVal =
+            Math.round(a.quantity * a.current_price) - a.cost_basis;
+          bVal =
+            Math.round(b.quantity * b.current_price) - b.cost_basis;
+          break;
+        case "realized_gl":
+          aVal = a.realized_gain_loss;
+          bVal = b.realized_gain_loss;
+          break;
+        default:
+          return 0;
+      }
+      if (typeof aVal === "string" && typeof bVal === "string") {
+        return sortDirection === "asc"
+          ? aVal.localeCompare(bVal)
+          : bVal.localeCompare(aVal);
+      }
+      return sortDirection === "asc"
+        ? (aVal as number) - (bVal as number)
+        : (bVal as number) - (aVal as number);
+    });
+  }, [investments, sortColumn, sortDirection]);
+
+  const SortableHeader = ({
+    column,
+    label,
+    align = "",
+  }: {
+    column: SortColumn;
+    label: string;
+    align?: string;
+  }) => {
+    const isActive = sortColumn === column;
+    const Icon =
+      isActive && sortDirection === "asc"
+        ? ArrowUp
+        : isActive && sortDirection === "desc"
+          ? ArrowDown
+          : ArrowUpDown;
+    return (
+      <TableHead
+        className={`cursor-pointer select-none ${align}`}
+        onClick={() => handleSort(column)}
+      >
+        <div
+          className={`flex items-center gap-1 ${align === "text-right" ? "justify-end" : ""}`}
+        >
+          {label}
+          <Icon
+            className={`h-3 w-3 ${isActive ? "text-foreground" : "text-muted-foreground/50"}`}
+          />
+        </div>
+      </TableHead>
+    );
+  };
 
   return (
     <Card>
@@ -263,18 +375,38 @@ function AllHoldingsTable() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Symbol</TableHead>
-                  <TableHead>Name</TableHead>
+                  <SortableHeader column="symbol" label="Symbol" />
+                  <SortableHeader column="name" label="Name" />
                   <TableHead>Account</TableHead>
-                  <TableHead className="text-right">Qty</TableHead>
-                  <TableHead className="text-right">Price</TableHead>
-                  <TableHead className="text-right">Market Value</TableHead>
-                  <TableHead className="text-right">Unrealized G/L</TableHead>
-                  <TableHead className="text-right">Realized G/L</TableHead>
+                  <SortableHeader
+                    column="qty"
+                    label="Qty"
+                    align="text-right"
+                  />
+                  <SortableHeader
+                    column="price"
+                    label="Price"
+                    align="text-right"
+                  />
+                  <SortableHeader
+                    column="market_value"
+                    label="Market Value"
+                    align="text-right"
+                  />
+                  <SortableHeader
+                    column="unrealized_gl"
+                    label="Unrealized G/L"
+                    align="text-right"
+                  />
+                  <SortableHeader
+                    column="realized_gl"
+                    label="Realized G/L"
+                    align="text-right"
+                  />
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {investments.map((inv) => {
+                {sortedInvestments.map((inv) => {
                   const marketValue = Math.round(
                     inv.quantity * inv.current_price
                   );
