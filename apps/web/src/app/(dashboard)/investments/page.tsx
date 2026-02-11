@@ -426,7 +426,7 @@ export default function InvestmentsPage() {
 
       {/* Summary Cards */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-        <Card>
+        <Card className="gap-2">
           <CardHeader>
             <div className="flex items-center justify-between">
               <CardDescription>Total Value</CardDescription>
@@ -443,7 +443,7 @@ export default function InvestmentsPage() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="gap-2">
           <CardHeader>
             <div className="flex items-center justify-between">
               <CardDescription>Cost Basis</CardDescription>
@@ -458,7 +458,7 @@ export default function InvestmentsPage() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="gap-2">
           <CardHeader>
             <div className="flex items-center justify-between">
               <CardDescription>Unrealized G/L</CardDescription>
@@ -483,7 +483,7 @@ export default function InvestmentsPage() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="gap-2">
           <CardHeader>
             <div className="flex items-center justify-between">
               <CardDescription>Realized G/L</CardDescription>
@@ -507,7 +507,7 @@ export default function InvestmentsPage() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="gap-2">
           <CardHeader>
             <div className="flex items-center justify-between">
               <CardDescription>Holdings</CardDescription>
