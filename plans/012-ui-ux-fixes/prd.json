@@ -1,0 +1,182 @@
+[
+  {
+    "id": "1.1",
+    "category": "frontend-fix",
+    "passes": true,
+    "description": "Tighten summary card spacing by adding gap-2 class to all 5 Card components",
+    "steps": [
+      "Open apps/web/src/app/(dashboard)/investments/page.tsx",
+      "Add className=\"gap-2\" to each of the 5 summary <Card> components in the grid (Total Value, Cost Basis, Unrealized G/L, Realized G/L, Holdings)",
+      "Run pnpm build from apps/web/ to confirm no TypeScript errors"
+    ]
+  },
+  {
+    "id": "2.1",
+    "category": "frontend-chart",
+    "passes": true,
+    "description": "Create asset allocation donut chart component for investments page",
+    "steps": [
+      "Create apps/web/src/components/investments/asset-allocation-chart.tsx",
+      "Accept props: holdingsByType (Record<AssetType, { value, count }>) and totalValue (number)",
+      "Filter to types with count > 0",
+      "Map each type to chart data with name, value (cents to dollars), and fill color",
+      "Define ChartConfig with distinct colors per asset type (stocks=blue, ETFs=green, bonds=amber, crypto=purple, REITs=orange)",
+      "Render Recharts PieChart + Pie with innerRadius/outerRadius for donut shape",
+      "Add center Label showing total portfolio value via formatCurrency",
+      "Wrap in ShadCN Card with title 'Asset Allocation' and description",
+      "Add ChartContainer + ChartTooltip with custom tooltip showing currency + percentage",
+      "Run pnpm build from apps/web/"
+    ]
+  },
+  {
+    "id": "2.2",
+    "category": "frontend-chart",
+    "passes": true,
+    "description": "Create portfolio composition bar chart component for investments page",
+    "steps": [
+      "Create apps/web/src/components/investments/portfolio-composition-chart.tsx",
+      "Fetch latest snapshot using usePortfolioSnapshots with page_size 1 and wide date range",
+      "Extract cash_balance, investment_value, debt_balance from most recent snapshot",
+      "Convert cents to dollars (divide by 100)",
+      "Render Recharts BarChart with layout='vertical' and 3 stacked Bar components",
+      "Colors: green for cash, blue for investments, orange for debt",
+      "Wrap in ShadCN Card with title 'Portfolio Composition'",
+      "Include ChartLegend + ChartLegendContent and custom ChartTooltip",
+      "Handle loading (skeleton) and empty states",
+      "Run pnpm build from apps/web/"
+    ]
+  },
+  {
+    "id": "2.3",
+    "category": "frontend-layout",
+    "passes": true,
+    "description": "Integrate both charts into investments page layout in a 2-column grid",
+    "steps": [
+      "Open apps/web/src/app/(dashboard)/investments/page.tsx",
+      "Import AssetAllocationChart and PortfolioCompositionChart",
+      "Add a 2-column grid row between NetWorthChart and 'Holdings by Asset Type' table",
+      "Pass portfolio.holdings_by_type and portfolio.total_value to AssetAllocationChart",
+      "PortfolioCompositionChart fetches its own data (no props needed)",
+      "Run pnpm build from apps/web/"
+    ]
+  },
+  {
+    "id": "3.1",
+    "category": "frontend-feature",
+    "passes": true,
+    "description": "Add sort state and sort logic to AllHoldingsTable component",
+    "steps": [
+      "Open apps/web/src/app/(dashboard)/investments/page.tsx",
+      "Define SortColumn type: 'symbol' | 'name' | 'qty' | 'price' | 'market_value' | 'unrealized_gl' | 'realized_gl'",
+      "Define SortDirection type: 'asc' | 'desc' | null",
+      "Add useState for sortColumn (SortColumn | null) and sortDirection (SortDirection)",
+      "Add handleSort function that cycles: null → asc → desc → null",
+      "Add useMemo that sorts investments array based on sortColumn and sortDirection",
+      "String columns (symbol, name) use localeCompare, numeric columns use subtraction",
+      "Computed columns (market_value, unrealized_gl) compute from quantity * current_price",
+      "Run pnpm build from apps/web/"
+    ]
+  },
+  {
+    "id": "3.2",
+    "category": "frontend-feature",
+    "passes": true,
+    "description": "Add sortable column headers with sort indicators to holdings table",
+    "steps": [
+      "Open apps/web/src/app/(dashboard)/investments/page.tsx",
+      "Add ArrowUp, ArrowDown, ArrowUpDown to Lucide imports",
+      "Create SortableHeader inline component with column, label, align, currentColumn, currentDirection, onSort props",
+      "Icon logic: active+asc = ArrowUp, active+desc = ArrowDown, inactive = ArrowUpDown",
+      "Apply SortableHeader to 7 sortable columns (Symbol, Name, Qty, Price, Market Value, Unrealized G/L, Realized G/L)",
+      "Keep Account column as non-sortable static TableHead",
+      "Replace investments.map() with sortedInvestments.map() in table body",
+      "Run pnpm build from apps/web/"
+    ]
+  },
+  {
+    "id": "4.1",
+    "category": "frontend-fix",
+    "passes": true,
+    "description": "Fix securities list page to handle capitalized asset_type values",
+    "steps": [
+      "Open apps/web/src/app/(dashboard)/securities/page.tsx",
+      "In SecurityRow component, change ASSET_TYPE_LABELS[security.asset_type] to ASSET_TYPE_LABELS[security.asset_type.toLowerCase() as AssetType] ?? security.asset_type",
+      "Run pnpm build from apps/web/"
+    ]
+  },
+  {
+    "id": "4.2",
+    "category": "frontend-fix",
+    "passes": true,
+    "description": "Fix security detail page to handle capitalized asset_type for badge and conditionals",
+    "steps": [
+      "Open apps/web/src/app/(dashboard)/securities/[id]/page.tsx",
+      "Add normalized variable after security check: const assetType = security.asset_type.toLowerCase() as AssetType",
+      "Update badge: ASSET_TYPE_LABELS[assetType] ?? security.asset_type",
+      "Update bond conditionals: assetType === 'bond' (3 occurrences)",
+      "Update crypto conditional: assetType === 'crypto' (1 occurrence)",
+      "Update REIT conditional: assetType === 'reit' (1 occurrence)",
+      "Run pnpm build from apps/web/"
+    ]
+  },
+  {
+    "id": "5.1",
+    "category": "frontend-chart",
+    "passes": true,
+    "description": "Create net worth over time chart component for dashboard",
+    "steps": [
+      "Create apps/web/src/components/dashboard/net-worth-chart.tsx",
+      "Define period options: 1M, 3M, 6M, 1Y, ALL with corresponding month values",
+      "Define ChartConfig for net_worth series with color var(--chart-1)",
+      "Add getDateRange helper to compute from_date/to_date based on selected period",
+      "Use usePortfolioSnapshots hook with computed date range and page_size 1000",
+      "Map snapshot data to { date: formatted_date, net_worth: total_net_worth / 100 }",
+      "Render Recharts AreaChart with gradient fill (linearGradient with fill-opacity 0.4 to 0.1)",
+      "Add XAxis (date), YAxis, CartesianGrid, ChartTooltip with formatted currency",
+      "Period selector using ShadCN Tabs + TabsList + TabsTrigger",
+      "Wrap in ShadCN Card with title 'Net Worth Over Time'",
+      "Handle loading state (Skeleton) and empty state ('No snapshot data available' message)",
+      "Run pnpm build from apps/web/"
+    ]
+  },
+  {
+    "id": "5.2",
+    "category": "frontend-layout",
+    "passes": true,
+    "description": "Integrate net worth chart into dashboard page between budgets and charts",
+    "steps": [
+      "Open apps/web/src/app/(dashboard)/page.tsx",
+      "Import NetWorthChart from @/components/dashboard/net-worth-chart",
+      "Add <NetWorthChart /> between <BudgetOverview /> and the existing 2-column charts grid",
+      "Update DashboardSkeleton to include a Skeleton placeholder for the net worth chart (h-[400px])",
+      "Run pnpm build from apps/web/"
+    ]
+  },
+  {
+    "id": "6.1",
+    "category": "verification",
+    "passes": true,
+    "description": "Full build verification",
+    "steps": [
+      "Run pnpm build from apps/web/",
+      "Must complete with zero errors"
+    ]
+  },
+  {
+    "id": "6.2",
+    "category": "verification",
+    "passes": false,
+    "description": "Visual verification checklist",
+    "steps": [
+      "Investment page: All 5 summary cards have consistent vertical spacing",
+      "Investment page: Asset allocation donut renders with correct colors and center label",
+      "Investment page: Portfolio composition bar shows cash/investments/debt breakdown",
+      "Investment page: Clicking column headers toggles sort with correct icons",
+      "Securities list: All securities show their type badge regardless of DB casing",
+      "Security detail: Type badge renders correctly, bond/crypto/REIT fields appear when applicable",
+      "Dashboard: Net worth chart renders between budgets and existing charts",
+      "Dashboard: Period tabs switch correctly, tooltip shows formatted currency",
+      "Dashboard: Empty state shows message if no snapshots exist"
+    ]
+  }
+]

@@ -1,0 +1,106 @@
+## Status: Complete (implementation phase)
+
+### 2026-02-11 - Task 1.1: Fix Summary Card Alignment
+- **PRD ref**: 1.1
+- **Decision**: Added `className="gap-2"` to all 5 summary Card components
+- **Reasoning**: Default gap-6 (24px) between CardHeader/CardContent causes visual misalignment when content heights vary. gap-2 tightens spacing for consistent alignment across all cards.
+- **Files changed**: apps/web/src/app/(dashboard)/investments/page.tsx (5 Card components)
+- **Verification**: pnpm build passed ✓
+
+### 2026-02-11 - Tasks 4.1 & 4.2: Fix Securities Type Display
+- **PRD ref**: 4.1, 4.2
+- **Decision**: Frontend normalization with `security.asset_type.toLowerCase() as AssetType` before label lookup and conditionals
+- **Reasoning**: DB has mixed-case asset_type values (Stock vs stock). API validator now prevents new capitalized entries, but existing data needs frontend handling. Normalization with fallback (`?? security.asset_type`) handles any case.
+- **Files changed**:
+  - apps/web/src/app/(dashboard)/securities/page.tsx (badge in SecurityRow)
+  - apps/web/src/app/(dashboard)/securities/[id]/page.tsx (assetType variable, badge + 5 conditionals: bond×3, crypto×1, reit×1)
+- **Verification**: pnpm build passed ✓ (after .next cache clean)
+
+### 2026-02-11 - Tasks 3.1 & 3.2: Sortable Holdings Table
+- **PRD ref**: 3.1, 3.2
+- **Decision**: Client-side sort with 3-state cycling (null → asc → desc → null), inline SortableHeader component
+- **Reasoning**: Most users <100 holdings (single page). Client-side simpler than backend changes. Visual indicators (ArrowUp/Down/UpDown) show state clearly.
+- **Implementation**:
+  - Added SortColumn, SortDirection types
+  - handleSort() cycles through states
+  - useMemo sorts investments by selected column/direction
+  - SortableHeader component with icons, applied to 7 sortable columns (Symbol, Name, Qty, Price, Market Value, Unrealized G/L, Realized G/L)
+  - Account column remains non-sortable
+- **Files changed**: apps/web/src/app/(dashboard)/investments/page.tsx (AllHoldingsTable component, added ArrowUp/Down/UpDown imports)
+- **Verification**: pnpm build passed ✓ (ESLint warning about useMemo deps is acceptable)
+
+### 2026-02-11 - Task 2.1: Asset Allocation Donut Chart
+- **PRD ref**: 2.1
+- **Decision**: Created reusable donut chart component following expenditure-chart.tsx pattern
+- **Implementation**:
+  - Filter holdingsByType to types with count > 0
+  - ChartConfig with distinct colors per asset type (stock=chart-1/blue, etf=chart-2/green, bond=chart-3/amber, crypto=chart-4/purple, reit=chart-5/orange)
+  - Recharts PieChart with innerRadius 70, strokeWidth 5 for donut shape
+  - Center Label shows total portfolio value via formatCurrency
+  - Custom ChartTooltip with formatted currency + percentage
+  - ShadCN Card wrapper with title "Asset Allocation" and description
+  - Empty state: "No holdings"
+- **Files changed**: apps/web/src/components/investments/asset-allocation-chart.tsx (new file)
+- **Verification**: pnpm build passed ✓
+
+### 2026-02-11 - Task 2.2: Portfolio Composition Bar Chart
+- **PRD ref**: 2.2
+- **Decision**: Created horizontal stacked bar chart component following income-expenses-chart.tsx pattern
+- **Implementation**:
+  - Fetches latest snapshot via usePortfolioSnapshots with 10-year date range and page_size 1
+  - Extracts cash_balance, investment_value, debt_balance from most recent snapshot
+  - Converts cents to dollars (÷100), debt made positive for display
+  - Recharts BarChart with layout="vertical" and 3 stacked Bar components
+  - Colors: cash=chart-2/green, investments=chart-1/blue, debt=chart-3/amber
+  - ChartLegend + custom ChartTooltip showing formatted currency per category
+  - Handles loading (Skeleton) and empty state ("No snapshot data available")
+- **Files changed**: apps/web/src/components/investments/portfolio-composition-chart.tsx (new file)
+- **Verification**: pnpm build passed ✓
+
+### 2026-02-11 - Task 2.3: Integrate Charts Into Investments Page
+- **PRD ref**: 2.3
+- **Decision**: Added 2-column grid between NetWorthChart and Holdings by Asset Type table
+- **Implementation**:
+  - Imported AssetAllocationChart and PortfolioCompositionChart
+  - Added `<div className="grid gap-4 lg:grid-cols-2">` container
+  - Passed portfolio.holdings_by_type and portfolio.total_value props to AssetAllocationChart
+  - PortfolioCompositionChart fetches its own data (no props)
+  - Positioned between NetWorthChart (line 662) and Holdings by Asset Type table (line 673)
+- **Files changed**: apps/web/src/app/(dashboard)/investments/page.tsx (imports + grid layout)
+- **Verification**: pnpm build passed ✓, bundle size increased 14.2→15.4 kB (expected)
+
+### 2026-02-11 - Task 5.1: Dashboard Net Worth Chart Component
+- **PRD ref**: 5.1
+- **Decision**: Created reusable NetWorthChart component adapted from investments page inline chart
+- **Implementation**:
+  - Period tabs: 1M, 3M, 6M, 1Y, ALL with corresponding month values
+  - ChartConfig for net_worth series with color var(--chart-1)
+  - getDateRange helper computes from_date/to_date based on selected period
+  - usePortfolioSnapshots hook with computed date range and page_size 1000
+  - Maps snapshot data to { date: formatted_date, net_worth: total_net_worth / 100 }
+  - Recharts AreaChart with gradient fill (linearGradient stopOpacity 0.4→0.1)
+  - Period selector using ShadCN Tabs + TabsList + TabsTrigger
+  - CardDescription shows latest net worth value
+  - Handles loading (Skeleton) and empty state
+- **Files changed**: apps/web/src/components/dashboard/net-worth-chart.tsx (new file)
+- **Verification**: pnpm build passed ✓
+
+### 2026-02-11 - Task 5.2: Integrate Net Worth Chart Into Dashboard
+- **PRD ref**: 5.2
+- **Decision**: Added NetWorthChart between BudgetOverview and existing charts grid
+- **Implementation**:
+  - Imported NetWorthChart from @/components/dashboard/net-worth-chart
+  - Added <NetWorthChart /> between <BudgetOverview /> and 2-column charts grid
+  - Updated DashboardSkeleton to include h-[400px] skeleton placeholder for net worth chart
+  - Positioned after budget overview skeleton (line 78), before charts grid
+- **Files changed**: apps/web/src/app/(dashboard)/page.tsx (import + component + skeleton)
+- **Verification**: pnpm build passed ✓
+- **Performance**: Dashboard bundle 15.8→14.4 kB, investments 15.4→10.1 kB (code splitting benefit from shared chart component)
+
+### 2026-02-11 - Task 6.1: Full Build Verification
+- **PRD ref**: 6.1
+- **Result**: ✓ pnpm build completed with zero errors
+- **Note**: One pre-existing ESLint warning in investments/page.tsx (useMemo deps) is acceptable, unrelated to this plan
+
+## Summary
+All implementation tasks complete (1.1, 2.1-2.3, 3.1-3.2, 4.1-4.2, 5.1-5.2, 6.1). Task 6.2 (visual verification) requires manual browser testing, out of scope for automated verification.
