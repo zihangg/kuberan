@@ -46,6 +46,8 @@ import { usePortfolio, useAllInvestments } from "@/hooks/use-investments";
 import { usePortfolioSnapshots } from "@/hooks/use-portfolio-snapshots";
 import { formatCurrency, formatDate, formatPercentage } from "@/lib/format";
 import type { AssetType } from "@/types/models";
+import { AssetAllocationChart } from "@/components/investments/asset-allocation-chart";
+import { PortfolioCompositionChart } from "@/components/investments/portfolio-composition-chart";
 
 const ASSET_TYPE_LABELS: Record<AssetType, string> = {
   stock: "Stocks",
@@ -658,6 +660,15 @@ export default function InvestmentsPage() {
 
       {/* Net Worth Chart */}
       <NetWorthChart />
+
+      {/* Asset Allocation & Portfolio Composition Charts */}
+      <div className="grid gap-4 lg:grid-cols-2">
+        <AssetAllocationChart
+          holdingsByType={portfolio.holdings_by_type}
+          totalValue={portfolio.total_value}
+        />
+        <PortfolioCompositionChart />
+      </div>
 
       {/* Holdings by Type */}
       <Card>
