@@ -55,7 +55,8 @@ function SecurityRow({
       <TableCell>{security.name}</TableCell>
       <TableCell>
         <Badge variant="outline">
-          {ASSET_TYPE_LABELS[security.asset_type]}
+          {ASSET_TYPE_LABELS[security.asset_type.toLowerCase() as AssetType] ??
+            security.asset_type}
         </Badge>
       </TableCell>
       <TableCell>{security.currency}</TableCell>

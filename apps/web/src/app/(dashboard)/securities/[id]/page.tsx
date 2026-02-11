@@ -118,6 +118,8 @@ export default function SecurityDetailPage() {
     );
   }
 
+  const assetType = security.asset_type.toLowerCase() as AssetType;
+
   return (
     <div className="space-y-6">
       {/* Back button */}
@@ -133,7 +135,7 @@ export default function SecurityDetailPage() {
         <div className="flex items-center gap-3">
           <h1 className="text-2xl font-bold font-mono">{security.symbol}</h1>
           <Badge variant="outline">
-            {ASSET_TYPE_LABELS[security.asset_type]}
+            {ASSET_TYPE_LABELS[assetType] ?? security.asset_type}
           </Badge>
         </div>
         <p className="text-lg text-muted-foreground">{security.name}</p>
@@ -158,7 +160,7 @@ export default function SecurityDetailPage() {
         )}
 
         {/* Bond-specific fields */}
-        {security.asset_type === "bond" && security.maturity_date && (
+        {assetType === "bond" && security.maturity_date && (
           <Card>
             <CardHeader className="pb-2">
               <CardDescription>Maturity Date</CardDescription>
@@ -168,18 +170,17 @@ export default function SecurityDetailPage() {
             </CardHeader>
           </Card>
         )}
-        {security.asset_type === "bond" &&
-          security.yield_to_maturity != null && (
-            <Card>
-              <CardHeader className="pb-2">
-                <CardDescription>Yield to Maturity</CardDescription>
-                <CardTitle className="text-lg">
-                  {security.yield_to_maturity.toFixed(2)}%
-                </CardTitle>
-              </CardHeader>
-            </Card>
-          )}
-        {security.asset_type === "bond" && security.coupon_rate != null && (
+        {assetType === "bond" && security.yield_to_maturity != null && (
+          <Card>
+            <CardHeader className="pb-2">
+              <CardDescription>Yield to Maturity</CardDescription>
+              <CardTitle className="text-lg">
+                {security.yield_to_maturity.toFixed(2)}%
+              </CardTitle>
+            </CardHeader>
+          </Card>
+        )}
+        {assetType === "bond" && security.coupon_rate != null && (
           <Card>
             <CardHeader className="pb-2">
               <CardDescription>Coupon Rate</CardDescription>
@@ -191,7 +192,7 @@ export default function SecurityDetailPage() {
         )}
 
         {/* Crypto-specific fields */}
-        {security.asset_type === "crypto" && security.network && (
+        {assetType === "crypto" && security.network && (
           <Card>
             <CardHeader className="pb-2">
               <CardDescription>Network</CardDescription>
@@ -201,7 +202,7 @@ export default function SecurityDetailPage() {
         )}
 
         {/* REIT-specific fields */}
-        {security.asset_type === "reit" && security.property_type && (
+        {assetType === "reit" && security.property_type && (
           <Card>
             <CardHeader className="pb-2">
               <CardDescription>Property Type</CardDescription>
