@@ -34,6 +34,7 @@ import { EditTransactionDialog } from "@/components/transactions/edit-transactio
 import { ExpenditureChart } from "@/components/dashboard/expenditure-chart";
 import { IncomeExpensesChart } from "@/components/dashboard/income-expenses-chart";
 import { SpendingTrendChart } from "@/components/dashboard/spending-trend-chart";
+import { NetWorthChart } from "@/components/dashboard/net-worth-chart";
 import type { Account, Budget, Transaction, TransactionType } from "@/types/models";
 
 const ACCOUNT_TYPE_LABELS: Record<string, string> = {
@@ -75,6 +76,8 @@ function DashboardSkeleton() {
           <Skeleton key={i} className="h-28" />
         ))}
       </div>
+      <Skeleton className="h-[250px] w-full" />
+      <Skeleton className="h-[400px] w-full" />
       <div className="grid gap-4 lg:grid-cols-2">
         <Skeleton className="h-[350px]" />
         <Skeleton className="h-[350px]" />
@@ -413,6 +416,8 @@ export default function DashboardPage() {
           </div>
 
           <BudgetOverview budgets={activeBudgets} />
+
+          <NetWorthChart />
 
           <div className="grid gap-4 lg:grid-cols-2">
             <ExpenditureChart />
