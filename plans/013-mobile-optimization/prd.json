@@ -246,7 +246,7 @@
   {
     "id": "4.1",
     "category": "dialogs-forms",
-    "passes": false,
+    "passes": true,
     "description": "Make transaction dialog type buttons stack on mobile",
     "steps": [
       "Open apps/web/src/components/transactions/create-transaction-dialog.tsx",
@@ -259,7 +259,7 @@
   {
     "id": "4.2",
     "category": "dialogs-forms",
-    "passes": false,
+    "passes": true,
     "description": "Increase form field spacing in transaction dialog",
     "steps": [
       "Open apps/web/src/components/transactions/create-transaction-dialog.tsx",

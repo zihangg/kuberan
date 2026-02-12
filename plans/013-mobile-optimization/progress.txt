@@ -124,3 +124,11 @@ PROGRESS NOTES:
 - Net worth chart: ✓ 250px mobile, 300px desktop, minTickGap 50
 - Summary cards: ✓ responsive grid (1/2/4 columns)
 - Phase 3 complete: All dashboard charts and layouts now mobile-optimized
+
+2026-02-12 - Tasks 4.1 & 4.2 Complete (PRD 4.1, 4.2)
+- Made transaction dialog type buttons stack on mobile and increased form spacing
+- Type buttons container: "flex gap-2" → "flex flex-col sm:flex-row gap-2" (stack <sm, horizontal ≥sm)
+- Form gap: gap-4 → gap-5 (20px spacing for better touch targets)
+- Buttons (Expense, Income, Transfer) stack vertically on mobile (<640px)
+- Files: apps/web/src/components/transactions/create-transaction-dialog.tsx
+- Build: ✓ passes
