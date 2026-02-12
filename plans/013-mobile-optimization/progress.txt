@@ -290,3 +290,10 @@ PROGRESS NOTES:
 - Ensures all select dropdowns are easily tappable on mobile
 - Files: apps/web/src/components/ui/select.tsx
 - Build: ✓ passes
+
+2026-02-12 - Task 7.3 Complete (PRD 7.3)
+- Increased textarea minimum height for better mobile usability
+- Changed min-h-[60px] → min-h-[80px] for adequate tap area
+- Provides more comfortable multiline text input on touch devices
+- Files: apps/web/src/components/ui/textarea.tsx
+- Build: ✓ passes

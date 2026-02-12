@@ -508,7 +508,7 @@
   {
     "id": "7.3",
     "category": "component-audit",
-    "passes": false,
+    "passes": true,
     "description": "Verify and fix textarea component minimum height",
     "steps": [
       "Open apps/web/src/components/ui/textarea.tsx",
