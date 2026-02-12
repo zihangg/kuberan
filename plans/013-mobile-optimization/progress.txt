@@ -204,3 +204,15 @@ PROGRESS NOTES:
 - Removed duplicate action buttons from card headers (cleaner layout)
 - Files: apps/web/src/app/(dashboard)/accounts/[id]/page.tsx
 - Build: ✓ passes
+2026-02-12 - Task 5.2 Complete (PRD 5.2)
+- Optimized investment detail page for mobile
+- Header: Stacked vertically (flex-col sm:flex-row sm:justify-between), badges wrapped separately
+- Stats cards: 2-column grid on mobile (grid-cols-2 md:grid-cols-3), changed from sm:grid-cols-2 lg:grid-cols-3
+- Action buttons: 2-column grid on mobile (grid-cols-2 md:grid-cols-4 gap-2), replaced flex-wrap
+- Created InvestmentTransactionListItem: type badge + date + total, quantity/price grid, fee + realized P&L conditionally shown
+- Transaction history: Mobile list (md:hidden, divide-y) + desktop table (hidden md:block)
+- Skeletons: h-20 for mobile list, h-12 for desktop table
+- Pagination: Icon-only on mobile (<sm), text visible on sm+ (same pattern as account detail)
+- Files: apps/web/src/app/(dashboard)/investments/[id]/page.tsx
+- Build: ✓ passes
+

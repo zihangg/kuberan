@@ -378,7 +378,7 @@
   {
     "id": "5.2",
     "category": "detail-pages",
-    "passes": false,
+    "passes": true,
     "description": "Optimize investment detail page for mobile",
     "steps": [
       "Open apps/web/src/app/(dashboard)/investments/[id]/page.tsx",

@@ -66,6 +66,87 @@ const TX_TYPE_CONFIG: Record<
 
 const PAGE_SIZE = 20;
 
+function InvestmentTransactionListItem({
+  transaction,
+}: {
+  transaction: {
+    id: number;
+    date: string;
+    type: InvestmentTransactionType;
+    quantity: number;
+    price_per_unit: number;
+    total_amount: number;
+    fee: number;
+    realized_gain_loss: number;
+    split_ratio?: number;
+    notes?: string;
+  };
+}) {
+  const config = TX_TYPE_CONFIG[transaction.type];
+  const isSplit = transaction.type === "split";
+  const isDividend = transaction.type === "dividend";
+  const isSell = transaction.type === "sell";
+
+  return (
+    <div className="py-3 space-y-2">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 min-w-0 flex-1">
+          <Badge variant="outline" className={`${config.color} shrink-0`}>
+            {config.label}
+          </Badge>
+          <span className="text-sm text-muted-foreground truncate">
+            {formatDate(transaction.date)}
+          </span>
+        </div>
+        <span className={`text-sm font-medium font-mono shrink-0 ${config.color}`}>
+          {isSplit ? "-" : formatCurrency(transaction.total_amount)}
+        </span>
+      </div>
+
+      <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
+        <div className="flex justify-between">
+          <span className="text-muted-foreground">Quantity:</span>
+          <span className="font-mono">
+            {isSplit
+              ? `${transaction.split_ratio}:1`
+              : transaction.quantity.toLocaleString(undefined, {
+                  maximumFractionDigits: 6,
+                })}
+          </span>
+        </div>
+
+        {!isSplit && !isDividend && (
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Price/Unit:</span>
+            <span className="font-mono">{formatCurrency(transaction.price_per_unit)}</span>
+          </div>
+        )}
+
+        {transaction.fee > 0 && (
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Fee:</span>
+            <span className="font-mono">{formatCurrency(transaction.fee)}</span>
+          </div>
+        )}
+
+        {isSell && (
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Realized P&L:</span>
+            <span className={`font-mono font-medium ${transaction.realized_gain_loss >= 0 ? "text-green-600" : "text-red-600"}`}>
+              {transaction.realized_gain_loss >= 0 ? "+" : ""}
+              {formatCurrency(transaction.realized_gain_loss)}
+            </span>
+          </div>
+        )}
+      </div>
+
+      {transaction.notes && (
+        <p className="text-xs text-muted-foreground truncate">{transaction.notes}</p>
+      )}
+    </div>
+  );
+}
+
 function InvestmentDetailSkeleton() {
   return (
     <div className="space-y-6">
@@ -147,26 +228,30 @@ export default function InvestmentDetailPage() {
       </Button>
 
       {/* Header */}
-      <div className="space-y-1">
-        <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-bold font-mono">
-            {investment.security.symbol}
-          </h1>
-          <Badge variant="outline">
-            {ASSET_TYPE_LABELS[investment.security.asset_type]}
-          </Badge>
-          {isClosed && (
-            <Badge variant="secondary">Position Closed</Badge>
-          )}
+      <div className="space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+          <div className="space-y-1">
+            <h1 className="text-2xl font-bold font-mono">
+              {investment.security.symbol}
+            </h1>
+            <p className="text-lg text-muted-foreground">
+              {investment.security.name}
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Badge variant="outline">
+              {ASSET_TYPE_LABELS[investment.security.asset_type]}
+            </Badge>
+            {isClosed && (
+              <Badge variant="secondary">Position Closed</Badge>
+            )}
+          </div>
         </div>
-        <p className="text-lg text-muted-foreground">
-          {investment.security.name}
-        </p>
       </div>
 
       {/* Stat cards */}
       {isClosed ? (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-4 grid-cols-2 md:grid-cols-3">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-2">
               <CardDescription>Realized Gain / Loss</CardDescription>
@@ -214,7 +299,7 @@ export default function InvestmentDetailPage() {
           </Card>
         </div>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-4 grid-cols-2 md:grid-cols-3">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-2">
               <CardDescription>Current Price</CardDescription>
@@ -329,7 +414,7 @@ export default function InvestmentDetailPage() {
       )}
 
       {/* Action buttons */}
-      <div className="flex flex-wrap gap-2">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
         <Button size="sm" variant="default" onClick={() => setBuyOpen(true)}>
           Buy
         </Button>
@@ -376,12 +461,22 @@ export default function InvestmentDetailPage() {
         </CardHeader>
         <CardContent>
           {txLoading ? (
-            <div className="space-y-3">
-              <Skeleton className="h-10 w-full" />
-              {Array.from({ length: 5 }).map((_, i) => (
-                <Skeleton key={i} className="h-12 w-full" />
-              ))}
-            </div>
+            <>
+              {/* Mobile: List skeletons */}
+              <div className="md:hidden space-y-3">
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <Skeleton key={i} className="h-20 w-full" />
+                ))}
+              </div>
+
+              {/* Desktop: Table skeleton */}
+              <div className="hidden md:block space-y-3">
+                <Skeleton className="h-10 w-full" />
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <Skeleton key={i} className="h-12 w-full" />
+                ))}
+              </div>
+            </>
           ) : transactions.length === 0 ? (
             <div className="flex flex-col items-center justify-center rounded-lg border border-dashed p-12 text-center">
               <h3 className="text-lg font-semibold">No transactions</h3>
@@ -391,72 +486,84 @@ export default function InvestmentDetailPage() {
             </div>
           ) : (
             <>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Date</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead className="text-right">Quantity</TableHead>
-                    <TableHead className="text-right">Price/Unit</TableHead>
-                    <TableHead className="text-right">Total</TableHead>
-                    <TableHead className="text-right">Fee</TableHead>
-                    <TableHead className="text-right">Realized P&L</TableHead>
-                    <TableHead>Notes</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {transactions.map((tx) => {
-                    const config = TX_TYPE_CONFIG[tx.type];
-                    return (
-                      <TableRow key={tx.id}>
-                        <TableCell className="text-muted-foreground">
-                          {formatDate(tx.date)}
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className={config.color}>
-                            {config.label}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-right font-mono">
-                          {tx.type === "split"
-                            ? `${tx.split_ratio}:1`
-                            : tx.quantity.toLocaleString(undefined, {
-                                maximumFractionDigits: 6,
-                              })}
-                        </TableCell>
-                        <TableCell className="text-right font-mono">
-                          {tx.type === "split" || tx.type === "dividend"
-                            ? "-"
-                            : formatCurrency(tx.price_per_unit)}
-                        </TableCell>
-                        <TableCell
-                          className={`text-right font-mono font-medium ${config.color}`}
-                        >
-                          {tx.type === "split"
-                            ? "-"
-                            : formatCurrency(tx.total_amount)}
-                        </TableCell>
-                        <TableCell className="text-right font-mono text-muted-foreground">
-                          {tx.fee > 0 ? formatCurrency(tx.fee) : "-"}
-                        </TableCell>
-                        <TableCell className="text-right font-mono font-medium">
-                          {tx.type === "sell" ? (
-                            <span className={tx.realized_gain_loss >= 0 ? "text-green-600" : "text-red-600"}>
-                              {tx.realized_gain_loss >= 0 ? "+" : ""}
-                              {formatCurrency(tx.realized_gain_loss)}
-                            </span>
-                          ) : (
-                            "-"
-                          )}
-                        </TableCell>
-                        <TableCell className="max-w-[200px] truncate text-muted-foreground">
-                          {tx.notes || "-"}
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
+              {/* Mobile: List view */}
+              <div className="md:hidden">
+                <div className="divide-y">
+                  {transactions.map((tx) => (
+                    <InvestmentTransactionListItem key={tx.id} transaction={tx} />
+                  ))}
+                </div>
+              </div>
+
+              {/* Desktop: Table view */}
+              <div className="hidden md:block">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Date</TableHead>
+                      <TableHead>Type</TableHead>
+                      <TableHead className="text-right">Quantity</TableHead>
+                      <TableHead className="text-right">Price/Unit</TableHead>
+                      <TableHead className="text-right">Total</TableHead>
+                      <TableHead className="text-right">Fee</TableHead>
+                      <TableHead className="text-right">Realized P&L</TableHead>
+                      <TableHead>Notes</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {transactions.map((tx) => {
+                      const config = TX_TYPE_CONFIG[tx.type];
+                      return (
+                        <TableRow key={tx.id}>
+                          <TableCell className="text-muted-foreground">
+                            {formatDate(tx.date)}
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="outline" className={config.color}>
+                              {config.label}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-right font-mono">
+                            {tx.type === "split"
+                              ? `${tx.split_ratio}:1`
+                              : tx.quantity.toLocaleString(undefined, {
+                                  maximumFractionDigits: 6,
+                                })}
+                          </TableCell>
+                          <TableCell className="text-right font-mono">
+                            {tx.type === "split" || tx.type === "dividend"
+                              ? "-"
+                              : formatCurrency(tx.price_per_unit)}
+                          </TableCell>
+                          <TableCell
+                            className={`text-right font-mono font-medium ${config.color}`}
+                          >
+                            {tx.type === "split"
+                              ? "-"
+                              : formatCurrency(tx.total_amount)}
+                          </TableCell>
+                          <TableCell className="text-right font-mono text-muted-foreground">
+                            {tx.fee > 0 ? formatCurrency(tx.fee) : "-"}
+                          </TableCell>
+                          <TableCell className="text-right font-mono font-medium">
+                            {tx.type === "sell" ? (
+                              <span className={tx.realized_gain_loss >= 0 ? "text-green-600" : "text-red-600"}>
+                                {tx.realized_gain_loss >= 0 ? "+" : ""}
+                                {formatCurrency(tx.realized_gain_loss)}
+                              </span>
+                            ) : (
+                              "-"
+                            )}
+                          </TableCell>
+                          <TableCell className="max-w-[200px] truncate text-muted-foreground">
+                            {tx.notes || "-"}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
 
               {txTotalPages > 1 && (
                 <div className="mt-4 flex items-center justify-between">
@@ -471,7 +578,7 @@ export default function InvestmentDetailPage() {
                       onClick={() => setTxPage((p) => p - 1)}
                     >
                       <ChevronLeft className="h-4 w-4" />
-                      Previous
+                      <span className="ml-1 hidden sm:inline">Previous</span>
                     </Button>
                     <Button
                       variant="outline"
@@ -479,7 +586,7 @@ export default function InvestmentDetailPage() {
                       disabled={txPage >= txTotalPages}
                       onClick={() => setTxPage((p) => p + 1)}
                     >
-                      Next
+                      <span className="mr-1 hidden sm:inline">Next</span>
                       <ChevronRight className="h-4 w-4" />
                     </Button>
                   </div>
