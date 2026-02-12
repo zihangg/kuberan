@@ -148,3 +148,11 @@ PROGRESS NOTES:
 - Note: Account type selector uses Tabs (already responsive), no button stacking needed
 - Files: create-account-dialog.tsx, edit-account-dialog.tsx
 - Build: ✓ passes
+
+2026-02-12 - Task 4.5 Complete (PRD 4.5)
+- Optimized budget dialogs for mobile
+- Create budget: Form gap-4 → gap-5
+- Edit budget: Form gap-4 → gap-5
+- Note: Period selector (Monthly/Yearly) uses Select dropdown, no button stacking needed
+- Files: create-budget-dialog.tsx, edit-budget-dialog.tsx
+- Build: ✓ passes

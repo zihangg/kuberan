@@ -144,7 +144,7 @@ export function CreateBudgetDialog({
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+        <form onSubmit={handleSubmit} className="flex flex-col gap-5">
           <div className="flex flex-col gap-2">
             <Label htmlFor="budget-name">Name</Label>
             <Input

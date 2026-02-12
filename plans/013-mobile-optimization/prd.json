@@ -296,7 +296,7 @@
   {
     "id": "4.5",
     "category": "dialogs-forms",
-    "passes": false,
+    "passes": true,
     "description": "Optimize budget dialogs for mobile",
     "steps": [
       "Open apps/web/src/components/budgets/create-budget-dialog.tsx",
