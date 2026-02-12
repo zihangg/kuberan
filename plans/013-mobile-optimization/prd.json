@@ -230,7 +230,7 @@
   {
     "id": "3.7",
     "category": "verification",
-    "passes": false,
+    "passes": true,
     "description": "Verify Phase 3 chart responsiveness works correctly",
     "steps": [
       "Run pnpm build from apps/web/",
