@@ -532,7 +532,7 @@
   {
     "id": "7.5",
     "category": "component-audit",
-    "passes": false,
+    "passes": true,
     "description": "Make card component padding responsive for mobile",
     "steps": [
       "Open apps/web/src/components/ui/card.tsx",
