@@ -297,3 +297,11 @@ PROGRESS NOTES:
 - Provides more comfortable multiline text input on touch devices
 - Files: apps/web/src/components/ui/textarea.tsx
 - Build: ✓ passes
+
+2026-02-12 - Task 7.4 Complete (PRD 7.4)
+- Fixed currency input height to match standard Input component
+- Changed h-9 (36px) → h-10 (40px) to meet 40px minimum
+- CurrencyInput has custom implementation, not using Input component
+- Ensures consistent height across all input types
+- Files: apps/web/src/components/ui/currency-input.tsx
+- Build: ✓ passes

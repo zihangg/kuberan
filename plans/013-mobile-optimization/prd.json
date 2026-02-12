@@ -520,7 +520,7 @@
   {
     "id": "7.4",
     "category": "component-audit",
-    "passes": false,
+    "passes": true,
     "description": "Verify currency input inherits proper height from Input component",
     "steps": [
       "Open apps/web/src/components/ui/currency-input.tsx",
