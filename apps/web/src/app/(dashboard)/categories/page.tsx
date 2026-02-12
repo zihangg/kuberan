@@ -8,6 +8,12 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
   Table,
   TableBody,
   TableCell,
@@ -22,12 +28,88 @@ import type { Category, CategoryType } from "@/types/models";
 
 function CategoriesTableSkeleton() {
   return (
-    <div className="space-y-3">
-      <Skeleton className="h-10 w-full" />
-      {Array.from({ length: 5 }).map((_, i) => (
-        <Skeleton key={i} className="h-12 w-full" />
-      ))}
-    </div>
+    <>
+      {/* Mobile: Card skeletons */}
+      <div className="md:hidden grid gap-3">
+        {Array.from({ length: 5 }).map((_, i) => (
+          <Skeleton key={i} className="h-32 w-full rounded-lg" />
+        ))}
+      </div>
+
+      {/* Desktop: Table skeleton */}
+      <div className="hidden md:block space-y-3">
+        <Skeleton className="h-10 w-full" />
+        {Array.from({ length: 5 }).map((_, i) => (
+          <Skeleton key={i} className="h-12 w-full" />
+        ))}
+      </div>
+    </>
+  );
+}
+
+function CategoryCard({
+  category,
+  onEdit,
+  onDelete,
+}: {
+  category: Category & { isChild: boolean };
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <Card className="transition-colors hover:bg-accent/50">
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between gap-2">
+          <CardTitle className={`text-base truncate ${category.isChild ? "pl-4" : ""}`}>
+            {category.name}
+          </CardTitle>
+          <Badge
+            variant={category.type === "income" ? "default" : "destructive"}
+            className="shrink-0"
+          >
+            {category.type === "income" ? "Income" : "Expense"}
+          </Badge>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        <div className="flex items-center gap-3">
+          {category.color && (
+            <div
+              className="h-6 w-6 rounded-full border shrink-0"
+              style={{ backgroundColor: category.color }}
+            />
+          )}
+          {category.icon && (
+            <span className="text-lg">{category.icon}</span>
+          )}
+          {category.description && (
+            <p className="text-sm text-muted-foreground truncate">
+              {category.description}
+            </p>
+          )}
+        </div>
+        <div className="flex gap-2 pt-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="flex-1"
+            onClick={onEdit}
+          >
+            <Pencil className="h-4 w-4 mr-2" />
+            Edit
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="flex-1 text-destructive"
+            onClick={onDelete}
+          >
+            <Trash2 className="h-4 w-4 mr-2" />
+            Delete
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -111,72 +193,89 @@ export default function CategoriesPage() {
         </div>
       ) : (
         <>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead>Color</TableHead>
-                <TableHead>Icon</TableHead>
-                <TableHead>Description</TableHead>
-                <TableHead className="w-[80px]">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
+          {/* Mobile: Card Grid */}
+          <div className="md:hidden">
+            <div className="grid gap-3">
               {ordered.map((cat) => (
-                <TableRow key={cat.id}>
-                  <TableCell className={cat.isChild ? "pl-8" : ""}>
-                    <span className="font-medium">{cat.name}</span>
-                  </TableCell>
-                  <TableCell>
-                    <Badge
-                      variant={cat.type === "income" ? "default" : "destructive"}
-                    >
-                      {cat.type === "income" ? "Income" : "Expense"}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    {cat.color ? (
-                      <div
-                        className="h-5 w-5 rounded-full border"
-                        style={{ backgroundColor: cat.color }}
-                      />
-                    ) : (
-                      <span className="text-muted-foreground">-</span>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    {cat.icon || <span className="text-muted-foreground">-</span>}
-                  </TableCell>
-                  <TableCell className="max-w-[200px] truncate">
-                    {cat.description || (
-                      <span className="text-muted-foreground">-</span>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex gap-1">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8"
-                        onClick={() => setEditCategory(cat)}
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-destructive"
-                        onClick={() => setDeleteCategory(cat)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
+                <CategoryCard
+                  key={cat.id}
+                  category={cat}
+                  onEdit={() => setEditCategory(cat)}
+                  onDelete={() => setDeleteCategory(cat)}
+                />
               ))}
-            </TableBody>
-          </Table>
+            </div>
+          </div>
+
+          {/* Desktop: Table */}
+          <div className="hidden md:block">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead>Color</TableHead>
+                  <TableHead>Icon</TableHead>
+                  <TableHead>Description</TableHead>
+                  <TableHead className="w-[80px]">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {ordered.map((cat) => (
+                  <TableRow key={cat.id}>
+                    <TableCell className={cat.isChild ? "pl-8" : ""}>
+                      <span className="font-medium">{cat.name}</span>
+                    </TableCell>
+                    <TableCell>
+                      <Badge
+                        variant={cat.type === "income" ? "default" : "destructive"}
+                      >
+                        {cat.type === "income" ? "Income" : "Expense"}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      {cat.color ? (
+                        <div
+                          className="h-5 w-5 rounded-full border"
+                          style={{ backgroundColor: cat.color }}
+                        />
+                      ) : (
+                        <span className="text-muted-foreground">-</span>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {cat.icon || <span className="text-muted-foreground">-</span>}
+                    </TableCell>
+                    <TableCell className="max-w-[200px] truncate">
+                      {cat.description || (
+                        <span className="text-muted-foreground">-</span>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          onClick={() => setEditCategory(cat)}
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-destructive"
+                          onClick={() => setDeleteCategory(cat)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
 
           {totalPages > 1 && (
             <div className="flex items-center justify-center gap-2">
