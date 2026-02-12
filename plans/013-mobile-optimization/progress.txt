@@ -79,3 +79,11 @@ PROGRESS NOTES:
 - Chart now readable on 375px-768px breakpoints
 - Files: apps/web/src/components/dashboard/expenditure-chart.tsx
 - Build: ✓ passes
+
+2026-02-12 - Task 3.3 Complete (PRD 3.3)
+- Made income/expenses bar chart responsive for mobile
+- ChartContainer: min-h-[300px] → h-[200px] md:h-[250px] (reduced height, responsive)
+- Chart prevents vertical overflow on small screens
+- No YAxis present in this chart (not applicable from plan)
+- Files: apps/web/src/components/dashboard/income-expenses-chart.tsx
+- Build: ✓ passes

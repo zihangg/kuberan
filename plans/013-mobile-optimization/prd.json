@@ -177,7 +177,7 @@
   {
     "id": "3.3",
     "category": "charts-responsive",
-    "passes": false,
+    "passes": true,
     "description": "Make income/expenses bar chart responsive for mobile",
     "steps": [
       "Open apps/web/src/components/dashboard/income-expenses-chart.tsx",
