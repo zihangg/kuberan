@@ -7,6 +7,7 @@ import {
   ArrowUpRight,
   ChevronLeft,
   ChevronRight,
+  Filter,
   Plus,
   TrendingUp,
 } from "lucide-react";
@@ -62,11 +63,69 @@ const PAGE_SIZE = 20;
 
 function TransactionsTableSkeleton() {
   return (
-    <div className="space-y-3">
-      <Skeleton className="h-10 w-full" />
-      {Array.from({ length: 8 }).map((_, i) => (
-        <Skeleton key={i} className="h-12 w-full" />
-      ))}
+    <>
+      {/* Mobile: List skeletons */}
+      <div className="md:hidden space-y-3">
+        {Array.from({ length: 8 }).map((_, i) => (
+          <Skeleton key={i} className="h-20 w-full" />
+        ))}
+      </div>
+
+      {/* Desktop: Table skeleton */}
+      <div className="hidden md:block space-y-3">
+        <Skeleton className="h-10 w-full" />
+        {Array.from({ length: 8 }).map((_, i) => (
+          <Skeleton key={i} className="h-12 w-full" />
+        ))}
+      </div>
+    </>
+  );
+}
+
+function TransactionListItem({
+  transaction,
+  accountName,
+  onClick,
+}: {
+  transaction: Transaction;
+  accountName: string;
+  onClick?: () => void;
+}) {
+  const config = TRANSACTION_TYPE_CONFIG[transaction.type];
+  const Icon = config.icon;
+  const isNegative =
+    transaction.type === "expense" || transaction.type === "transfer";
+
+  return (
+    <div
+      className="flex items-center justify-between py-3 px-3 -mx-3 rounded-md cursor-pointer hover:bg-accent/50 transition-colors"
+      onClick={onClick}
+    >
+      <div className="flex items-center gap-3 min-w-0 flex-1">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted">
+          <Icon className={`h-5 w-5 ${config.color}`} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-medium truncate">
+            {transaction.description || config.label}
+          </p>
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <span>{formatDate(transaction.date)}</span>
+            <span>·</span>
+            <span className="truncate">{accountName}</span>
+            {transaction.category && (
+              <>
+                <span>·</span>
+                <span className="truncate">{transaction.category.name}</span>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+      <span className={`text-sm font-medium shrink-0 ml-3 ${config.color}`}>
+        {isNegative ? "-" : "+"}
+        {formatCurrency(transaction.amount)}
+      </span>
     </div>
   );
 }
@@ -124,6 +183,7 @@ export default function TransactionsPage() {
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
+  const [showFilters, setShowFilters] = useState(false);
   const [txDialogOpen, setTxDialogOpen] = useState(false);
   const [editTxOpen, setEditTxOpen] = useState(false);
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
@@ -153,12 +213,15 @@ export default function TransactionsPage() {
   // Build account name lookup
   const accountNameMap = new Map(accounts.map((a) => [a.id, a.name]));
 
-  const hasActiveFilters =
-    accountFilter !== "all" ||
-    typeFilter !== "all" ||
-    categoryFilter !== "all" ||
-    fromDate !== "" ||
-    toDate !== "";
+  const activeFilterCount = [
+    accountFilter !== "all",
+    typeFilter !== "all",
+    categoryFilter !== "all",
+    fromDate !== "",
+    toDate !== "",
+  ].filter(Boolean).length;
+
+  const hasActiveFilters = activeFilterCount > 0;
 
   function resetPage() {
     setPage(1);
@@ -176,7 +239,117 @@ export default function TransactionsPage() {
       </div>
 
       {/* Filters */}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+      {/* Mobile: Filter toggle button */}
+      <div className="md:hidden">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setShowFilters(!showFilters)}
+          className="w-full"
+        >
+          <Filter className="h-4 w-4 mr-2" />
+          Filters
+          {activeFilterCount > 0 && (
+            <Badge variant="secondary" className="ml-2">
+              {activeFilterCount}
+            </Badge>
+          )}
+        </Button>
+        {showFilters && (
+          <div className="mt-3 grid gap-3 grid-cols-2">
+            <div className="space-y-1">
+              <Label className="text-xs">Account</Label>
+              <Select
+                value={accountFilter}
+                onValueChange={(val) => {
+                  setAccountFilter(val);
+                  resetPage();
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Accounts</SelectItem>
+                  {accounts.map((a) => (
+                    <SelectItem key={a.id} value={String(a.id)}>
+                      {a.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Type</Label>
+              <Select
+                value={typeFilter}
+                onValueChange={(val) => {
+                  setTypeFilter(val);
+                  resetPage();
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Types</SelectItem>
+                  <SelectItem value="income">Income</SelectItem>
+                  <SelectItem value="expense">Expense</SelectItem>
+                  <SelectItem value="transfer">Transfer</SelectItem>
+                  <SelectItem value="investment">Investment</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Category</Label>
+              <Select
+                value={categoryFilter}
+                onValueChange={(val) => {
+                  setCategoryFilter(val);
+                  resetPage();
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Categories</SelectItem>
+                  {categories.map((cat) => (
+                    <SelectItem key={cat.id} value={String(cat.id)}>
+                      {cat.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1 col-span-2">
+              <Label className="text-xs">From Date</Label>
+              <Input
+                type="date"
+                value={fromDate}
+                onChange={(e) => {
+                  setFromDate(e.target.value);
+                  resetPage();
+                }}
+              />
+            </div>
+            <div className="space-y-1 col-span-2">
+              <Label className="text-xs">To Date</Label>
+              <Input
+                type="date"
+                value={toDate}
+                onChange={(e) => {
+                  setToDate(e.target.value);
+                  resetPage();
+                }}
+              />
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Desktop: Always visible filters */}
+      <div className="hidden md:grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         <div className="space-y-1">
           <Label className="text-xs">Account</Label>
           <Select
@@ -290,20 +463,11 @@ export default function TransactionsPage() {
         </div>
       ) : (
         <>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Date</TableHead>
-                <TableHead>Description</TableHead>
-                <TableHead>Account</TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead>Category</TableHead>
-                <TableHead className="text-right">Amount</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
+          {/* Mobile: List view */}
+          <div className="md:hidden">
+            <div className="divide-y">
               {transactions.map((tx) => (
-                <TransactionRow
+                <TransactionListItem
                   key={tx.id}
                   transaction={tx}
                   accountName={
@@ -315,8 +479,39 @@ export default function TransactionsPage() {
                   }}
                 />
               ))}
-            </TableBody>
-          </Table>
+            </div>
+          </div>
+
+          {/* Desktop: Table view */}
+          <div className="hidden md:block">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Date</TableHead>
+                  <TableHead>Description</TableHead>
+                  <TableHead>Account</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead>Category</TableHead>
+                  <TableHead className="text-right">Amount</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {transactions.map((tx) => (
+                  <TransactionRow
+                    key={tx.id}
+                    transaction={tx}
+                    accountName={
+                      accountNameMap.get(tx.account_id) ?? `Account #${tx.account_id}`
+                    }
+                    onClick={() => {
+                      setSelectedTransaction(tx);
+                      setEditTxOpen(true);
+                    }}
+                  />
+                ))}
+              </TableBody>
+            </Table>
+          </div>
 
           {totalPages > 1 && (
             <div className="flex items-center justify-between">
@@ -331,7 +526,7 @@ export default function TransactionsPage() {
                   onClick={() => setPage((p) => p - 1)}
                 >
                   <ChevronLeft className="h-4 w-4" />
-                  Previous
+                  <span className="ml-1 hidden sm:inline">Previous</span>
                 </Button>
                 <Button
                   variant="outline"
@@ -339,7 +534,7 @@ export default function TransactionsPage() {
                   disabled={page >= totalPages}
                   onClick={() => setPage((p) => p + 1)}
                 >
-                  Next
+                  <span className="mr-1 hidden sm:inline">Next</span>
                   <ChevronRight className="h-4 w-4" />
                 </Button>
               </div>

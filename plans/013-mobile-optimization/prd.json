@@ -1,0 +1,673 @@
+[
+  {
+    "id": "1.1",
+    "category": "foundation",
+    "passes": true,
+    "description": "Add global touch optimizations to eliminate tap delay and prevent unwanted gestures",
+    "steps": [
+      "Open apps/web/src/app/globals.css",
+      "Add touch-action: manipulation to base * selector to eliminate 300ms tap delay",
+      "Add overscroll-behavior-y: contain to body to prevent pull-to-refresh",
+      "Add overflow-x: hidden to body to prevent horizontal scroll",
+      "Run pnpm build from apps/web/ to confirm no errors"
+    ]
+  },
+  {
+    "id": "1.2",
+    "category": "foundation",
+    "passes": true,
+    "description": "Verify viewport meta tag is present for proper mobile rendering",
+    "steps": [
+      "Check apps/web/src/app/layout.tsx for viewport configuration",
+      "Verify Next.js App Router adds viewport meta automatically",
+      "Check page source in browser for <meta name='viewport' content='width=device-width, initial-scale=1'>",
+      "No code changes needed if already present"
+    ]
+  },
+  {
+    "id": "1.3",
+    "category": "foundation",
+    "passes": false,
+    "description": "Fix button touch target sizes to meet 44px minimum",
+    "steps": [
+      "Open apps/web/src/components/ui/button.tsx",
+      "Update size variants: default from h-9 to h-10 (40px acceptable)",
+      "Update icon from size-9 to size-11 (44px minimum)",
+      "Keep icon-sm at size-9 (36px, only for secondary actions)",
+      "Add icon-lg as size-12 (48px for prominent actions)",
+      "Run pnpm build from apps/web/"
+    ]
+  },
+  {
+    "id": "1.4",
+    "category": "foundation",
+    "passes": false,
+    "description": "Verify header responsiveness (search button, user name hiding)",
+    "steps": [
+      "Open apps/web/src/components/layout/app-header.tsx",
+      "Verify search button shows icon-only on mobile, text on xl+ (line 40-49)",
+      "Verify user name hidden on <sm, visible on sm+ (line 82)",
+      "Verify SidebarTrigger hamburger menu visible (line 35)",
+      "Test in browser at 375px, 428px, 768px widths",
+      "No code changes needed if already correct"
+    ]
+  },
+  {
+    "id": "1.5",
+    "category": "foundation",
+    "passes": false,
+    "description": "Verify sidebar works as mobile drawer with proper overlay and backdrop",
+    "steps": [
+      "Open apps/web/src/app/(dashboard)/layout.tsx",
+      "Verify SidebarProvider + SidebarInset pattern is used",
+      "Test sidebar drawer at 375px, 428px, 768px in browser",
+      "Ensure sidebar hidden by default on mobile (<md)",
+      "Ensure SidebarTrigger toggles drawer open/closed",
+      "Ensure drawer overlays content with backdrop",
+      "Ensure drawer closes on navigation or backdrop click",
+      "No code changes needed if already correct"
+    ]
+  },
+  {
+    "id": "1.6",
+    "category": "verification",
+    "passes": false,
+    "description": "Verify Phase 1 foundation changes work correctly",
+    "steps": [
+      "Run pnpm build from apps/web/",
+      "Test in browser at 375px, 390px, 428px, 768px widths",
+      "Verify no horizontal scroll on any page",
+      "Verify all buttons are tappable with no 300ms delay",
+      "Verify icon buttons are large enough (44px)",
+      "Verify sidebar drawer functionality on mobile"
+    ]
+  },
+  {
+    "id": "2.1",
+    "category": "tables-mobile",
+    "passes": true,
+    "description": "Create mobile card layout for accounts page",
+    "steps": [
+      "Open apps/web/src/app/(dashboard)/accounts/page.tsx",
+      "Create AccountCard component showing name, type badge, balance, status, currency, created date",
+      "Add mobile card grid: <div className='md:hidden'><div className='grid gap-3'>{cards}</div></div>",
+      "Add desktop table wrapper: <div className='hidden md:block'><Table>...</Table></div>",
+      "Update AccountsTableSkeleton to show card skeletons on mobile, table skeleton on desktop",
+      "Run pnpm build from apps/web/"
+    ]
+  },
+  {
+    "id": "2.2",
+    "category": "tables-mobile",
+    "passes": true,
+    "description": "Create mobile list view and collapsible filters for transactions page",
+    "steps": [
+      "Open apps/web/src/app/(dashboard)/transactions/page.tsx",
+      "Add Filter icon to Lucide imports",
+      "Create TransactionListItem component with icon, description, date/account/category, amount",
+      "Add collapsible filter state: const [showFilters, setShowFilters] = useState(false)",
+      "Calculate activeFilterCount from filter states",
+      "Add mobile filter toggle button with badge showing active count",
+      "Render filter panel conditionally when showFilters is false (grid-cols-2 for mobile)",
+      "Add mobile list wrapper: <div className='md:hidden'><div className='divide-y'>{list items}</div></div>",
+      "Add desktop table wrapper: <div className='hidden md:block'><Table>...</Table></div>",
+      "Update pagination buttons to icon-only on mobile: <ChevronLeft /> + <span className='hidden sm:inline'>Previous</span>",
+      "Run pnpm build from apps/web/"
+    ]
+  },
+  {
+    "id": "2.3",
+    "category": "tables-mobile",
+    "passes": false,
+    "description": "Create mobile card layout for categories page",
+    "steps": [
+      "Open apps/web/src/app/(dashboard)/categories/page.tsx",
+      "Create CategoryCard component showing name, type badge, icon/color, metadata",
+      "Add mobile card grid: <div className='md:hidden'><div className='grid gap-3'>{cards}</div></div>",
+      "Add desktop table wrapper: <div className='hidden md:block'><Table>...</Table></div>",
+      "Update skeleton to show card skeletons on mobile, table skeleton on desktop",
+      "Run pnpm build from apps/web/"
+    ]
+  },
+  {
+    "id": "2.4",
+    "category": "verification",
+    "passes": false,
+    "description": "Verify Phase 2 table-to-card conversions work correctly",
+    "steps": [
+      "Run pnpm build from apps/web/",
+      "Test accounts page at 375px and 768px",
+      "Verify accounts show as cards on mobile, table on desktop",
+      "Test transactions page at 375px and 768px",
+      "Verify transactions show as list on mobile, table on desktop",
+      "Verify filter button toggles filter panel on mobile",
+      "Verify active filter badge shows correct count",
+      "Verify pagination shows icon-only on mobile",
+      "Test categories page at 375px and 768px",
+      "Verify categories show as cards on mobile, table on desktop"
+    ]
+  },
+  {
+    "id": "3.1",
+    "category": "charts-responsive",
+    "passes": false,
+    "description": "Make dashboard header action buttons stack on mobile",
+    "steps": [
+      "Open apps/web/src/app/(dashboard)/page.tsx",
+      "Find header action buttons section (lines 363-378)",
+      "Wrap buttons in <div className='flex flex-col sm:flex-row gap-2'>",
+      "Ensure buttons have ml-2 for icon spacing",
+      "Run pnpm build from apps/web/",
+      "Test at 375px to verify stacking"
+    ]
+  },
+  {
+    "id": "3.2",
+    "category": "charts-responsive",
+    "passes": false,
+    "description": "Make expenditure donut chart responsive for mobile",
+    "steps": [
+      "Open apps/web/src/components/dashboard/expenditure-chart.tsx",
+      "Update ChartContainer className to: 'mx-auto aspect-square max-h-[200px] md:max-h-[250px]'",
+      "Update center label tspan className to: 'fill-foreground text-sm md:text-base font-bold'",
+      "Update 'This Month' tspan className to: 'fill-muted-foreground text-[10px] md:text-xs'",
+      "Run pnpm build from apps/web/"
+    ]
+  },
+  {
+    "id": "3.3",
+    "category": "charts-responsive",
+    "passes": false,
+    "description": "Make income/expenses bar chart responsive for mobile",
+    "steps": [
+      "Open apps/web/src/components/dashboard/income-expenses-chart.tsx",
+      "Update ChartContainer className to: 'h-[200px] md:h-[250px]'",
+      "Update YAxis width to 60 (from default 80) to save space",
+      "Run pnpm build from apps/web/"
+    ]
+  },
+  {
+    "id": "3.4",
+    "category": "charts-responsive",
+    "passes": false,
+    "description": "Make spending trend area chart responsive for mobile",
+    "steps": [
+      "Open apps/web/src/components/dashboard/spending-trend-chart.tsx",
+      "Add import: import { useIsMobile } from '@/hooks/use-mobile'",
+      "Add hook call: const isMobile = useIsMobile()",
+      "Update ChartContainer className to: 'h-[250px] md:h-[300px]'",
+      "Update XAxis minTickGap to: minTickGap={isMobile ? 50 : 30}",
+      "Run pnpm build from apps/web/"
+    ]
+  },
+  {
+    "id": "3.5",
+    "category": "charts-responsive",
+    "passes": false,
+    "description": "Make net worth area chart responsive for mobile",
+    "steps": [
+      "Open apps/web/src/components/dashboard/net-worth-chart.tsx",
+      "Add import: import { useIsMobile } from '@/hooks/use-mobile'",
+      "Add hook call: const isMobile = useIsMobile()",
+      "Update ChartContainer className to: 'h-[250px] md:h-[300px]'",
+      "Update XAxis minTickGap to: minTickGap={isMobile ? 50 : 30}",
+      "Run pnpm build from apps/web/"
+    ]
+  },
+  {
+    "id": "3.6",
+    "category": "charts-responsive",
+    "passes": false,
+    "description": "Verify dashboard summary cards are already responsive",
+    "steps": [
+      "Open apps/web/src/app/(dashboard)/page.tsx",
+      "Check summary cards grid (lines 116-196)",
+      "Verify grid classes: sm:grid-cols-2 lg:grid-cols-4",
+      "Test at 375px (1 col), 640px (2 col), 1024px (4 col)",
+      "No code changes needed if already correct"
+    ]
+  },
+  {
+    "id": "3.7",
+    "category": "verification",
+    "passes": false,
+    "description": "Verify Phase 3 chart responsiveness works correctly",
+    "steps": [
+      "Run pnpm build from apps/web/",
+      "Test dashboard at 375px, 428px, 768px",
+      "Verify header buttons stack on mobile",
+      "Verify expenditure chart height reduced to 200px on mobile",
+      "Verify income/expenses chart height reduced to 200px on mobile",
+      "Verify spending trend chart labels don't overlap",
+      "Verify net worth chart labels don't overlap",
+      "Verify summary cards stack 1/2/4 columns correctly"
+    ]
+  },
+  {
+    "id": "4.1",
+    "category": "dialogs-forms",
+    "passes": false,
+    "description": "Make transaction dialog type buttons stack on mobile",
+    "steps": [
+      "Open apps/web/src/components/transactions/create-transaction-dialog.tsx",
+      "Find type button section (lines 228-259)",
+      "Wrap buttons in <div className='flex flex-col sm:flex-row gap-2'>",
+      "Ensure all 3 buttons have className='flex-1'",
+      "Run pnpm build from apps/web/"
+    ]
+  },
+  {
+    "id": "4.2",
+    "category": "dialogs-forms",
+    "passes": false,
+    "description": "Increase form field spacing in transaction dialog",
+    "steps": [
+      "Open apps/web/src/components/transactions/create-transaction-dialog.tsx",
+      "Find form element (line 224)",
+      "Change className from 'flex flex-col gap-4' to 'flex flex-col gap-5'",
+      "Run pnpm build from apps/web/"
+    ]
+  },
+  {
+    "id": "4.3",
+    "category": "dialogs-forms",
+    "passes": false,
+    "description": "Apply same mobile optimizations to edit transaction dialog",
+    "steps": [
+      "Open apps/web/src/components/transactions/edit-transaction-dialog.tsx",
+      "Apply same type button stacking pattern from 4.1",
+      "Change form gap from gap-4 to gap-5",
+      "Run pnpm build from apps/web/"
+    ]
+  },
+  {
+    "id": "4.4",
+    "category": "dialogs-forms",
+    "passes": false,
+    "description": "Optimize account dialogs for mobile",
+    "steps": [
+      "Open apps/web/src/components/accounts/create-account-dialog.tsx",
+      "If account type buttons exist, wrap in <div className='flex flex-col sm:flex-row gap-2'>",
+      "Change form gap from gap-4 to gap-5",
+      "Repeat for edit-account-dialog.tsx",
+      "Run pnpm build from apps/web/"
+    ]
+  },
+  {
+    "id": "4.5",
+    "category": "dialogs-forms",
+    "passes": false,
+    "description": "Optimize budget dialogs for mobile",
+    "steps": [
+      "Open apps/web/src/components/budgets/create-budget-dialog.tsx",
+      "If period buttons exist (Monthly/Yearly), wrap in <div className='flex flex-col sm:flex-row gap-2'>",
+      "Change form gap from gap-4 to gap-5",
+      "Repeat for edit-budget-dialog.tsx",
+      "Run pnpm build from apps/web/"
+    ]
+  },
+  {
+    "id": "4.6",
+    "category": "dialogs-forms",
+    "passes": false,
+    "description": "Optimize category dialogs for mobile",
+    "steps": [
+      "Open apps/web/src/components/categories/create-category-dialog.tsx",
+      "If type buttons exist (Income/Expense), wrap in <div className='flex flex-col sm:flex-row gap-2'>",
+      "Change form gap from gap-4 to gap-5",
+      "Repeat for edit-category-dialog.tsx",
+      "Run pnpm build from apps/web/"
+    ]
+  },
+  {
+    "id": "4.7",
+    "category": "dialogs-forms",
+    "passes": false,
+    "description": "Optimize investment dialogs for mobile",
+    "steps": [
+      "Open all 5 investment dialog files: add-investment-dialog.tsx, record-buy-dialog.tsx, record-sell-dialog.tsx, record-dividend-dialog.tsx, record-split-dialog.tsx",
+      "For each dialog, change form gap from gap-4 to gap-5",
+      "If any button groups exist, apply stacking pattern",
+      "Verify CurrencyInput fields have adequate height",
+      "Run pnpm build from apps/web/"
+    ]
+  },
+  {
+    "id": "4.8",
+    "category": "dialogs-forms",
+    "passes": false,
+    "description": "Verify dialog width provides adequate mobile margin",
+    "steps": [
+      "Open apps/web/src/components/ui/dialog.tsx",
+      "Check DialogContent max-width calculation (line 64)",
+      "Verify max-w-[calc(100%-2rem)] provides 16px margin on each side",
+      "Calculate: at 375px width, dialog width = 343px (adequate)",
+      "No code changes needed if already correct"
+    ]
+  },
+  {
+    "id": "4.9",
+    "category": "verification",
+    "passes": false,
+    "description": "Verify Phase 4 dialog and form optimizations work correctly",
+    "steps": [
+      "Run pnpm build from apps/web/",
+      "Test all dialogs at 375px width",
+      "Verify transaction type buttons stack vertically",
+      "Verify all forms have 20px (gap-5) vertical spacing",
+      "Verify account/budget/category type buttons stack if present",
+      "Verify investment dialogs have adequate spacing",
+      "Verify all dialogs have 16px margin on each side",
+      "Verify dialog content not cut off at 375px"
+    ]
+  },
+  {
+    "id": "5.1",
+    "category": "detail-pages",
+    "passes": false,
+    "description": "Optimize account detail page for mobile",
+    "steps": [
+      "Open apps/web/src/app/(dashboard)/accounts/[id]/page.tsx",
+      "Stack account header vertically: <div className='flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4'>",
+      "Stack action buttons: <div className='flex flex-col sm:flex-row gap-2'>",
+      "Add balance card with prominent display",
+      "Use mobile list pattern for transaction list (from Phase 2.2)",
+      "Run pnpm build from apps/web/"
+    ]
+  },
+  {
+    "id": "5.2",
+    "category": "detail-pages",
+    "passes": false,
+    "description": "Optimize investment detail page for mobile",
+    "steps": [
+      "Open apps/web/src/app/(dashboard)/investments/[id]/page.tsx",
+      "Stack header vertically with security info",
+      "Create 2-column grid for stats cards: grid-cols-2 md:grid-cols-4",
+      "Create 2-column grid for action buttons: grid-cols-2 md:grid-cols-4 gap-2",
+      "Use mobile list pattern for transaction history",
+      "Run pnpm build from apps/web/"
+    ]
+  },
+  {
+    "id": "5.3",
+    "category": "detail-pages",
+    "passes": false,
+    "description": "Optimize security detail page for mobile",
+    "steps": [
+      "Open apps/web/src/app/(dashboard)/securities/[id]/page.tsx",
+      "Stack header and metadata vertically",
+      "Create responsive metadata grid: grid-cols-1 sm:grid-cols-2 gap-3",
+      "Reduce price history chart height on mobile (same pattern as dashboard charts)",
+      "Use card layout for related investments on mobile, table on desktop",
+      "Run pnpm build from apps/web/"
+    ]
+  },
+  {
+    "id": "5.4",
+    "category": "verification",
+    "passes": false,
+    "description": "Verify Phase 5 detail page optimizations work correctly",
+    "steps": [
+      "Run pnpm build from apps/web/",
+      "Test account detail at 375px",
+      "Verify header stacks vertically",
+      "Verify action buttons stack or wrap properly",
+      "Test investment detail at 375px",
+      "Verify stats cards in 2-column grid",
+      "Verify action buttons in 2-column grid",
+      "Test security detail at 375px",
+      "Verify metadata stacks properly",
+      "Verify price chart readable on mobile"
+    ]
+  },
+  {
+    "id": "6.1",
+    "category": "remaining-pages",
+    "passes": false,
+    "description": "Optimize budgets page filters for mobile",
+    "steps": [
+      "Open apps/web/src/app/(dashboard)/budgets/page.tsx",
+      "Update filter controls wrapper: <div className='flex flex-col sm:flex-row flex-wrap items-start sm:items-center gap-3 sm:gap-4'>",
+      "Update period select width: className='w-full sm:w-[140px]'",
+      "Change budget card action button sizes from icon-sm to icon (44px)",
+      "Run pnpm build from apps/web/"
+    ]
+  },
+  {
+    "id": "6.2",
+    "category": "remaining-pages",
+    "passes": false,
+    "description": "Optimize investments page for mobile",
+    "steps": [
+      "Open apps/web/src/app/(dashboard)/investments/page.tsx",
+      "Reduce asset allocation and portfolio composition chart heights: max-h-[200px] md:max-h-[250px]",
+      "Create mobile card layout for holdings by asset type table",
+      "Create HoldingCard component for all holdings table mobile view",
+      "Add mobile card wrapper: <div className='md:hidden grid gap-3'>{cards}</div>",
+      "Add desktop table wrapper: <div className='hidden md:block'><Table>...</Table></div>",
+      "Run pnpm build from apps/web/"
+    ]
+  },
+  {
+    "id": "6.3",
+    "category": "remaining-pages",
+    "passes": false,
+    "description": "Optimize securities page for mobile",
+    "steps": [
+      "Open apps/web/src/app/(dashboard)/securities/page.tsx",
+      "Create SecurityCard component showing symbol, name, type badge, current price, currency",
+      "Add mobile card grid: <div className='md:hidden grid gap-3'>{cards}</div>",
+      "Add desktop table wrapper: <div className='hidden md:block'><Table>...</Table></div>",
+      "Run pnpm build from apps/web/"
+    ]
+  },
+  {
+    "id": "6.4",
+    "category": "verification",
+    "passes": false,
+    "description": "Verify Phase 6 remaining page optimizations work correctly",
+    "steps": [
+      "Run pnpm build from apps/web/",
+      "Test budgets page at 375px",
+      "Verify filters stack properly",
+      "Verify budget card action buttons are 44px",
+      "Test investments page at 375px",
+      "Verify charts reduced height on mobile",
+      "Verify holdings by type show as cards",
+      "Verify all holdings show as cards",
+      "Test securities page at 375px",
+      "Verify securities show as cards on mobile"
+    ]
+  },
+  {
+    "id": "7.1",
+    "category": "component-audit",
+    "passes": false,
+    "description": "Verify and fix input component height for touch targets",
+    "steps": [
+      "Open apps/web/src/components/ui/input.tsx",
+      "Check current height class in className",
+      "If h-9 (36px), change to h-10 (40px minimum)",
+      "Run pnpm build from apps/web/"
+    ]
+  },
+  {
+    "id": "7.2",
+    "category": "component-audit",
+    "passes": false,
+    "description": "Verify and fix select component height for touch targets",
+    "steps": [
+      "Open apps/web/src/components/ui/select.tsx",
+      "Find SelectTrigger component",
+      "Check current height class",
+      "If h-9 (36px), change to h-10 (40px minimum)",
+      "Run pnpm build from apps/web/"
+    ]
+  },
+  {
+    "id": "7.3",
+    "category": "component-audit",
+    "passes": false,
+    "description": "Verify and fix textarea component minimum height",
+    "steps": [
+      "Open apps/web/src/components/ui/textarea.tsx",
+      "Check current min-height class",
+      "Ensure min-h-[80px] for adequate tap area",
+      "Run pnpm build from apps/web/"
+    ]
+  },
+  {
+    "id": "7.4",
+    "category": "component-audit",
+    "passes": false,
+    "description": "Verify currency input inherits proper height from Input component",
+    "steps": [
+      "Open apps/web/src/components/ui/currency-input.tsx",
+      "Verify it uses Input component internally or has h-10 class",
+      "If custom implementation, ensure h-10 class is applied",
+      "Run pnpm build from apps/web/"
+    ]
+  },
+  {
+    "id": "7.5",
+    "category": "component-audit",
+    "passes": false,
+    "description": "Make card component padding responsive for mobile",
+    "steps": [
+      "Open apps/web/src/components/ui/card.tsx",
+      "Find Card component className",
+      "Change from fixed p-6 to responsive p-4 sm:p-6",
+      "This reduces padding on mobile (16px) while keeping desktop padding (24px)",
+      "Run pnpm build from apps/web/"
+    ]
+  },
+  {
+    "id": "7.6",
+    "category": "component-audit",
+    "passes": false,
+    "description": "Verify badge component text size is readable",
+    "steps": [
+      "Open apps/web/src/components/ui/badge.tsx",
+      "Check text size class (should be text-xs = 12px)",
+      "Verify 12px is acceptable for badge text",
+      "No code changes needed if already text-xs"
+    ]
+  },
+  {
+    "id": "7.7",
+    "category": "component-audit",
+    "passes": false,
+    "description": "Verify tooltip component not used for critical mobile interactions",
+    "steps": [
+      "Open apps/web/src/components/ui/tooltip.tsx",
+      "Review implementation (no changes needed)",
+      "Document guideline: Tooltips for supplementary info only, not primary interactions",
+      "Ensure all critical actions have visible labels or disclosure patterns",
+      "No code changes needed (guideline verification only)"
+    ]
+  },
+  {
+    "id": "7.8",
+    "category": "verification",
+    "passes": false,
+    "description": "Verify Phase 7 component audit changes work correctly",
+    "steps": [
+      "Run pnpm build from apps/web/",
+      "Test form components at 375px",
+      "Verify input fields are h-10 (40px)",
+      "Verify select triggers are h-10 (40px)",
+      "Verify textareas have min-h-[80px]",
+      "Verify currency inputs have proper height",
+      "Verify card padding reduced on mobile (16px vs 24px)",
+      "Verify badges readable at text-xs",
+      "Verify no critical functionality behind tooltips"
+    ]
+  },
+  {
+    "id": "8.1",
+    "category": "verification",
+    "passes": false,
+    "description": "Run full production build to verify all changes compile correctly",
+    "steps": [
+      "Run pnpm build from apps/web/",
+      "Must complete with zero TypeScript errors",
+      "Check build output for warnings or issues",
+      "Verify bundle size is reasonable"
+    ]
+  },
+  {
+    "id": "8.2",
+    "category": "verification",
+    "passes": false,
+    "description": "Complete visual verification checklist across all pages and breakpoints",
+    "steps": [
+      "Test all pages at 375px, 390px, 428px, 768px widths",
+      "Layout & Navigation: No horizontal scroll, sidebar drawer works, header responsive",
+      "Touch Targets: All interactive elements 44x44px minimum, 8px spacing",
+      "Tables & Lists: Cards on mobile, tables on desktop, all tappable",
+      "Filters & Pagination: Collapsible filters, badge counts, icon-only pagination",
+      "Charts: Reduced heights on mobile, readable labels, no overlap",
+      "Dialogs & Forms: Stacked buttons, 20px spacing, adequate margins",
+      "Detail Pages: Stacked headers, responsive grids, mobile lists",
+      "Dashboard: Stacked actions, responsive cards, all charts readable",
+      "Edge Cases: Empty states, loading skeletons, error messages, text truncation"
+    ]
+  },
+  {
+    "id": "8.3",
+    "category": "verification",
+    "passes": false,
+    "description": "Verify accessibility standards are met",
+    "steps": [
+      "Check minimum 16px font size for body text",
+      "Verify color contrast meets 4.5:1 minimum",
+      "Verify focus states visible on all interactive elements",
+      "Verify form labels associated with inputs (htmlFor)",
+      "Verify error messages announced (aria-live or role=alert)",
+      "Verify alt text on images",
+      "Verify keyboard navigation works (logical tab order)"
+    ]
+  },
+  {
+    "id": "8.4",
+    "category": "verification",
+    "passes": false,
+    "description": "Verify performance standards are met",
+    "steps": [
+      "Check for layout shift when loading charts/data",
+      "Verify transitions are smooth (150-300ms duration)",
+      "Check for janky animations or scrolling",
+      "Verify images optimized (SVG icons, WebP for photos)",
+      "Review bundle size in Next.js build output"
+    ]
+  },
+  {
+    "id": "8.5",
+    "category": "verification",
+    "passes": false,
+    "description": "Test on real devices or browser emulation across target browsers",
+    "steps": [
+      "Test on Safari iOS (iPhone SE, iPhone 12-14, iPhone Pro Max)",
+      "Test on Chrome Android",
+      "Test on Chrome iOS",
+      "Test on Firefox Mobile (optional)",
+      "Verify all functionality works correctly on each browser"
+    ]
+  },
+  {
+    "id": "8.6",
+    "category": "verification",
+    "passes": false,
+    "description": "Regression testing to ensure desktop experience still works",
+    "steps": [
+      "Test all pages at 1024px, 1440px, 1920px widths",
+      "Verify tables visible and functional on desktop",
+      "Verify charts have proper desktop heights",
+      "Verify sidebar visible and functional at md+ breakpoints",
+      "Verify filter rows horizontal on desktop",
+      "Verify button groups horizontal on desktop",
+      "Ensure no desktop functionality broken by mobile changes"
+    ]
+  }
+]

@@ -32,3 +32,24 @@ PROGRESS NOTES:
 - Verified existing responsive patterns: header search (icon-only on mobile), user name (hidden <sm), sidebar drawer (SidebarProvider + SidebarInset)
 - Files: globals.css, button.tsx
 - Build: ✓ passes
+
+2026-02-12 - Task 2.1 Complete (PRD 2.1)
+- Created AccountCard component: displays name, type badge, balance (large), status, currency, created date
+- Card clickable (Link wrapper), hover state (bg-accent/50), truncates long names
+- Added responsive rendering: md:hidden for mobile cards, hidden md:block for desktop table
+- Updated AccountsTableSkeleton: card skeletons on mobile (h-32), table skeleton on desktop
+- Pattern established for 2.2 (transactions) and 2.3 (categories)
+- Files: apps/web/src/app/(dashboard)/accounts/page.tsx
+- Build: ✓ passes
+
+2026-02-12 - Task 2.2 Complete (PRD 2.2)
+- Created TransactionListItem: icon (40px circle), description/date/account/category metadata row, amount (color-coded)
+- Added Filter icon import from lucide-react
+- Implemented collapsible filter state: showFilters toggle, activeFilterCount badge
+- Mobile filter panel: toggle button with badge, grid-cols-2 layout, date inputs span col-span-2
+- Desktop filters: always visible, lg:grid-cols-5 layout (unchanged)
+- Mobile transaction list: divide-y separator, click opens edit dialog
+- Pagination: icon-only on mobile (<sm), text visible on sm+
+- Updated TransactionsTableSkeleton: list skeletons on mobile (h-20), table skeleton on desktop
+- Files: apps/web/src/app/(dashboard)/transactions/page.tsx
+- Build: ✓ passes
