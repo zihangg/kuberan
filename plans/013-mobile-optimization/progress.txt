@@ -190,3 +190,17 @@ PROGRESS NOTES:
 - Investment dialogs: ✓ all 5 dialogs have proper spacing
 - Dialog margins: ✓ 16px on each side at all breakpoints
 - Phase 4 complete: All dialogs and forms now mobile-optimized
+
+2026-02-12 - Task 5.1 Complete (PRD 5.1)
+- Optimized account detail page for mobile
+- Header: Stacked vertically on mobile (flex-col sm:flex-row sm:justify-between)
+- Header badges: Wrapped to prevent overflow on small screens
+- Action buttons: Moved from card header to page header, stack on mobile (flex-col sm:flex-row gap-2)
+- Buttons: Edit, Add Transaction (cash accounts), Add Investment (investment accounts)
+- Created TransactionListItem component: icon (40px circle), description/date/category, amount (color-coded)
+- Transactions: Mobile list (md:hidden, divide-y) + desktop table (hidden md:block)
+- Skeletons: h-20 for mobile list, h-12 for desktop table
+- Pagination: Icon-only on mobile (<sm), text visible on sm+
+- Removed duplicate action buttons from card headers (cleaner layout)
+- Files: apps/web/src/app/(dashboard)/accounts/[id]/page.tsx
+- Build: ✓ passes

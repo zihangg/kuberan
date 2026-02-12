@@ -142,6 +142,50 @@ function TransactionsTableRow({
   );
 }
 
+function TransactionListItem({
+  transaction,
+  onClick,
+}: {
+  transaction: Transaction;
+  onClick?: () => void;
+}) {
+  const config = TRANSACTION_TYPE_CONFIG[transaction.type];
+  const Icon = config.icon;
+  const isNegative =
+    transaction.type === "expense" || transaction.type === "transfer";
+
+  return (
+    <div
+      className="flex items-center justify-between py-3 px-3 -mx-3 rounded-md cursor-pointer hover:bg-accent/50 transition-colors"
+      onClick={onClick}
+    >
+      <div className="flex items-center gap-3 min-w-0 flex-1">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted">
+          <Icon className={`h-5 w-5 ${config.color}`} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-medium truncate">
+            {transaction.description || config.label}
+          </p>
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <span>{formatDate(transaction.date)}</span>
+            {transaction.category && (
+              <>
+                <span>·</span>
+                <span className="truncate">{transaction.category.name}</span>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+      <span className={`text-sm font-medium shrink-0 ml-3 ${config.color}`}>
+        {isNegative ? "-" : "+"}
+        {formatCurrency(transaction.amount)}
+      </span>
+    </div>
+  );
+}
+
 export default function AccountDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -212,61 +256,68 @@ export default function AccountDetailPage() {
       </Button>
 
       {/* Account header */}
-      <div>
-        <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-bold">{account.name}</h1>
-          <Badge variant="secondary">
-            {ACCOUNT_TYPE_LABELS[account.type] ?? account.type}
-          </Badge>
-          <Badge variant={account.is_active ? "outline" : "secondary"}>
-            {account.is_active ? "Active" : "Inactive"}
-          </Badge>
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+        <div className="flex-1">
+          <div className="flex items-center gap-2 flex-wrap">
+            <h1 className="text-2xl font-bold">{account.name}</h1>
+            <Badge variant="secondary">
+              {ACCOUNT_TYPE_LABELS[account.type] ?? account.type}
+            </Badge>
+            <Badge variant={account.is_active ? "outline" : "secondary"}>
+              {account.is_active ? "Active" : "Inactive"}
+            </Badge>
+          </div>
+          <p className="mt-2 text-3xl font-semibold">
+            {formatCurrency(account.balance, account.currency)}
+          </p>
+          {account.description && (
+            <p className="mt-1 text-sm text-muted-foreground">
+              {account.description}
+            </p>
+          )}
+          {isInvestmentAccount && (
+            <div className="mt-2 flex gap-4 text-sm text-muted-foreground">
+              {account.broker && <span>Broker: {account.broker}</span>}
+              {account.account_number && (
+                <span>Account: {account.account_number}</span>
+              )}
+            </div>
+          )}
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2">
           <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8"
+            variant="outline"
+            size="sm"
             onClick={() => setEditDialogOpen(true)}
           >
             <Pencil className="h-4 w-4" />
-            <span className="sr-only">Edit account</span>
+            <span className="ml-2">Edit</span>
           </Button>
+          {!isInvestmentAccount && (
+            <Button size="sm" onClick={() => setTxDialogOpen(true)}>
+              <Plus className="h-4 w-4" />
+              <span className="ml-2">Add Transaction</span>
+            </Button>
+          )}
+          {isInvestmentAccount && (
+            <Button size="sm" onClick={() => setAddInvestmentOpen(true)}>
+              <Plus className="h-4 w-4" />
+              <span className="ml-2">Add Investment</span>
+            </Button>
+          )}
         </div>
-        <p className="mt-1 text-3xl font-semibold">
-          {formatCurrency(account.balance, account.currency)}
-        </p>
-        {account.description && (
-          <p className="mt-1 text-sm text-muted-foreground">
-            {account.description}
-          </p>
-        )}
-        {isInvestmentAccount && (
-          <div className="mt-2 flex gap-4 text-sm text-muted-foreground">
-            {account.broker && <span>Broker: {account.broker}</span>}
-            {account.account_number && (
-              <span>Account: {account.account_number}</span>
-            )}
-          </div>
-        )}
       </div>
 
       {/* Transactions section — hidden for investment accounts */}
       {!isInvestmentAccount && (
         <Card>
           <CardHeader>
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle>Transactions</CardTitle>
-                {totalItems > 0 && (
-                  <CardDescription>
-                    {totalItems} transaction{totalItems !== 1 ? "s" : ""}
-                  </CardDescription>
-                )}
-              </div>
-              <Button size="sm" onClick={() => setTxDialogOpen(true)}>
-                <Plus className="mr-2 h-4 w-4" />
-                Add Transaction
-              </Button>
-            </div>
+            <CardTitle>Transactions</CardTitle>
+            {totalItems > 0 && (
+              <CardDescription>
+                {totalItems} transaction{totalItems !== 1 ? "s" : ""}
+              </CardDescription>
+            )}
           </CardHeader>
           <CardContent className="space-y-4">
             {/* Filters */}
@@ -356,13 +407,22 @@ export default function AccountDetailPage() {
               </div>
             </div>
 
-            {/* Transactions table */}
+            {/* Transactions table/list */}
             {transactionsLoading ? (
-              <div className="space-y-3">
-                {Array.from({ length: 5 }).map((_, i) => (
-                  <Skeleton key={i} className="h-12 w-full" />
-                ))}
-              </div>
+              <>
+                {/* Mobile: List skeletons */}
+                <div className="md:hidden space-y-3">
+                  {Array.from({ length: 5 }).map((_, i) => (
+                    <Skeleton key={i} className="h-20 w-full" />
+                  ))}
+                </div>
+                {/* Desktop: Table skeletons */}
+                <div className="hidden md:block space-y-3">
+                  {Array.from({ length: 5 }).map((_, i) => (
+                    <Skeleton key={i} className="h-12 w-full" />
+                  ))}
+                </div>
+              </>
             ) : transactions.length === 0 ? (
               <div className="flex flex-col items-center justify-center rounded-lg border border-dashed p-8 text-center">
                 <h3 className="text-lg font-semibold">No transactions yet</h3>
@@ -374,19 +434,11 @@ export default function AccountDetailPage() {
               </div>
             ) : (
               <>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Date</TableHead>
-                      <TableHead>Description</TableHead>
-                      <TableHead>Type</TableHead>
-                      <TableHead>Category</TableHead>
-                      <TableHead className="text-right">Amount</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
+                {/* Mobile: List view */}
+                <div className="md:hidden">
+                  <div className="divide-y">
                     {transactions.map((tx) => (
-                      <TransactionsTableRow
+                      <TransactionListItem
                         key={tx.id}
                         transaction={tx}
                         onClick={() => {
@@ -395,8 +447,35 @@ export default function AccountDetailPage() {
                         }}
                       />
                     ))}
-                  </TableBody>
-                </Table>
+                  </div>
+                </div>
+
+                {/* Desktop: Table view */}
+                <div className="hidden md:block">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Date</TableHead>
+                        <TableHead>Description</TableHead>
+                        <TableHead>Type</TableHead>
+                        <TableHead>Category</TableHead>
+                        <TableHead className="text-right">Amount</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {transactions.map((tx) => (
+                        <TransactionsTableRow
+                          key={tx.id}
+                          transaction={tx}
+                          onClick={() => {
+                            setSelectedTransaction(tx);
+                            setEditTxOpen(true);
+                          }}
+                        />
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
 
                 {/* Pagination */}
                 {totalPages > 1 && (
@@ -412,7 +491,7 @@ export default function AccountDetailPage() {
                         onClick={() => setPage((p) => p - 1)}
                       >
                         <ChevronLeft className="h-4 w-4" />
-                        Previous
+                        <span className="ml-1 hidden sm:inline">Previous</span>
                       </Button>
                       <Button
                         variant="outline"
@@ -420,7 +499,7 @@ export default function AccountDetailPage() {
                         disabled={page >= totalPages}
                         onClick={() => setPage((p) => p + 1)}
                       >
-                        Next
+                        <span className="mr-1 hidden sm:inline">Next</span>
                         <ChevronRight className="h-4 w-4" />
                       </Button>
                     </div>
@@ -436,24 +515,13 @@ export default function AccountDetailPage() {
       {isInvestmentAccount && (
         <Card>
           <CardHeader>
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle>Investments</CardTitle>
-                {investmentTotalItems > 0 && (
-                  <CardDescription>
-                    {investmentTotalItems} holding
-                    {investmentTotalItems !== 1 ? "s" : ""}
-                  </CardDescription>
-                )}
-              </div>
-              <Button
-                size="sm"
-                onClick={() => setAddInvestmentOpen(true)}
-              >
-                <Plus className="mr-2 h-4 w-4" />
-                Add Investment
-              </Button>
-            </div>
+            <CardTitle>Investments</CardTitle>
+            {investmentTotalItems > 0 && (
+              <CardDescription>
+                {investmentTotalItems} holding
+                {investmentTotalItems !== 1 ? "s" : ""}
+              </CardDescription>
+            )}
           </CardHeader>
           <CardContent>
             {investmentsLoading ? (

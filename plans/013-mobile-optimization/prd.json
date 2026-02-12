@@ -364,7 +364,7 @@
   {
     "id": "5.1",
     "category": "detail-pages",
-    "passes": false,
+    "passes": true,
     "description": "Optimize account detail page for mobile",
     "steps": [
       "Open apps/web/src/app/(dashboard)/accounts/[id]/page.tsx",
