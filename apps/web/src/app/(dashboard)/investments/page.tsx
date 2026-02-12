@@ -45,7 +45,7 @@ import {
 import { usePortfolio, useAllInvestments } from "@/hooks/use-investments";
 import { usePortfolioSnapshots } from "@/hooks/use-portfolio-snapshots";
 import { formatCurrency, formatDate, formatPercentage } from "@/lib/format";
-import type { AssetType } from "@/types/models";
+import type { AssetType, Investment } from "@/types/models";
 import { AssetAllocationChart } from "@/components/investments/asset-allocation-chart";
 
 const ASSET_TYPE_LABELS: Record<AssetType, string> = {
@@ -132,15 +132,15 @@ function NetWorthChart() {
   return (
     <Card>
       <CardHeader>
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
             <CardTitle>Net Worth</CardTitle>
             <CardDescription>Portfolio value over time</CardDescription>
           </div>
           <Tabs value={period} onValueChange={setPeriod}>
-            <TabsList>
+            <TabsList className="w-full sm:w-auto">
               {PERIOD_OPTIONS.map((opt) => (
-                <TabsTrigger key={opt.value} value={opt.value}>
+                <TabsTrigger key={opt.value} value={opt.value} className="flex-1 sm:flex-initial">
                   {opt.label}
                 </TabsTrigger>
               ))}
@@ -159,7 +159,7 @@ function NetWorthChart() {
         ) : (
           <ChartContainer
             config={chartConfig}
-            className="min-h-[300px] w-full"
+            className="h-[250px] md:h-[300px] w-full"
           >
             <AreaChart accessibilityLayer data={chartData}>
               <defs>
@@ -233,6 +233,82 @@ type SortColumn =
   | "unrealized_gl"
   | "realized_gl";
 type SortDirection = "asc" | "desc" | null;
+
+function HoldingCard({ investment, onClick }: { investment: Investment; onClick: () => void }) {
+  const marketValue = Math.round(investment.quantity * investment.current_price);
+  const unrealizedGL = marketValue - investment.cost_basis;
+  const isUnrealizedPositive = unrealizedGL >= 0;
+  const isRealizedPositive = investment.realized_gain_loss >= 0;
+
+  return (
+    <Card className="cursor-pointer transition-colors hover:bg-accent/50" onClick={onClick}>
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between gap-2">
+          <div className="min-w-0 flex-1">
+            <CardTitle className="text-base font-mono font-semibold">
+              {investment.security.symbol}
+            </CardTitle>
+            <p className="text-sm text-muted-foreground truncate">
+              {investment.security.name}
+            </p>
+          </div>
+          <div className="text-right shrink-0">
+            <p className="text-lg font-semibold font-mono tabular-nums">
+              {formatCurrency(marketValue)}
+            </p>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        <div className="grid grid-cols-2 gap-2 text-sm">
+          <div>
+            <p className="text-muted-foreground text-xs">Quantity</p>
+            <p className="font-medium font-mono tabular-nums">
+              {investment.quantity.toFixed(Number.isInteger(investment.quantity) ? 0 : 6)}
+            </p>
+          </div>
+          <div className="text-right">
+            <p className="text-muted-foreground text-xs">Price</p>
+            <p className="font-medium font-mono tabular-nums">
+              {formatCurrency(investment.current_price)}
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center justify-between text-sm">
+          <span className="text-muted-foreground">Unrealized G/L</span>
+          <span
+            className={`font-medium font-mono tabular-nums ${
+              isUnrealizedPositive ? "text-green-600" : "text-red-600"
+            }`}
+          >
+            {isUnrealizedPositive ? "+" : ""}
+            {formatCurrency(unrealizedGL)}
+          </span>
+        </div>
+        <div className="flex items-center justify-between text-sm">
+          <span className="text-muted-foreground">Realized G/L</span>
+          <span
+            className={`font-medium font-mono tabular-nums ${
+              isRealizedPositive ? "text-green-600" : "text-red-600"
+            }`}
+          >
+            {isRealizedPositive ? "+" : ""}
+            {formatCurrency(investment.realized_gain_loss)}
+          </span>
+        </div>
+        <div className="pt-1">
+          <Link
+            href={`/accounts/${investment.account_id}`}
+            className="text-xs text-primary hover:underline"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {investment.account?.name ?? `Account #${investment.account_id}`}
+          </Link>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
 
 function AllHoldingsTable() {
   const router = useRouter();
@@ -359,11 +435,20 @@ function AllHoldingsTable() {
       </CardHeader>
       <CardContent>
         {isLoading ? (
-          <div className="space-y-3">
-            {Array.from({ length: 5 }).map((_, i) => (
-              <Skeleton key={i} className="h-12 w-full" />
-            ))}
-          </div>
+          <>
+            {/* Mobile: Card skeletons */}
+            <div className="md:hidden grid gap-3">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <Skeleton key={i} className="h-40 w-full rounded-lg" />
+              ))}
+            </div>
+            {/* Desktop: Table skeletons */}
+            <div className="hidden md:block space-y-3">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <Skeleton key={i} className="h-12 w-full" />
+              ))}
+            </div>
+          </>
         ) : investments.length === 0 ? (
           <div className="flex flex-col items-center justify-center rounded-lg border border-dashed p-8 text-center">
             <h3 className="text-lg font-semibold">No holdings yet</h3>
@@ -373,99 +458,113 @@ function AllHoldingsTable() {
           </div>
         ) : (
           <>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <SortableHeader column="symbol" label="Symbol" />
-                  <SortableHeader column="name" label="Name" />
-                  <TableHead>Account</TableHead>
-                  <SortableHeader
-                    column="qty"
-                    label="Qty"
-                    align="text-right"
-                  />
-                  <SortableHeader
-                    column="price"
-                    label="Price"
-                    align="text-right"
-                  />
-                  <SortableHeader
-                    column="market_value"
-                    label="Market Value"
-                    align="text-right"
-                  />
-                  <SortableHeader
-                    column="unrealized_gl"
-                    label="Unrealized G/L"
-                    align="text-right"
-                  />
-                  <SortableHeader
-                    column="realized_gl"
-                    label="Realized G/L"
-                    align="text-right"
-                  />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {sortedInvestments.map((inv) => {
-                  const marketValue = Math.round(
-                    inv.quantity * inv.current_price
-                  );
-                  const gainLoss = marketValue - inv.cost_basis;
-                  const isPositive = gainLoss >= 0;
-                  return (
-                    <TableRow
-                      key={inv.id}
-                      className="cursor-pointer"
-                      onClick={() => router.push(`/investments/${inv.id}`)}
-                    >
-                      <TableCell className="font-mono font-semibold">
-                        {inv.security.symbol}
-                      </TableCell>
-                      <TableCell>{inv.security.name}</TableCell>
-                      <TableCell>
-                        <Link
-                          href={`/accounts/${inv.account_id}`}
-                          className="text-primary hover:underline"
-                          onClick={(e) => e.stopPropagation()}
+            {/* Mobile: Cards */}
+            <div className="md:hidden grid gap-3">
+              {sortedInvestments.map((inv) => (
+                <HoldingCard
+                  key={inv.id}
+                  investment={inv}
+                  onClick={() => router.push(`/investments/${inv.id}`)}
+                />
+              ))}
+            </div>
+
+            {/* Desktop: Sortable Table */}
+            <div className="hidden md:block">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <SortableHeader column="symbol" label="Symbol" />
+                    <SortableHeader column="name" label="Name" />
+                    <TableHead>Account</TableHead>
+                    <SortableHeader
+                      column="qty"
+                      label="Qty"
+                      align="text-right"
+                    />
+                    <SortableHeader
+                      column="price"
+                      label="Price"
+                      align="text-right"
+                    />
+                    <SortableHeader
+                      column="market_value"
+                      label="Market Value"
+                      align="text-right"
+                    />
+                    <SortableHeader
+                      column="unrealized_gl"
+                      label="Unrealized G/L"
+                      align="text-right"
+                    />
+                    <SortableHeader
+                      column="realized_gl"
+                      label="Realized G/L"
+                      align="text-right"
+                    />
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {sortedInvestments.map((inv) => {
+                    const marketValue = Math.round(
+                      inv.quantity * inv.current_price
+                    );
+                    const gainLoss = marketValue - inv.cost_basis;
+                    const isPositive = gainLoss >= 0;
+                    return (
+                      <TableRow
+                        key={inv.id}
+                        className="cursor-pointer"
+                        onClick={() => router.push(`/investments/${inv.id}`)}
+                      >
+                        <TableCell className="font-mono font-semibold">
+                          {inv.security.symbol}
+                        </TableCell>
+                        <TableCell>{inv.security.name}</TableCell>
+                        <TableCell>
+                          <Link
+                            href={`/accounts/${inv.account_id}`}
+                            className="text-primary hover:underline"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {inv.account?.name ?? `Account #${inv.account_id}`}
+                          </Link>
+                        </TableCell>
+                        <TableCell className="text-right font-mono tabular-nums">
+                          {inv.quantity.toFixed(
+                            Number.isInteger(inv.quantity) ? 0 : 6
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right font-mono tabular-nums">
+                          {formatCurrency(inv.current_price)}
+                        </TableCell>
+                        <TableCell className="text-right font-medium font-mono tabular-nums">
+                          {formatCurrency(marketValue)}
+                        </TableCell>
+                        <TableCell
+                          className={`text-right font-medium font-mono tabular-nums ${
+                            isPositive ? "text-green-600" : "text-red-600"
+                          }`}
                         >
-                          {inv.account?.name ?? `Account #${inv.account_id}`}
-                        </Link>
-                      </TableCell>
-                      <TableCell className="text-right font-mono tabular-nums">
-                        {inv.quantity.toFixed(
-                          Number.isInteger(inv.quantity) ? 0 : 6
-                        )}
-                      </TableCell>
-                      <TableCell className="text-right font-mono tabular-nums">
-                        {formatCurrency(inv.current_price)}
-                      </TableCell>
-                      <TableCell className="text-right font-medium font-mono tabular-nums">
-                        {formatCurrency(marketValue)}
-                      </TableCell>
-                      <TableCell
-                        className={`text-right font-medium font-mono tabular-nums ${
-                          isPositive ? "text-green-600" : "text-red-600"
-                        }`}
-                      >
-                        {isPositive ? "+" : ""}
-                        {formatCurrency(gainLoss)}
-                      </TableCell>
-                      <TableCell
-                        className={`text-right font-medium font-mono tabular-nums ${
-                          inv.realized_gain_loss >= 0
-                            ? "text-green-600"
-                            : "text-red-600"
-                        }`}
-                      >
-                        {inv.realized_gain_loss >= 0 ? "+" : ""}
-                        {formatCurrency(inv.realized_gain_loss)}
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
+                          {isPositive ? "+" : ""}
+                          {formatCurrency(gainLoss)}
+                        </TableCell>
+                        <TableCell
+                          className={`text-right font-medium font-mono tabular-nums ${
+                            inv.realized_gain_loss >= 0
+                              ? "text-green-600"
+                              : "text-red-600"
+                          }`}
+                        >
+                          {inv.realized_gain_loss >= 0 ? "+" : ""}
+                          {formatCurrency(inv.realized_gain_loss)}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
 
             {totalPages > 1 && (
               <div className="mt-4 flex items-center justify-between">
@@ -480,7 +579,7 @@ function AllHoldingsTable() {
                     onClick={() => setPage((p) => p - 1)}
                   >
                     <ChevronLeft className="h-4 w-4" />
-                    Previous
+                    <span className="ml-1 hidden sm:inline">Previous</span>
                   </Button>
                   <Button
                     variant="outline"
@@ -488,7 +587,7 @@ function AllHoldingsTable() {
                     disabled={page >= totalPages}
                     onClick={() => setPage((p) => p + 1)}
                   >
-                    Next
+                    <span className="mr-1 hidden sm:inline">Next</span>
                     <ChevronRight className="h-4 w-4" />
                   </Button>
                 </div>
@@ -683,46 +782,87 @@ export default function InvestmentsPage() {
               No holdings to display.
             </p>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b text-left text-sm text-muted-foreground">
-                    <th className="pb-2 font-medium">Asset Type</th>
-                    <th className="pb-2 text-right font-medium">Holdings</th>
-                    <th className="pb-2 text-right font-medium">
-                      Total Value
-                    </th>
-                    <th className="pb-2 text-right font-medium">Allocation</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {holdingsEntries.map(([type, holding]) => {
-                    const allocation =
-                      portfolio.total_value > 0
-                        ? (holding.value / portfolio.total_value) * 100
-                        : 0;
-                    return (
-                      <tr key={type} className="text-sm">
-                        <td className="py-3">
+            <>
+              {/* Mobile: Cards */}
+              <div className="md:hidden grid gap-3">
+                {holdingsEntries.map(([type, holding]) => {
+                  const allocation =
+                    portfolio.total_value > 0
+                      ? (holding.value / portfolio.total_value) * 100
+                      : 0;
+                  return (
+                    <Card key={type}>
+                      <CardHeader className="pb-2">
+                        <div className="flex items-center justify-between">
                           <Badge variant="secondary">
                             {ASSET_TYPE_LABELS[type] ?? type}
                           </Badge>
-                        </td>
-                        <td className="py-3 text-right font-mono tabular-nums">
-                          {holding.count}
-                        </td>
-                        <td className="py-3 text-right font-mono tabular-nums">
-                          {formatCurrency(holding.value)}
-                        </td>
-                        <td className="py-3 text-right font-mono tabular-nums">
-                          {formatPercentage(allocation)}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+                          <span className="text-sm text-muted-foreground">
+                            {holding.count} holding{holding.count !== 1 ? "s" : ""}
+                          </span>
+                        </div>
+                      </CardHeader>
+                      <CardContent className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm text-muted-foreground">Value</span>
+                          <span className="text-base font-semibold font-mono tabular-nums">
+                            {formatCurrency(holding.value)}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm text-muted-foreground">Allocation</span>
+                          <span className="text-sm font-medium font-mono tabular-nums">
+                            {formatPercentage(allocation)}
+                          </span>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+
+              {/* Desktop: Table */}
+              <div className="hidden md:block overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b text-left text-sm text-muted-foreground">
+                      <th className="pb-2 font-medium">Asset Type</th>
+                      <th className="pb-2 text-right font-medium">Holdings</th>
+                      <th className="pb-2 text-right font-medium">
+                        Total Value
+                      </th>
+                      <th className="pb-2 text-right font-medium">Allocation</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {holdingsEntries.map(([type, holding]) => {
+                      const allocation =
+                        portfolio.total_value > 0
+                          ? (holding.value / portfolio.total_value) * 100
+                          : 0;
+                      return (
+                        <tr key={type} className="text-sm">
+                          <td className="py-3">
+                            <Badge variant="secondary">
+                              {ASSET_TYPE_LABELS[type] ?? type}
+                            </Badge>
+                          </td>
+                          <td className="py-3 text-right font-mono tabular-nums">
+                            {holding.count}
+                          </td>
+                          <td className="py-3 text-right font-mono tabular-nums">
+                            {formatCurrency(holding.value)}
+                          </td>
+                          <td className="py-3 text-right font-mono tabular-nums">
+                            {formatPercentage(allocation)}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </>
           )}
         </CardContent>
       </Card>

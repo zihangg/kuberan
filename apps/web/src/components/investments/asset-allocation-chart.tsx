@@ -89,7 +89,7 @@ export function AssetAllocationChart({
       <CardContent className="flex-1 pb-0">
         <ChartContainer
           config={chartConfig}
-          className="mx-auto aspect-square max-h-[250px]"
+          className="mx-auto aspect-square max-h-[200px] md:max-h-[250px]"
         >
           <PieChart>
             <ChartTooltip
@@ -140,14 +140,14 @@ export function AssetAllocationChart({
                         <tspan
                           x={viewBox.cx}
                           y={viewBox.cy}
-                          className="fill-foreground text-base font-bold"
+                          className="fill-foreground text-sm md:text-base font-bold"
                         >
                           {formatCurrency(totalValue)}
                         </tspan>
                         <tspan
                           x={viewBox.cx}
                           y={(viewBox.cy || 0) + 18}
-                          className="fill-muted-foreground text-xs"
+                          className="fill-muted-foreground text-[10px] md:text-xs"
                         >
                           Total Value
                         </tspan>
