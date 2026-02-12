@@ -217,7 +217,7 @@
   {
     "id": "3.6",
     "category": "charts-responsive",
-    "passes": false,
+    "passes": true,
     "description": "Verify dashboard summary cards are already responsive",
     "steps": [
       "Open apps/web/src/app/(dashboard)/page.tsx",

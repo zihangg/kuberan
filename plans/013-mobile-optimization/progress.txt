@@ -105,3 +105,11 @@ PROGRESS NOTES:
 - Ensures chart readable on mobile with proper tick spacing
 - Files: apps/web/src/components/dashboard/net-worth-chart.tsx
 - Build: ✓ passes
+
+2026-02-12 - Task 3.6 Complete (PRD 3.6) - Verification Only
+- Verified dashboard summary cards already responsive (line 116)
+- Grid classes: "grid gap-4 sm:grid-cols-2 lg:grid-cols-4"
+- Mobile <640px: 1 column, sm ≥640px: 2 columns, lg ≥1024px: 4 columns
+- Exactly as required by plan, no changes needed
+- Files: apps/web/src/app/(dashboard)/page.tsx (no changes)
+- Status: ✓ verified
