@@ -340,3 +340,11 @@ PROGRESS NOTES:
 - Badges: ✓ text-xs readable
 - Tooltips: ✓ guideline verified
 - Phase 7 complete: All UI components now meet mobile accessibility standards
+
+2026-02-12 - Task 8.1 Complete (PRD 8.1) - Full Production Build
+- Ran full production build: pnpm build from apps/web/
+- Build: ✓ passes with zero TypeScript errors
+- Bundle size reasonable: Largest route 303 kB, middleware 32.5 kB
+- Only ESLint warning: useMemo dependency in investments/page.tsx (non-blocking)
+- 13 routes generated successfully (static + dynamic)
+- Status: ✓ verified

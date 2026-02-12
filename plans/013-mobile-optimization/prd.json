@@ -587,7 +587,7 @@
   {
     "id": "8.1",
     "category": "verification",
-    "passes": false,
+    "passes": true,
     "description": "Run full production build to verify all changes compile correctly",
     "steps": [
       "Run pnpm build from apps/web/",
