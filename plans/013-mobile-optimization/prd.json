@@ -322,7 +322,7 @@
   {
     "id": "4.7",
     "category": "dialogs-forms",
-    "passes": false,
+    "passes": true,
     "description": "Optimize investment dialogs for mobile",
     "steps": [
       "Open all 5 investment dialog files: add-investment-dialog.tsx, record-buy-dialog.tsx, record-sell-dialog.tsx, record-dividend-dialog.tsx, record-split-dialog.tsx",
@@ -335,7 +335,7 @@
   {
     "id": "4.8",
     "category": "dialogs-forms",
-    "passes": false,
+    "passes": true,
     "description": "Verify dialog width provides adequate mobile margin",
     "steps": [
       "Open apps/web/src/components/ui/dialog.tsx",
@@ -348,7 +348,7 @@
   {
     "id": "4.9",
     "category": "verification",
-    "passes": false,
+    "passes": true,
     "description": "Verify Phase 4 dialog and form optimizations work correctly",
     "steps": [
       "Run pnpm build from apps/web/",

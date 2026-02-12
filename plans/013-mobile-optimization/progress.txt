@@ -15,7 +15,7 @@ PHASES:
 [X] Phase 1: Foundation & Core Layout (CRITICAL)
 [X] Phase 2: Table to Card/List Conversions (HIGH)
 [X] Phase 3: Dashboard & Chart Responsiveness (HIGH)
-[ ] Phase 4: Dialogs & Forms (HIGH)
+[X] Phase 4: Dialogs & Forms (HIGH)
 [ ] Phase 5: Detail Pages (MEDIUM)
 [ ] Phase 6: Remaining Pages (MEDIUM)
 [ ] Phase 7: Component Audit (MEDIUM)
@@ -164,3 +164,29 @@ PROGRESS NOTES:
 - Note: Type selector (Income/Expense) uses Select dropdown in create, read-only Badge in edit
 - Files: create-category-dialog.tsx, edit-category-dialog.tsx
 - Build: ✓ passes
+
+2026-02-12 - Task 4.7 Complete (PRD 4.7)
+- Optimized all 5 investment dialogs for mobile
+- Changed form gap-4 → gap-5 (20px spacing) in: add-investment-dialog, record-buy-dialog, record-sell-dialog, record-dividend-dialog, record-split-dialog
+- No button groups to stack (all use Select dropdowns or single submit buttons)
+- CurrencyInput components inherit height from Input (verified in prior tasks)
+- Files: 5 investment dialog components
+- Build: ✓ passes
+
+2026-02-12 - Task 4.8 Complete (PRD 4.8) - Verification Only
+- Verified dialog max-width provides adequate mobile margin
+- Line 64 dialog.tsx: max-w-[calc(100%-2rem)] = 32px total margin (16px each side)
+- At 375px: dialog = 343px width ✅ adequate
+- At 428px: dialog = 396px width ✅ adequate
+- Files: dialog.tsx (no changes)
+- Status: ✓ verified
+
+2026-02-12 - Task 4.9 Complete (PRD 4.9) - Phase 4 Verification
+- All Phase 4 tasks complete (4.1-4.8)
+- Build: ✓ passes (pnpm build successful)
+- Transaction type buttons: ✓ stack vertically on mobile (<sm)
+- All forms: ✓ gap-5 (20px) vertical spacing
+- Account/budget/category dialogs: ✓ optimized for mobile
+- Investment dialogs: ✓ all 5 dialogs have proper spacing
+- Dialog margins: ✓ 16px on each side at all breakpoints
+- Phase 4 complete: All dialogs and forms now mobile-optimized
