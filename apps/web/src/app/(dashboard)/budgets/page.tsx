@@ -137,7 +137,7 @@ export default function BudgetsPage() {
         </Button>
       </div>
 
-      <div className="flex flex-wrap items-center gap-4">
+      <div className="flex flex-col sm:flex-row flex-wrap items-start sm:items-center gap-3 sm:gap-4">
         <Tabs value={statusFilter} onValueChange={handleStatusChange}>
           <TabsList>
             <TabsTrigger value="all">All</TabsTrigger>
@@ -146,7 +146,7 @@ export default function BudgetsPage() {
           </TabsList>
         </Tabs>
         <Select value={periodFilter} onValueChange={handlePeriodChange}>
-          <SelectTrigger className="w-[140px]">
+          <SelectTrigger className="w-full sm:w-[140px]">
             <SelectValue placeholder="Period" />
           </SelectTrigger>
           <SelectContent>
@@ -186,7 +186,6 @@ export default function BudgetsPage() {
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="h-8 w-8"
                         onClick={() => setEditBudget(budget)}
                       >
                         <Pencil className="h-4 w-4" />
@@ -194,7 +193,7 @@ export default function BudgetsPage() {
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="h-8 w-8 text-destructive"
+                        className="text-destructive"
                         onClick={() => setDeleteBudget(budget)}
                       >
                         <Trash2 className="h-4 w-4" />
