@@ -121,7 +121,7 @@ export function ExpenditureChart() {
       <CardContent className="flex-1 pb-0">
         <ChartContainer
           config={chartConfig}
-          className="mx-auto aspect-square max-h-[200px] md:max-h-[250px]"
+          className="mx-auto aspect-square w-full max-w-[280px] max-h-[280px] md:max-w-[250px] md:max-h-[250px]"
         >
           <PieChart>
             <ChartTooltip

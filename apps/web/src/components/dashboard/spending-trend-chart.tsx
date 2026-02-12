@@ -122,7 +122,7 @@ export function SpendingTrendChart() {
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <ChartContainer config={chartConfig} className="h-[250px] md:h-[300px] w-full">
+        <ChartContainer config={chartConfig} className="h-[180px] md:h-[250px] w-full">
           <ComposedChart accessibilityLayer data={chartData}>
             <defs>
               <linearGradient

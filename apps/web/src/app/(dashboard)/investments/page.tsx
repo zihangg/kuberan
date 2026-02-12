@@ -17,12 +17,7 @@ import {
   ArrowDown,
   ArrowUpDown,
 } from "lucide-react";
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid } from "recharts";
-import {
-  ChartContainer,
-  ChartTooltip,
-  type ChartConfig,
-} from "@/components/ui/chart";
+
 import {
   Card,
   CardContent,
@@ -33,7 +28,6 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
   TableBody,
@@ -43,10 +37,10 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { usePortfolio, useAllInvestments } from "@/hooks/use-investments";
-import { usePortfolioSnapshots } from "@/hooks/use-portfolio-snapshots";
-import { formatCurrency, formatDate, formatPercentage } from "@/lib/format";
+import { formatCurrency, formatPercentage } from "@/lib/format";
 import type { AssetType, Investment } from "@/types/models";
 import { AssetAllocationChart } from "@/components/investments/asset-allocation-chart";
+import { InvestmentValueChart } from "@/components/investments/investment-value-chart";
 
 const ASSET_TYPE_LABELS: Record<AssetType, string> = {
   stock: "Stocks",
@@ -55,28 +49,6 @@ const ASSET_TYPE_LABELS: Record<AssetType, string> = {
   crypto: "Crypto",
   reit: "REITs",
 };
-
-const PERIOD_OPTIONS = [
-  { value: "1M", label: "1M", months: 1 },
-  { value: "3M", label: "3M", months: 3 },
-  { value: "6M", label: "6M", months: 6 },
-  { value: "1Y", label: "1Y", months: 12 },
-  { value: "ALL", label: "ALL", months: 120 },
-] as const;
-
-const chartConfig = {
-  net_worth: { label: "Net Worth", color: "var(--chart-1)" },
-} satisfies ChartConfig;
-
-function getDateRange(months: number) {
-  const to = new Date();
-  const from = new Date();
-  from.setMonth(from.getMonth() - months);
-  return {
-    from_date: from.toISOString().split("T")[0],
-    to_date: to.toISOString().split("T")[0],
-  };
-}
 
 function InvestmentsSkeleton() {
   return (
@@ -90,135 +62,6 @@ function InvestmentsSkeleton() {
       <Skeleton className="h-[350px] w-full" />
       <Skeleton className="h-64 w-full" />
     </div>
-  );
-}
-
-function NetWorthChart() {
-  const [period, setPeriod] = useState("1Y");
-
-  const { from_date, to_date } = useMemo(() => {
-    const opt = PERIOD_OPTIONS.find((p) => p.value === period);
-    return getDateRange(opt?.months ?? 12);
-  }, [period]);
-
-  const { data: snapshotsData, isLoading } = usePortfolioSnapshots({
-    from_date,
-    to_date,
-    page_size: 1000,
-  });
-
-  const chartData = useMemo(() => {
-    if (!snapshotsData?.data) return [];
-    return snapshotsData.data.map((s) => ({
-      date: formatDate(s.recorded_at),
-      net_worth: s.total_net_worth / 100,
-    }));
-  }, [snapshotsData]);
-
-  if (isLoading) {
-    return (
-      <Card>
-        <CardHeader>
-          <Skeleton className="h-5 w-36" />
-          <Skeleton className="h-4 w-48" />
-        </CardHeader>
-        <CardContent>
-          <Skeleton className="h-[300px] w-full" />
-        </CardContent>
-      </Card>
-    );
-  }
-
-  return (
-    <Card>
-      <CardHeader>
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          <div>
-            <CardTitle>Net Worth</CardTitle>
-            <CardDescription>Portfolio value over time</CardDescription>
-          </div>
-          <Tabs value={period} onValueChange={setPeriod}>
-            <TabsList className="w-full sm:w-auto">
-              {PERIOD_OPTIONS.map((opt) => (
-                <TabsTrigger key={opt.value} value={opt.value} className="flex-1 sm:flex-initial">
-                  {opt.label}
-                </TabsTrigger>
-              ))}
-            </TabsList>
-          </Tabs>
-        </div>
-      </CardHeader>
-      <CardContent>
-        {chartData.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-10 text-muted-foreground">
-            <p className="text-sm">
-              No snapshot data available. Snapshots are generated periodically by
-              the pipeline.
-            </p>
-          </div>
-        ) : (
-          <ChartContainer
-            config={chartConfig}
-            className="h-[250px] md:h-[300px] w-full"
-          >
-            <AreaChart accessibilityLayer data={chartData}>
-              <defs>
-                <linearGradient
-                  id="fillNetWorth"
-                  x1="0"
-                  y1="0"
-                  x2="0"
-                  y2="1"
-                >
-                  <stop
-                    offset="0%"
-                    stopColor="var(--color-net_worth)"
-                    stopOpacity={0.3}
-                  />
-                  <stop
-                    offset="95%"
-                    stopColor="var(--color-net_worth)"
-                    stopOpacity={0.05}
-                  />
-                </linearGradient>
-              </defs>
-              <CartesianGrid vertical={false} />
-              <XAxis
-                dataKey="date"
-                tickLine={false}
-                axisLine={false}
-                tickMargin={8}
-              />
-              <YAxis
-                hide
-                domain={["dataMin - 100", "dataMax + 100"]}
-              />
-              <ChartTooltip
-                content={({ active, payload, label }) => {
-                  if (!active || !payload?.length) return null;
-                  const value = payload[0].value as number;
-                  return (
-                    <div className="border-border/50 bg-background rounded-lg border px-3 py-2 text-xs shadow-xl">
-                      <div className="font-medium">{label}</div>
-                      <div className="mt-1 font-mono font-medium tabular-nums">
-                        {formatCurrency(value * 100)}
-                      </div>
-                    </div>
-                  );
-                }}
-              />
-              <Area
-                type="monotone"
-                dataKey="net_worth"
-                stroke="var(--color-net_worth)"
-                fill="url(#fillNetWorth)"
-                strokeWidth={2}
-              />
-            </AreaChart>
-          </ChartContainer>
-        )}
-      </CardContent>
-    </Card>
   );
 }
 
@@ -243,41 +86,41 @@ function HoldingCard({ investment, onClick }: { investment: Investment; onClick:
   return (
     <Card className="cursor-pointer transition-colors hover:bg-accent/50" onClick={onClick}>
       <CardHeader className="pb-3">
-        <div className="flex items-center justify-between gap-2">
-          <div className="min-w-0 flex-1">
-            <CardTitle className="text-base font-mono font-semibold">
+        <div className="flex items-start justify-between gap-2 overflow-hidden">
+          <div className="min-w-0 flex-shrink overflow-hidden max-w-[50%] sm:max-w-[60%]">
+            <CardTitle className="text-base font-mono font-semibold truncate">
               {investment.security.symbol}
             </CardTitle>
             <p className="text-sm text-muted-foreground truncate">
               {investment.security.name}
             </p>
           </div>
-          <div className="text-right shrink-0">
-            <p className="text-lg font-semibold font-mono tabular-nums">
+          <div className="text-right flex-shrink-0 min-w-0 overflow-hidden">
+            <p className="text-sm sm:text-base font-semibold font-mono tabular-nums truncate">
               {formatCurrency(marketValue)}
             </p>
           </div>
         </div>
       </CardHeader>
-      <CardContent className="space-y-2">
+      <CardContent className="space-y-2 overflow-hidden">
         <div className="grid grid-cols-2 gap-2 text-sm">
-          <div>
+          <div className="min-w-0">
             <p className="text-muted-foreground text-xs">Quantity</p>
-            <p className="font-medium font-mono tabular-nums">
+            <p className="font-medium font-mono tabular-nums truncate">
               {investment.quantity.toFixed(Number.isInteger(investment.quantity) ? 0 : 6)}
             </p>
           </div>
-          <div className="text-right">
+          <div className="text-right min-w-0">
             <p className="text-muted-foreground text-xs">Price</p>
-            <p className="font-medium font-mono tabular-nums">
+            <p className="font-medium font-mono tabular-nums truncate">
               {formatCurrency(investment.current_price)}
             </p>
           </div>
         </div>
-        <div className="flex items-center justify-between text-sm">
-          <span className="text-muted-foreground">Unrealized G/L</span>
+        <div className="flex items-center justify-between gap-2 text-sm min-w-0">
+          <span className="text-muted-foreground shrink-0">Unrealized G/L</span>
           <span
-            className={`font-medium font-mono tabular-nums ${
+            className={`font-medium font-mono tabular-nums truncate ${
               isUnrealizedPositive ? "text-green-600" : "text-red-600"
             }`}
           >
@@ -285,10 +128,10 @@ function HoldingCard({ investment, onClick }: { investment: Investment; onClick:
             {formatCurrency(unrealizedGL)}
           </span>
         </div>
-        <div className="flex items-center justify-between text-sm">
-          <span className="text-muted-foreground">Realized G/L</span>
+        <div className="flex items-center justify-between gap-2 text-sm min-w-0">
+          <span className="text-muted-foreground shrink-0">Realized G/L</span>
           <span
-            className={`font-medium font-mono tabular-nums ${
+            className={`font-medium font-mono tabular-nums truncate ${
               isRealizedPositive ? "text-green-600" : "text-red-600"
             }`}
           >
@@ -296,10 +139,10 @@ function HoldingCard({ investment, onClick }: { investment: Investment; onClick:
             {formatCurrency(investment.realized_gain_loss)}
           </span>
         </div>
-        <div className="pt-1">
+        <div className="pt-1 min-w-0">
           <Link
             href={`/accounts/${investment.account_id}`}
-            className="text-xs text-primary hover:underline"
+            className="text-xs text-primary hover:underline truncate block"
             onClick={(e) => e.stopPropagation()}
           >
             {investment.account?.name ?? `Account #${investment.account_id}`}
@@ -756,8 +599,8 @@ export default function InvestmentsPage() {
         </Card>
       </div>
 
-      {/* Net Worth Chart */}
-      <NetWorthChart />
+      {/* Investment Value Chart */}
+      <InvestmentValueChart />
 
       {/* Asset Allocation Chart */}
       <AssetAllocationChart

@@ -360,16 +360,36 @@ export default function DashboardPage() {
             ? `Welcome back, ${user.first_name}`
             : "Dashboard"}
         </h1>
-        <div className="flex flex-col sm:flex-row gap-2">
-          <Button asChild variant="outline" size="sm">
+        <div className="flex flex-row gap-2">
+          {/* Add Account - Mobile: Icon only */}
+          <Button asChild variant="outline" className="sm:hidden" size="icon-sm" aria-label="Add Account">
+            <Link href="/accounts">
+              <Wallet />
+            </Link>
+          </Button>
+          {/* Add Account - Desktop: Full text */}
+          <Button asChild variant="outline" className="hidden sm:inline-flex" size="sm">
             <Link href="/accounts">
               <Wallet className="mr-2 h-4 w-4" />
               Add Account
             </Link>
           </Button>
+          
+          {/* Add Transaction - Mobile: Icon only */}
+          <Button
+            variant="outline"
+            size="icon-sm"
+            className="sm:hidden"
+            onClick={() => setTxDialogOpen(true)}
+            aria-label="Add Transaction"
+          >
+            <Plus />
+          </Button>
+          {/* Add Transaction - Desktop: Full text */}
           <Button
             variant="outline"
             size="sm"
+            className="hidden sm:inline-flex"
             onClick={() => setTxDialogOpen(true)}
           >
             <Plus className="mr-2 h-4 w-4" />

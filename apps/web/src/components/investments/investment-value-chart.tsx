@@ -18,7 +18,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { usePortfolioSnapshots } from "@/hooks/use-portfolio-snapshots";
 import { formatCurrency, formatDate } from "@/lib/format";
-import { useIsMobile } from "@/hooks/use-mobile";
 
 const PERIOD_OPTIONS = [
   { value: "1M", label: "1M", months: 1 },
@@ -29,7 +28,7 @@ const PERIOD_OPTIONS = [
 ] as const;
 
 const chartConfig = {
-  net_worth: { label: "Net Worth", color: "var(--chart-1)" },
+  investment_value: { label: "Investment Value", color: "var(--chart-1)" },
 } satisfies ChartConfig;
 
 function getDateRange(months: number) {
@@ -48,8 +47,7 @@ function getDateRange(months: number) {
   };
 }
 
-export function NetWorthChart() {
-  const isMobile = useIsMobile();
+export function InvestmentValueChart() {
   const [period, setPeriod] = useState("1Y");
 
   const { from_date, to_date } = useMemo(() => {
@@ -57,7 +55,7 @@ export function NetWorthChart() {
     return getDateRange(opt?.months ?? 12);
   }, [period]);
 
-  const { data: snapshotsData, isLoading, error } = usePortfolioSnapshots({
+  const { data: snapshotsData, isLoading } = usePortfolioSnapshots({
     from_date,
     to_date,
     page_size: 100, // Backend max is 100
@@ -70,14 +68,9 @@ export function NetWorthChart() {
     return snapshotsData.data
       .map((s) => ({
         date: formatDate(s.recorded_at),
-        net_worth: s.total_net_worth / 100,
+        investment_value: s.investment_value / 100,
       }))
       .reverse();
-  }, [snapshotsData]);
-
-  const latestNetWorth = useMemo(() => {
-    if (!snapshotsData?.data || snapshotsData.data.length === 0) return null;
-    return snapshotsData.data[0].total_net_worth;
   }, [snapshotsData]);
 
   if (isLoading) {
@@ -97,19 +90,19 @@ export function NetWorthChart() {
   return (
     <Card>
       <CardHeader>
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
-            <CardTitle>Net Worth Over Time</CardTitle>
-            <CardDescription>
-              {latestNetWorth !== null
-                ? `Current: ${formatCurrency(latestNetWorth)}`
-                : "Portfolio value over time"}
-            </CardDescription>
+            <CardTitle>Investment Value</CardTitle>
+            <CardDescription>Portfolio value over time</CardDescription>
           </div>
           <Tabs value={period} onValueChange={setPeriod}>
-            <TabsList>
+            <TabsList className="w-full sm:w-auto">
               {PERIOD_OPTIONS.map((opt) => (
-                <TabsTrigger key={opt.value} value={opt.value}>
+                <TabsTrigger 
+                  key={opt.value} 
+                  value={opt.value}
+                  className="flex-1 sm:flex-initial"
+                >
                   {opt.label}
                 </TabsTrigger>
               ))}
@@ -118,13 +111,7 @@ export function NetWorthChart() {
         </div>
       </CardHeader>
       <CardContent>
-        {error ? (
-          <div className="flex flex-col items-center justify-center py-10 text-destructive">
-            <p className="text-sm">
-              Error loading snapshot data: {error instanceof Error ? error.message : "Unknown error"}
-            </p>
-          </div>
-        ) : chartData.length === 0 ? (
+        {chartData.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-10 text-muted-foreground">
             <p className="text-sm">
               No snapshot data available. Snapshots are generated periodically by
@@ -134,12 +121,12 @@ export function NetWorthChart() {
         ) : (
           <ChartContainer
             config={chartConfig}
-            className="h-[180px] md:h-[250px] w-full"
+            className="h-[250px] md:h-[300px] w-full"
           >
             <AreaChart accessibilityLayer data={chartData}>
               <defs>
                 <linearGradient
-                  id="fillNetWorth"
+                  id="fillInvestmentValue"
                   x1="0"
                   y1="0"
                   x2="0"
@@ -147,13 +134,13 @@ export function NetWorthChart() {
                 >
                   <stop
                     offset="0%"
-                    stopColor="var(--color-net_worth)"
-                    stopOpacity={0.4}
+                    stopColor="var(--color-investment_value)"
+                    stopOpacity={0.3}
                   />
                   <stop
                     offset="95%"
-                    stopColor="var(--color-net_worth)"
-                    stopOpacity={0.1}
+                    stopColor="var(--color-investment_value)"
+                    stopOpacity={0.05}
                   />
                 </linearGradient>
               </defs>
@@ -163,7 +150,6 @@ export function NetWorthChart() {
                 tickLine={false}
                 axisLine={false}
                 tickMargin={8}
-                minTickGap={isMobile ? 50 : 30}
               />
               <YAxis
                 hide
@@ -185,9 +171,9 @@ export function NetWorthChart() {
               />
               <Area
                 type="monotone"
-                dataKey="net_worth"
-                stroke="var(--color-net_worth)"
-                fill="url(#fillNetWorth)"
+                dataKey="investment_value"
+                stroke="var(--color-investment_value)"
+                fill="url(#fillInvestmentValue)"
                 strokeWidth={2}
               />
             </AreaChart>
