@@ -1,10 +1,14 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { AppSidebar } from "@/components/layout/app-sidebar";
 import { AppHeader } from "@/components/layout/app-header";
+import {
+  CommandPalette,
+  type CommandPaletteRef,
+} from "@/components/layout/command-palette";
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -15,6 +19,7 @@ export default function DashboardLayout({
 }) {
   const { isLoading, isAuthenticated } = useAuth();
   const router = useRouter();
+  const commandPaletteRef = useRef<CommandPaletteRef>(null);
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
@@ -41,9 +46,12 @@ export default function DashboardLayout({
     <SidebarProvider>
       <AppSidebar />
       <SidebarInset>
-        <AppHeader />
+        <AppHeader
+          onOpenCommandPalette={() => commandPaletteRef.current?.toggle()}
+        />
         <main className="flex-1 overflow-auto p-6">{children}</main>
       </SidebarInset>
+      <CommandPalette ref={commandPaletteRef} />
     </SidebarProvider>
   );
 }
