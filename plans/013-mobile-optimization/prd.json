@@ -495,7 +495,7 @@
   {
     "id": "7.2",
     "category": "component-audit",
-    "passes": false,
+    "passes": true,
     "description": "Verify and fix select component height for touch targets",
     "steps": [
       "Open apps/web/src/components/ui/select.tsx",

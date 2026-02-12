@@ -282,3 +282,11 @@ PROGRESS NOTES:
 - Ensures all text inputs are easily tappable on mobile devices
 - Files: apps/web/src/components/ui/input.tsx
 - Build: ✓ passes
+
+2026-02-12 - Task 7.2 Complete (PRD 7.2)
+- Fixed select component height for proper touch targets
+- Default size: h-9 (36px) → h-10 (40px) to meet minimum
+- Small size: h-8 (32px) → h-9 (36px) acceptable for secondary controls
+- Ensures all select dropdowns are easily tappable on mobile
+- Files: apps/web/src/components/ui/select.tsx
+- Build: ✓ passes
