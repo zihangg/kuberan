@@ -118,7 +118,7 @@
   {
     "id": "2.3",
     "category": "tables-mobile",
-    "passes": false,
+    "passes": true,
     "description": "Create mobile card layout for categories page",
     "steps": [
       "Open apps/web/src/app/(dashboard)/categories/page.tsx",
@@ -150,7 +150,7 @@
   {
     "id": "3.1",
     "category": "charts-responsive",
-    "passes": false,
+    "passes": true,
     "description": "Make dashboard header action buttons stack on mobile",
     "steps": [
       "Open apps/web/src/app/(dashboard)/page.tsx",

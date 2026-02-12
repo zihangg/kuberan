@@ -360,7 +360,7 @@ export default function DashboardPage() {
             ? `Welcome back, ${user.first_name}`
             : "Dashboard"}
         </h1>
-        <div className="flex gap-2">
+        <div className="flex flex-col sm:flex-row gap-2">
           <Button asChild variant="outline" size="sm">
             <Link href="/accounts">
               <Wallet className="mr-2 h-4 w-4" />

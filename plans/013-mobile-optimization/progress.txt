@@ -13,7 +13,7 @@ TARGET BREAKPOINTS:
 
 PHASES:
 [X] Phase 1: Foundation & Core Layout (CRITICAL)
-[ ] Phase 2: Table to Card/List Conversions (HIGH)
+[X] Phase 2: Table to Card/List Conversions (HIGH)
 [ ] Phase 3: Dashboard & Chart Responsiveness (HIGH)
 [ ] Phase 4: Dialogs & Forms (HIGH)
 [ ] Phase 5: Detail Pages (MEDIUM)
@@ -52,4 +52,21 @@ PROGRESS NOTES:
 - Pagination: icon-only on mobile (<sm), text visible on sm+
 - Updated TransactionsTableSkeleton: list skeletons on mobile (h-20), table skeleton on desktop
 - Files: apps/web/src/app/(dashboard)/transactions/page.tsx
+- Build: ✓ passes
+
+2026-02-12 - Task 2.3 Complete (PRD 2.3)
+- Created CategoryCard: name (with child indentation pl-4), type badge (Income/Expense), color circle, icon, description
+- Card shows edit/delete buttons: outline variant, flex-1 layout, full width on mobile
+- Responsive rendering: md:hidden for mobile cards grid, hidden md:block for desktop table
+- Updated CategoriesTableSkeleton: h-32 card skeletons on mobile, table skeleton on desktop
+- Pattern: hover:bg-accent/50, truncate long text, preserve parent/child hierarchy from treeOrder()
+- Files: apps/web/src/app/(dashboard)/categories/page.tsx
+- Build: ✓ passes
+
+2026-02-12 - Task 3.1 Complete (PRD 3.1)
+- Updated dashboard header action buttons to stack on mobile
+- Changed container from "flex gap-2" to "flex flex-col sm:flex-row gap-2"
+- Buttons stack vertically on <sm (< 640px), horizontal on sm+ (≥ 640px)
+- Icon spacing already correct with mr-2 on icons
+- Files: apps/web/src/app/(dashboard)/page.tsx
 - Build: ✓ passes
