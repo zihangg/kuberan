@@ -155,7 +155,7 @@ export function EditAccountDialog({
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+        <form onSubmit={handleSubmit} className="flex flex-col gap-5">
           <div className="flex flex-col gap-2">
             <Label>Type</Label>
             <div className="flex items-center gap-2">

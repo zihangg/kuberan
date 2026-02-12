@@ -283,7 +283,7 @@
   {
     "id": "4.4",
     "category": "dialogs-forms",
-    "passes": false,
+    "passes": true,
     "description": "Optimize account dialogs for mobile",
     "steps": [
       "Open apps/web/src/components/accounts/create-account-dialog.tsx",

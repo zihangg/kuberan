@@ -260,7 +260,7 @@ export function CreateAccountDialog({
           </TabsList>
 
           <TabsContent value="cash">
-            <form onSubmit={handleSubmitCash} className="flex flex-col gap-4">
+            <form onSubmit={handleSubmitCash} className="flex flex-col gap-5">
               <div className="flex flex-col gap-2">
                 <Label htmlFor="cash-name">Name</Label>
                 <Input
@@ -323,7 +323,7 @@ export function CreateAccountDialog({
           <TabsContent value="investment">
             <form
               onSubmit={handleSubmitInvestment}
-              className="flex flex-col gap-4"
+              className="flex flex-col gap-5"
             >
               <div className="flex flex-col gap-2">
                 <Label htmlFor="invest-name">Name</Label>
@@ -399,7 +399,7 @@ export function CreateAccountDialog({
           <TabsContent value="credit-card">
             <form
               onSubmit={handleSubmitCreditCard}
-              className="flex flex-col gap-4"
+              className="flex flex-col gap-5"
             >
               <div className="flex flex-col gap-2">
                 <Label htmlFor="cc-name">Name</Label>
