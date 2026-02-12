@@ -309,7 +309,7 @@
   {
     "id": "4.6",
     "category": "dialogs-forms",
-    "passes": false,
+    "passes": true,
     "description": "Optimize category dialogs for mobile",
     "steps": [
       "Open apps/web/src/components/categories/create-category-dialog.tsx",

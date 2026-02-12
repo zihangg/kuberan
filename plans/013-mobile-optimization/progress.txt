@@ -156,3 +156,11 @@ PROGRESS NOTES:
 - Note: Period selector (Monthly/Yearly) uses Select dropdown, no button stacking needed
 - Files: create-budget-dialog.tsx, edit-budget-dialog.tsx
 - Build: ✓ passes
+
+2026-02-12 - Task 4.6 Complete (PRD 4.6)
+- Optimized category dialogs for mobile
+- Create category: Form gap-4 → gap-5
+- Edit category: Form gap-4 → gap-5
+- Note: Type selector (Income/Expense) uses Select dropdown in create, read-only Badge in edit
+- Files: create-category-dialog.tsx, edit-category-dialog.tsx
+- Build: ✓ passes
