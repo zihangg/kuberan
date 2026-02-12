@@ -119,8 +119,11 @@
 @layer base {
   * {
     @apply border-border outline-ring/50;
+    touch-action: manipulation; /* Eliminate 300ms tap delay */
   }
   body {
     @apply bg-background text-foreground;
+    overscroll-behavior-y: contain; /* Prevent pull-to-refresh */
+    overflow-x: hidden; /* Prevent horizontal scroll */
   }
 }
