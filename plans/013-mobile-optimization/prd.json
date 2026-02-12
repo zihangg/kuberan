@@ -271,7 +271,7 @@
   {
     "id": "4.3",
     "category": "dialogs-forms",
-    "passes": false,
+    "passes": true,
     "description": "Apply same mobile optimizations to edit transaction dialog",
     "steps": [
       "Open apps/web/src/components/transactions/edit-transaction-dialog.tsx",

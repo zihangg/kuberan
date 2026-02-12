@@ -132,3 +132,11 @@ PROGRESS NOTES:
 - Buttons (Expense, Income, Transfer) stack vertically on mobile (<640px)
 - Files: apps/web/src/components/transactions/create-transaction-dialog.tsx
 - Build: ✓ passes
+
+2026-02-12 - Task 4.3 Complete (PRD 4.3)
+- Applied same mobile optimizations to edit transaction dialog
+- Type buttons (Expense, Income): "flex gap-2" → "flex flex-col sm:flex-row gap-2"
+- Form gap: gap-4 → gap-5 (20px spacing)
+- Note: Edit dialog only has 2 type buttons (no Transfer option), pattern identical to create dialog
+- Files: apps/web/src/components/transactions/edit-transaction-dialog.tsx
+- Build: ✓ passes
