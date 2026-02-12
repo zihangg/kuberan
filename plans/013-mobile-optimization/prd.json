@@ -557,7 +557,7 @@
   {
     "id": "7.7",
     "category": "component-audit",
-    "passes": false,
+    "passes": true,
     "description": "Verify tooltip component not used for critical mobile interactions",
     "steps": [
       "Open apps/web/src/components/ui/tooltip.tsx",

@@ -320,3 +320,11 @@ PROGRESS NOTES:
 - No code changes needed
 - Files: apps/web/src/components/ui/badge.tsx (no changes)
 - Status: ✓ verified
+
+2026-02-12 - Task 7.7 Complete (PRD 7.7) - Verification Only
+- Verified tooltip component not used for critical mobile interactions
+- Guideline documented: Tooltips for supplementary info only, not primary interactions
+- Hover doesn't work on mobile, so critical actions must have visible labels
+- Implementation is standard Radix UI wrapper, no issues found
+- Files: apps/web/src/components/ui/tooltip.tsx (no changes)
+- Status: ✓ verified
