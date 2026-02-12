@@ -16,8 +16,8 @@ PHASES:
 [X] Phase 2: Table to Card/List Conversions (HIGH)
 [X] Phase 3: Dashboard & Chart Responsiveness (HIGH)
 [X] Phase 4: Dialogs & Forms (HIGH)
-[ ] Phase 5: Detail Pages (MEDIUM)
-[ ] Phase 6: Remaining Pages (MEDIUM)
+[X] Phase 5: Detail Pages (MEDIUM)
+[X] Phase 6: Remaining Pages (MEDIUM)
 [ ] Phase 7: Component Audit (MEDIUM)
 [ ] Phase 8: Final Verification & Testing (CRITICAL)
 
@@ -216,3 +216,69 @@ PROGRESS NOTES:
 - Files: apps/web/src/app/(dashboard)/investments/[id]/page.tsx
 - Build: ✓ passes
 
+2026-02-12 - Task 5.3 Complete (PRD 5.3)
+- Optimized security detail page for mobile
+- Header: Stacked vertically on mobile (flex-col sm:flex-row), badge self-start to align left
+- Info cards grid: Changed to grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 with gap-3 (was sm:grid-cols-2)
+- Price history header: Stacked on mobile (flex-col sm:flex-row sm:justify-between)
+- Period tabs: Full width on mobile (w-full sm:w-auto), equal width triggers (flex-1 sm:flex-initial)
+- Pagination: Icon-only on mobile (<sm), text visible on sm+ (same pattern as account/investment detail)
+- Skeleton: Updated grid to match (grid-cols-1 sm:grid-cols-2)
+- Note: No price chart present (just table), no related investments list (skipped per plan notes)
+- Files: apps/web/src/app/(dashboard)/securities/[id]/page.tsx
+- Build: ✓ passes
+
+2026-02-12 - Task 5.4 Complete (PRD 5.4) - Phase 5 Verification
+- All Phase 5 tasks complete (5.1-5.3)
+- Build: ✓ passes (pnpm build successful)
+- Account detail: ✓ header stacks, action buttons stack, mobile transaction list
+- Investment detail: ✓ stats in 2-col grid, action buttons in 2-col grid, mobile list
+- Security detail: ✓ header stacks, info cards single column on mobile, tabs full-width
+- Pagination: ✓ icon-only on mobile across all detail pages
+- Phase 5 complete: All detail pages now mobile-optimized
+
+2026-02-12 - Task 6.1 Complete (PRD 6.1)
+- Optimized budgets page filters for mobile
+- Filter controls: Stacked on mobile (flex-col sm:flex-row, items-start sm:items-center, gap-3 sm:gap-4)
+- Period select: Full width on mobile (w-full sm:w-[140px])
+- Card action buttons: Removed h-8 w-8 override, now use size="icon" (44px minimum from Phase 1)
+- Edit/Delete buttons now meet 44px touch target minimum
+- Files: apps/web/src/app/(dashboard)/budgets/page.tsx
+- Build: ✓ passes
+
+2026-02-12 - Task 6.2 Complete (PRD 6.2)
+- Optimized investments page for mobile
+- Asset allocation chart: max-h-[200px] md:max-h-[250px], center label text-sm md:text-base
+- Net worth chart: h-[250px] md:h-[300px], period tabs full-width on mobile (w-full sm:w-auto)
+- Holdings by asset type: Mobile cards (md:hidden) + desktop table (hidden md:block)
+- Created HoldingCard component: symbol/name, market value, qty/price grid, unrealized/realized G/L, account link
+- All holdings table: Mobile cards + desktop sortable table, card/table skeletons
+- Pagination: Icon-only on mobile (<sm), text visible on sm+
+- Files: apps/web/src/app/(dashboard)/investments/page.tsx, apps/web/src/components/investments/asset-allocation-chart.tsx
+- Build: ✓ passes
+
+2026-02-12 - Task 6.3 Complete (PRD 6.3)
+- Optimized securities page for mobile
+- Created SecurityCard component: symbol (font-mono), name, type badge (secondary), currency + exchange (if available)
+- Mobile card grid: md:hidden grid gap-3
+- Desktop table: hidden md:block (unchanged from existing)
+- Updated SecuritiesTableSkeleton: h-32 card skeletons on mobile (md:hidden), table skeleton on desktop (hidden md:block)
+- Pagination: Icon-only on mobile (<sm), text visible on sm+
+- Note: No price display in list view (Security model has no current_price, prices from separate API)
+- Files: apps/web/src/app/(dashboard)/securities/page.tsx
+- Build: ✓ passes
+
+2026-02-12 - Task 6.4 Complete (PRD 6.4) - Phase 6 Verification
+- All Phase 6 tasks complete (6.1-6.3)
+- Build: ✓ passes (pnpm build successful)
+- Budgets page: ✓ filters stack, period select full-width mobile, action buttons 44px
+- Investments page: ✓ charts reduced height, holdings show as cards on mobile
+- Securities page: ✓ securities show as cards on mobile, pagination icon-only
+- Phase 6 complete: All remaining pages now mobile-optimized
+
+2026-02-12 - Task 7.1 Complete (PRD 7.1)
+- Fixed input component height for proper touch targets
+- Changed h-9 (36px) → h-10 (40px) to meet 40px minimum
+- Ensures all text inputs are easily tappable on mobile devices
+- Files: apps/web/src/components/ui/input.tsx
+- Build: ✓ passes
