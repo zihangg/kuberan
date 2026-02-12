@@ -65,7 +65,7 @@ function SecurityDetailSkeleton() {
         <Skeleton className="h-8 w-64" />
         <Skeleton className="h-6 w-48" />
       </div>
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
         <Skeleton className="h-24" />
         <Skeleton className="h-24" />
         <Skeleton className="h-24" />
@@ -131,10 +131,10 @@ export default function SecurityDetailPage() {
       </Button>
 
       {/* Header */}
-      <div className="space-y-1">
-        <div className="flex items-center gap-3">
+      <div className="space-y-2">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
           <h1 className="text-2xl font-bold font-mono">{security.symbol}</h1>
-          <Badge variant="outline">
+          <Badge variant="outline" className="self-start">
             {ASSET_TYPE_LABELS[assetType] ?? security.asset_type}
           </Badge>
         </div>
@@ -142,7 +142,7 @@ export default function SecurityDetailPage() {
       </div>
 
       {/* Info cards */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
         <Card>
           <CardHeader className="pb-2">
             <CardDescription>Currency</CardDescription>
@@ -217,7 +217,7 @@ export default function SecurityDetailPage() {
       {/* Price History */}
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div>
               <CardTitle>Price History</CardTitle>
               <CardDescription>
@@ -231,11 +231,11 @@ export default function SecurityDetailPage() {
                 setPricePage(1);
               }}
             >
-              <TabsList>
-                <TabsTrigger value="1M">1M</TabsTrigger>
-                <TabsTrigger value="3M">3M</TabsTrigger>
-                <TabsTrigger value="6M">6M</TabsTrigger>
-                <TabsTrigger value="1Y">1Y</TabsTrigger>
+              <TabsList className="w-full sm:w-auto">
+                <TabsTrigger value="1M" className="flex-1 sm:flex-initial">1M</TabsTrigger>
+                <TabsTrigger value="3M" className="flex-1 sm:flex-initial">3M</TabsTrigger>
+                <TabsTrigger value="6M" className="flex-1 sm:flex-initial">6M</TabsTrigger>
+                <TabsTrigger value="1Y" className="flex-1 sm:flex-initial">1Y</TabsTrigger>
               </TabsList>
             </Tabs>
           </div>
@@ -289,7 +289,7 @@ export default function SecurityDetailPage() {
                       onClick={() => setPricePage((p) => p - 1)}
                     >
                       <ChevronLeft className="h-4 w-4" />
-                      Previous
+                      <span className="ml-1 hidden sm:inline">Previous</span>
                     </Button>
                     <Button
                       variant="outline"
@@ -297,7 +297,7 @@ export default function SecurityDetailPage() {
                       disabled={pricePage >= priceTotalPages}
                       onClick={() => setPricePage((p) => p + 1)}
                     >
-                      Next
+                      <span className="mr-1 hidden sm:inline">Next</span>
                       <ChevronRight className="h-4 w-4" />
                     </Button>
                   </div>
