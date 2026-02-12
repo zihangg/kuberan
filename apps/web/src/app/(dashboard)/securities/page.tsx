@@ -1,12 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ChevronLeft, ChevronRight, Search } from "lucide-react";
 
 import { useSecurities } from "@/hooks/use-securities";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -31,12 +33,59 @@ const PAGE_SIZE = 20;
 
 function SecuritiesTableSkeleton() {
   return (
-    <div className="space-y-3">
-      <Skeleton className="h-10 w-full" />
-      {Array.from({ length: 8 }).map((_, i) => (
-        <Skeleton key={i} className="h-12 w-full" />
-      ))}
-    </div>
+    <>
+      {/* Mobile: Card skeletons */}
+      <div className="md:hidden grid gap-3">
+        {Array.from({ length: 8 }).map((_, i) => (
+          <Skeleton key={i} className="h-32 w-full rounded-lg" />
+        ))}
+      </div>
+
+      {/* Desktop: Table skeleton */}
+      <div className="hidden md:block space-y-3">
+        <Skeleton className="h-10 w-full" />
+        {Array.from({ length: 8 }).map((_, i) => (
+          <Skeleton key={i} className="h-12 w-full" />
+        ))}
+      </div>
+    </>
+  );
+}
+
+function SecurityCard({ security }: { security: Security }) {
+  const assetType = security.asset_type.toLowerCase() as AssetType;
+
+  return (
+    <Link href={`/securities/${security.id}`}>
+      <Card className="transition-colors hover:bg-accent/50 cursor-pointer">
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between gap-2">
+            <div className="min-w-0 flex-1">
+              <CardTitle className="text-base font-mono truncate">
+                {security.symbol}
+              </CardTitle>
+              <p className="text-sm text-muted-foreground truncate">
+                {security.name}
+              </p>
+            </div>
+            <Badge variant="secondary" className="shrink-0">
+              {ASSET_TYPE_LABELS[assetType] ?? security.asset_type}
+            </Badge>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <span>{security.currency}</span>
+            {security.exchange && (
+              <>
+                <span>·</span>
+                <span>{security.exchange}</span>
+              </>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+    </Link>
   );
 }
 
@@ -123,26 +172,36 @@ export default function SecuritiesPage() {
         </div>
       ) : (
         <>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Symbol</TableHead>
-                <TableHead>Name</TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead>Currency</TableHead>
-                <TableHead>Exchange</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {securities.map((security) => (
-                <SecurityRow
-                  key={security.id}
-                  security={security}
-                  onClick={() => router.push(`/securities/${security.id}`)}
-                />
-              ))}
-            </TableBody>
-          </Table>
+          {/* Mobile: Card grid */}
+          <div className="md:hidden grid gap-3">
+            {securities.map((security) => (
+              <SecurityCard key={security.id} security={security} />
+            ))}
+          </div>
+
+          {/* Desktop: Table */}
+          <div className="hidden md:block">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Symbol</TableHead>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead>Currency</TableHead>
+                  <TableHead>Exchange</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {securities.map((security) => (
+                  <SecurityRow
+                    key={security.id}
+                    security={security}
+                    onClick={() => router.push(`/securities/${security.id}`)}
+                  />
+                ))}
+              </TableBody>
+            </Table>
+          </div>
 
           {totalPages > 1 && (
             <div className="flex items-center justify-between">
@@ -157,7 +216,7 @@ export default function SecuritiesPage() {
                   onClick={() => setPage((p) => p - 1)}
                 >
                   <ChevronLeft className="h-4 w-4" />
-                  Previous
+                  <span className="ml-1 hidden sm:inline">Previous</span>
                 </Button>
                 <Button
                   variant="outline"
@@ -165,7 +224,7 @@ export default function SecuritiesPage() {
                   disabled={page >= totalPages}
                   onClick={() => setPage((p) => p + 1)}
                 >
-                  Next
+                  <span className="mr-1 hidden sm:inline">Next</span>
                   <ChevronRight className="h-4 w-4" />
                 </Button>
               </div>
