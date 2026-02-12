@@ -189,7 +189,7 @@
   {
     "id": "3.4",
     "category": "charts-responsive",
-    "passes": false,
+    "passes": true,
     "description": "Make spending trend area chart responsive for mobile",
     "steps": [
       "Open apps/web/src/components/dashboard/spending-trend-chart.tsx",

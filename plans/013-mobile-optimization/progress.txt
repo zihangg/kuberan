@@ -87,3 +87,12 @@ PROGRESS NOTES:
 - No YAxis present in this chart (not applicable from plan)
 - Files: apps/web/src/components/dashboard/income-expenses-chart.tsx
 - Build: ✓ passes
+
+2026-02-12 - Task 3.4 Complete (PRD 3.4)
+- Made spending trend area chart responsive for mobile
+- Added useIsMobile hook import and usage
+- ChartContainer: min-h-[200px] → h-[250px] md:h-[300px] (responsive height)
+- XAxis: added minTickGap={isMobile ? 50 : 30} to prevent label overlap on mobile
+- Wider tick spacing on mobile prevents date labels from overlapping
+- Files: apps/web/src/components/dashboard/spending-trend-chart.tsx
+- Build: ✓ passes

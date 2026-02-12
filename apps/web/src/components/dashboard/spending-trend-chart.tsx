@@ -24,6 +24,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { useDailySpending } from "@/hooks/use-transactions";
 import { formatCurrency } from "@/lib/format";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 const chartConfig = {
   daily: { label: "Daily", color: "var(--chart-2)" },
@@ -31,6 +32,7 @@ const chartConfig = {
 } satisfies ChartConfig;
 
 export function SpendingTrendChart() {
+  const isMobile = useIsMobile();
   const { fromDate, toDate, monthLabel } = useMemo(() => {
     const now = new Date();
     const year = now.getFullYear();
@@ -120,7 +122,7 @@ export function SpendingTrendChart() {
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <ChartContainer config={chartConfig} className="min-h-[200px] w-full">
+        <ChartContainer config={chartConfig} className="h-[250px] md:h-[300px] w-full">
           <ComposedChart accessibilityLayer data={chartData}>
             <defs>
               <linearGradient
@@ -149,6 +151,7 @@ export function SpendingTrendChart() {
               axisLine={false}
               tickMargin={8}
               domain={["1", lastDay]}
+              minTickGap={isMobile ? 50 : 30}
             />
             <YAxis yAxisId="cumulative" hide />
             <YAxis yAxisId="daily" hide />
