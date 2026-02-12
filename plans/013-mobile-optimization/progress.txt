@@ -96,3 +96,12 @@ PROGRESS NOTES:
 - Wider tick spacing on mobile prevents date labels from overlapping
 - Files: apps/web/src/components/dashboard/spending-trend-chart.tsx
 - Build: ✓ passes
+
+2026-02-12 - Task 3.5 Complete (PRD 3.5)
+- Made net worth area chart responsive for mobile (same pattern as 3.4)
+- Added useIsMobile hook import and usage
+- ChartContainer: min-h-[300px] → h-[250px] md:h-[300px] (responsive height)
+- XAxis: added minTickGap={isMobile ? 50 : 30} to prevent date label overlap
+- Ensures chart readable on mobile with proper tick spacing
+- Files: apps/web/src/components/dashboard/net-worth-chart.tsx
+- Build: ✓ passes

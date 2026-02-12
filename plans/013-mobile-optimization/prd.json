@@ -203,7 +203,7 @@
   {
     "id": "3.5",
     "category": "charts-responsive",
-    "passes": false,
+    "passes": true,
     "description": "Make net worth area chart responsive for mobile",
     "steps": [
       "Open apps/web/src/components/dashboard/net-worth-chart.tsx",

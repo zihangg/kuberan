@@ -18,6 +18,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { usePortfolioSnapshots } from "@/hooks/use-portfolio-snapshots";
 import { formatCurrency, formatDate } from "@/lib/format";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 const PERIOD_OPTIONS = [
   { value: "1M", label: "1M", months: 1 },
@@ -42,6 +43,7 @@ function getDateRange(months: number) {
 }
 
 export function NetWorthChart() {
+  const isMobile = useIsMobile();
   const [period, setPeriod] = useState("1Y");
 
   const { from_date, to_date } = useMemo(() => {
@@ -116,7 +118,7 @@ export function NetWorthChart() {
         ) : (
           <ChartContainer
             config={chartConfig}
-            className="min-h-[300px] w-full"
+            className="h-[250px] md:h-[300px] w-full"
           >
             <AreaChart accessibilityLayer data={chartData}>
               <defs>
@@ -145,6 +147,7 @@ export function NetWorthChart() {
                 tickLine={false}
                 axisLine={false}
                 tickMargin={8}
+                minTickGap={isMobile ? 50 : 30}
               />
               <YAxis
                 hide
