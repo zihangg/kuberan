@@ -164,7 +164,7 @@
   {
     "id": "3.2",
     "category": "charts-responsive",
-    "passes": false,
+    "passes": true,
     "description": "Make expenditure donut chart responsive for mobile",
     "steps": [
       "Open apps/web/src/components/dashboard/expenditure-chart.tsx",

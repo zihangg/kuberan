@@ -70,3 +70,12 @@ PROGRESS NOTES:
 - Icon spacing already correct with mr-2 on icons
 - Files: apps/web/src/app/(dashboard)/page.tsx
 - Build: ✓ passes
+
+2026-02-12 - Task 3.2 Complete (PRD 3.2)
+- Made expenditure donut chart responsive for mobile screens
+- ChartContainer: max-h-[250px] → max-h-[200px] md:max-h-[250px] (reduced on mobile)
+- Center total label: text-base → text-sm md:text-base (smaller on mobile)
+- "This Month" label: text-xs → text-[10px] md:text-xs (smaller on mobile)
+- Chart now readable on 375px-768px breakpoints
+- Files: apps/web/src/components/dashboard/expenditure-chart.tsx
+- Build: ✓ passes
