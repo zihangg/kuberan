@@ -5,6 +5,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 
 	apperrors "kuberan/internal/errors"
@@ -498,6 +499,29 @@ var categoryColorPalette = []string{
 	"#A855F7", // purple
 }
 
+// getCategoryColorFromID returns a deterministic color for a UUID using FNV-1a hash.
+// This provides better distribution than string-based rolling hashes, reducing color collisions.
+func getCategoryColorFromID(id string) string {
+	// Parse UUID to get raw bytes for better distribution
+	parsed, err := uuid.Parse(id)
+	if err != nil {
+		// Fallback to default gray if UUID parsing fails
+		return "#9CA3AF"
+	}
+
+	// FNV-1a hash for better distribution
+	const fnvOffset uint64 = 14695981039346656037
+	const fnvPrime uint64 = 1099511628211
+
+	hash := fnvOffset
+	for _, b := range parsed[:] {
+		hash ^= uint64(b)
+		hash *= fnvPrime
+	}
+
+	return categoryColorPalette[hash%uint64(len(categoryColorPalette))]
+}
+
 // GetSpendingByCategory returns expense totals grouped by category for a date range.
 func (s *transactionService) GetSpendingByCategory(userID string, from, to time.Time) (*SpendingByCategory, error) {
 	type categorySpend struct {
@@ -534,13 +558,9 @@ func (s *transactionService) GetSpendingByCategory(userID string, from, to time.
 				item.CategoryName = category.Name
 				item.CategoryColor = category.Color
 				item.CategoryIcon = category.Icon
-				// Use hash of UUID for deterministic color if category has no color set
+				// Use hash of UUID bytes for deterministic color if category has no color set
 				if item.CategoryColor == "" {
-					hash := 0
-					for _, c := range *r.CategoryID {
-						hash = hash*31 + int(c)
-					}
-					item.CategoryColor = categoryColorPalette[hash%len(categoryColorPalette)]
+					item.CategoryColor = getCategoryColorFromID(*r.CategoryID)
 				}
 			}
 		} else {

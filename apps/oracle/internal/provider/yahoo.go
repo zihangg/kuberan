@@ -135,7 +135,7 @@ func (p *YahooProvider) FetchPrices(ctx context.Context, securities []Security) 
 }
 
 // fetchOne fetches the price for a single ticker from the Yahoo v8 chart endpoint.
-func (p *YahooProvider) fetchOne(ctx context.Context, ticker string, secID uint, now time.Time) (*PriceResult, error) {
+func (p *YahooProvider) fetchOne(ctx context.Context, ticker string, secID string, now time.Time) (*PriceResult, error) {
 	url := p.baseURL + "/" + ticker + "?interval=1d&range=1d"
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)

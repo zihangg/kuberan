@@ -76,7 +76,7 @@ func (s *investmentService) AddInvestment(
 
 	// Verify security exists
 	var security models.Security
-	if err := s.db.First(&security, securityID).Error; err != nil {
+	if err := s.db.Where("id = ?", securityID).First(&security).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, apperrors.ErrSecurityNotFound
 		}
@@ -229,7 +229,7 @@ func (s *investmentService) GetAllInvestments(userID string, page pagination.Pag
 // GetInvestmentByID returns an investment if the parent account belongs to the user.
 func (s *investmentService) GetInvestmentByID(userID, investmentID string) (*models.Investment, error) {
 	var investment models.Investment
-	if err := s.db.Preload("Account").Preload("Security").First(&investment, investmentID).Error; err != nil {
+	if err := s.db.Preload("Account").Preload("Security").Where("id = ?", investmentID).First(&investment).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, apperrors.ErrInvestmentNotFound
 		}

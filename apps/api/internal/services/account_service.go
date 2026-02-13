@@ -225,7 +225,7 @@ func (s *accountService) UpdateAccount(userID, accountID string, fields AccountU
 			return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
 		}
 		// Reload to get fresh data
-		if err := s.db.First(account, account.ID).Error; err != nil {
+		if err := s.db.Where("id = ?", account.ID).First(account).Error; err != nil {
 			return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
 		}
 	}

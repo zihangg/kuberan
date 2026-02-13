@@ -3,6 +3,7 @@ package oracle
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"strings"
@@ -107,11 +108,11 @@ func TestOracle_Run_FullFlow(t *testing.T) {
 	mc := &mockClient{
 		getSecuritiesFn: func(_ context.Context) ([]client.Security, error) {
 			return []client.Security{
-				{ID: 1, Symbol: "AAPL", AssetType: "stock", Currency: "USD", Exchange: "NASDAQ"},
-				{ID: 2, Symbol: "MSFT", AssetType: "stock", Currency: "USD", Exchange: "NASDAQ"},
-				{ID: 3, Symbol: "CIMB", AssetType: "stock", Currency: "MYR", Exchange: "BURSA", ProviderSymbol: "1023.KL"},
-				{ID: 4, Symbol: "BTC", AssetType: "crypto", Currency: "USD"},
-				{ID: 5, Symbol: "ETH", AssetType: "crypto", Currency: "USD"},
+				{ID: "sec-1", Symbol: "AAPL", AssetType: "stock", Currency: "USD", Exchange: "NASDAQ"},
+				{ID: "sec-2", Symbol: "MSFT", AssetType: "stock", Currency: "USD", Exchange: "NASDAQ"},
+				{ID: "sec-3", Symbol: "CIMB", AssetType: "stock", Currency: "MYR", Exchange: "BURSA", ProviderSymbol: "1023.KL"},
+				{ID: "sec-4", Symbol: "BTC", AssetType: "crypto", Currency: "USD"},
+				{ID: "sec-5", Symbol: "ETH", AssetType: "crypto", Currency: "USD"},
 			}, nil
 		},
 		recordPricesFn: func(_ context.Context, prices []client.RecordPriceEntry) (int, error) {
@@ -140,7 +141,7 @@ func TestOracle_Run_FullFlow(t *testing.T) {
 				if s.Exchange == "BURSA" {
 					currency = "MYR"
 				}
-				results[i] = provider.PriceResult{SecurityID: s.ID, Price: 10000 + int64(s.ID)*100, Currency: currency, RecordedAt: now}
+				results[i] = provider.PriceResult{SecurityID: s.ID, Price: 10000 + int64(i+1)*100, Currency: currency, RecordedAt: now}
 			}
 			return results, nil
 		},
@@ -153,7 +154,10 @@ func TestOracle_Run_FullFlow(t *testing.T) {
 		fetchPrices: func(_ context.Context, secs []provider.Security) ([]provider.PriceResult, []provider.FetchError) {
 			results := make([]provider.PriceResult, len(secs))
 			for i, s := range secs {
-				results[i] = provider.PriceResult{SecurityID: s.ID, Price: 500000 + int64(s.ID)*1000, Currency: "MYR", RecordedAt: now}
+				// Extract numeric ID from "sec-N" format for consistent test prices
+				var idNum int64
+				_, _ = fmt.Sscanf(s.ID, "sec-%d", &idNum)
+				results[i] = provider.PriceResult{SecurityID: s.ID, Price: 500000 + idNum*1000, Currency: "MYR", RecordedAt: now}
 			}
 			return results, nil
 		},
@@ -194,23 +198,23 @@ func TestOracle_Run_FullFlow(t *testing.T) {
 	// Verify that USD prices were converted (multiplied by 4.47) and MYR prices were not.
 	for _, p := range recordedPrices {
 		switch p.SecurityID {
-		case 1: // AAPL (USD stock): original = 10000 + 1*100 = 10100 → 10100 * 4.47 = 45147
+		case "sec-1": // AAPL (USD stock): original = 10000 + 1*100 = 10100 → 10100 * 4.47 = 45147
 			if p.Price != 45147 {
 				t.Errorf("AAPL price = %d, want 45147 (USD converted to MYR)", p.Price)
 			}
-		case 2: // MSFT (USD stock): original = 10000 + 2*100 = 10200 → 10200 * 4.47 = 45594
+		case "sec-2": // MSFT (USD stock): original = 10000 + 2*100 = 10200 → 10200 * 4.47 = 45594
 			if p.Price != 45594 {
 				t.Errorf("MSFT price = %d, want 45594 (USD converted to MYR)", p.Price)
 			}
-		case 3: // CIMB (MYR stock): original = 10000 + 3*100 = 10300 → no conversion
+		case "sec-3": // CIMB (MYR stock): original = 10000 + 3*100 = 10300 → no conversion
 			if p.Price != 10300 {
 				t.Errorf("CIMB price = %d, want 10300 (MYR, no conversion)", p.Price)
 			}
-		case 4: // BTC (MYR from CoinGecko): original = 500000 + 4*1000 = 504000 → no conversion
+		case "sec-4": // BTC (MYR from CoinGecko): original = 500000 + 4*1000 = 504000 → no conversion
 			if p.Price != 504000 {
 				t.Errorf("BTC price = %d, want 504000 (MYR from CoinGecko, no conversion)", p.Price)
 			}
-		case 5: // ETH (MYR from CoinGecko): original = 500000 + 5*1000 = 505000 → no conversion
+		case "sec-5": // ETH (MYR from CoinGecko): original = 500000 + 5*1000 = 505000 → no conversion
 			if p.Price != 505000 {
 				t.Errorf("ETH price = %d, want 505000 (MYR from CoinGecko, no conversion)", p.Price)
 			}
@@ -224,11 +228,11 @@ func TestOracle_Run_PartialProviderFailure(t *testing.T) {
 	mc := &mockClient{
 		getSecuritiesFn: func(_ context.Context) ([]client.Security, error) {
 			return []client.Security{
-				{ID: 1, Symbol: "AAPL", AssetType: "stock", Currency: "USD"},
-				{ID: 2, Symbol: "MSFT", AssetType: "stock", Currency: "USD"},
-				{ID: 3, Symbol: "FAIL", AssetType: "stock", Currency: "USD"},
-				{ID: 4, Symbol: "BTC", AssetType: "crypto", Currency: "USD"},
-				{ID: 5, Symbol: "ETH", AssetType: "crypto", Currency: "USD"},
+				{ID: "sec-1", Symbol: "AAPL", AssetType: "stock", Currency: "USD"},
+				{ID: "sec-2", Symbol: "MSFT", AssetType: "stock", Currency: "USD"},
+				{ID: "sec-3", Symbol: "FAIL", AssetType: "stock", Currency: "USD"},
+				{ID: "sec-4", Symbol: "BTC", AssetType: "crypto", Currency: "USD"},
+				{ID: "sec-5", Symbol: "ETH", AssetType: "crypto", Currency: "USD"},
 			}, nil
 		},
 		recordPricesFn: func(_ context.Context, prices []client.RecordPriceEntry) (int, error) {
@@ -364,9 +368,9 @@ func TestOracle_Run_MixedCaseAssetTypes(t *testing.T) {
 	mc := &mockClient{
 		getSecuritiesFn: func(_ context.Context) ([]client.Security, error) {
 			return []client.Security{
-				{ID: 1, Symbol: "AAPL", AssetType: "Stock", Currency: "USD"},
-				{ID: 2, Symbol: "VWRA", AssetType: "ETF", Currency: "USD"},
-				{ID: 3, Symbol: "BTC", AssetType: "Cryptocurrency", Currency: "USD"},
+				{ID: "sec-1", Symbol: "AAPL", AssetType: "Stock", Currency: "USD"},
+				{ID: "sec-2", Symbol: "VWRA", AssetType: "ETF", Currency: "USD"},
+				{ID: "sec-3", Symbol: "BTC", AssetType: "Cryptocurrency", Currency: "USD"},
 			}, nil
 		},
 		recordPricesFn: func(_ context.Context, prices []client.RecordPriceEntry) (int, error) {
@@ -426,7 +430,7 @@ func TestOracle_Run_UnsupportedAssetType(t *testing.T) {
 	mc := &mockClient{
 		getSecuritiesFn: func(_ context.Context) ([]client.Security, error) {
 			return []client.Security{
-				{ID: 1, Symbol: "BOND1", AssetType: "bond", Currency: "USD"},
+				{ID: "sec-1", Symbol: "BOND1", AssetType: "bond", Currency: "USD"},
 			}, nil
 		},
 		recordPricesFn: func(_ context.Context, _ []client.RecordPriceEntry) (int, error) {
@@ -495,7 +499,7 @@ func TestOracle_Run_RecordPricesFails(t *testing.T) {
 	mc := &mockClient{
 		getSecuritiesFn: func(_ context.Context) ([]client.Security, error) {
 			return []client.Security{
-				{ID: 1, Symbol: "AAPL", AssetType: "stock", Currency: "USD"},
+				{ID: "sec-1", Symbol: "AAPL", AssetType: "stock", Currency: "USD"},
 			}, nil
 		},
 		recordPricesFn: func(_ context.Context, _ []client.RecordPriceEntry) (int, error) {
@@ -536,7 +540,7 @@ func TestOracle_Run_SnapshotFailureNonFatal(t *testing.T) {
 	mc := &mockClient{
 		getSecuritiesFn: func(_ context.Context) ([]client.Security, error) {
 			return []client.Security{
-				{ID: 1, Symbol: "AAPL", AssetType: "stock", Currency: "USD"},
+				{ID: "sec-1", Symbol: "AAPL", AssetType: "stock", Currency: "USD"},
 			}, nil
 		},
 		recordPricesFn: func(_ context.Context, prices []client.RecordPriceEntry) (int, error) {
@@ -578,7 +582,7 @@ func TestOracle_Run_SnapshotsDisabled(t *testing.T) {
 	mc := &mockClient{
 		getSecuritiesFn: func(_ context.Context) ([]client.Security, error) {
 			return []client.Security{
-				{ID: 1, Symbol: "BTC", AssetType: "crypto", Currency: "USD"},
+				{ID: "sec-1", Symbol: "BTC", AssetType: "crypto", Currency: "USD"},
 			}, nil
 		},
 		recordPricesFn: func(_ context.Context, prices []client.RecordPriceEntry) (int, error) {

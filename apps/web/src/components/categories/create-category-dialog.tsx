@@ -118,7 +118,7 @@ export function CreateCategoryDialog({
         description: description.trim() || undefined,
         icon: icon.trim() || undefined,
         color: color || undefined,
-        parent_id: parentId ? Number(parentId) : undefined,
+        parent_id: parentId || undefined,
       },
       {
         onSuccess: (category) => {
@@ -223,7 +223,7 @@ export function CreateCategoryDialog({
                 <SelectContent>
                   <SelectItem value="none">None</SelectItem>
                   {parentOptions.map((p) => (
-                    <SelectItem key={p.id} value={String(p.id)}>
+                    <SelectItem key={p.id} value={p.id}>
                       {p.name}
                     </SelectItem>
                   ))}

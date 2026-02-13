@@ -3,10 +3,10 @@ CREATE TABLE IF NOT EXISTS audit_logs (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     deleted_at TIMESTAMPTZ,
-    user_id BIGINT NOT NULL,
+    user_id UUID NOT NULL,
     action VARCHAR(50) NOT NULL,
     resource_type VARCHAR(50) NOT NULL,
-    resource_id BIGINT DEFAULT 0,
+    resource_id UUID,
     ip_address VARCHAR(45) DEFAULT '',
     changes TEXT DEFAULT ''
 );

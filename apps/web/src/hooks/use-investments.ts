@@ -21,11 +21,11 @@ export const investmentKeys = {
   allList: (params?: PaginationParams) =>
     [...investmentKeys.all, "all", params] as const,
   lists: () => [...investmentKeys.all, "list"] as const,
-  list: (accountId: number, params?: PaginationParams) =>
+  list: (accountId: string, params?: PaginationParams) =>
     [...investmentKeys.lists(), accountId, params] as const,
   details: () => [...investmentKeys.all, "detail"] as const,
-  detail: (id: number) => [...investmentKeys.details(), id] as const,
-  transactions: (id: number, params?: PaginationParams) =>
+  detail: (id: string) => [...investmentKeys.details(), id] as const,
+  transactions: (id: string, params?: PaginationParams) =>
     [...investmentKeys.all, "transactions", id, params] as const,
 };
 
@@ -51,7 +51,7 @@ export function useAllInvestments(params?: PaginationParams) {
   });
 }
 
-export function useInvestment(id: number) {
+export function useInvestment(id: string) {
   return useQuery({
     queryKey: investmentKeys.detail(id),
     queryFn: async () => {
@@ -60,12 +60,12 @@ export function useInvestment(id: number) {
       );
       return res.investment;
     },
-    enabled: id > 0,
+    enabled: !!id,
   });
 }
 
 export function useAccountInvestments(
-  accountId: number,
+  accountId: string,
   params?: PaginationParams
 ) {
   return useQuery({
@@ -75,12 +75,12 @@ export function useAccountInvestments(
         `/api/v1/accounts/${accountId}/investments`,
         { ...params }
       ),
-    enabled: accountId > 0,
+    enabled: !!accountId,
   });
 }
 
 export function useInvestmentTransactions(
-  investmentId: number,
+  investmentId: string,
   params?: PaginationParams
 ) {
   return useQuery({
@@ -90,7 +90,7 @@ export function useInvestmentTransactions(
         `/api/v1/investments/${investmentId}/transactions`,
         { ...params }
       ),
-    enabled: investmentId > 0,
+    enabled: !!investmentId,
   });
 }
 
@@ -111,7 +111,7 @@ export function useAddInvestment() {
   });
 }
 
-export function useRecordBuy(investmentId: number) {
+export function useRecordBuy(investmentId: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (data: RecordBuyRequest) => {
@@ -128,7 +128,7 @@ export function useRecordBuy(investmentId: number) {
   });
 }
 
-export function useRecordSell(investmentId: number) {
+export function useRecordSell(investmentId: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (data: RecordSellRequest) => {
@@ -145,7 +145,7 @@ export function useRecordSell(investmentId: number) {
   });
 }
 
-export function useRecordDividend(investmentId: number) {
+export function useRecordDividend(investmentId: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (data: RecordDividendRequest) => {
@@ -161,7 +161,7 @@ export function useRecordDividend(investmentId: number) {
   });
 }
 
-export function useRecordSplit(investmentId: number) {
+export function useRecordSplit(investmentId: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (data: RecordSplitRequest) => {

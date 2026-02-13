@@ -162,7 +162,7 @@ func (o *Oracle) Run(ctx context.Context) (*RunResult, error) {
 				)
 				result.Errors = append(result.Errors, provider.FetchError{
 					SecurityID: r.SecurityID,
-					Symbol:     fmt.Sprintf("id:%d", r.SecurityID),
+					Symbol:     fmt.Sprintf("id:%s", r.SecurityID),
 					Err:        fmt.Errorf("currency conversion from %s to %s: %w", r.Currency, o.converter.TargetCurrency(), err),
 				})
 				continue

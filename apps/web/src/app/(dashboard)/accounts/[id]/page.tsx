@@ -189,7 +189,7 @@ function TransactionListItem({
 export default function AccountDetailPage() {
   const params = useParams();
   const router = useRouter();
-  const accountId = Number(params.id);
+  const accountId = params.id as string;
 
   const [page, setPage] = useState(1);
   const [filters, setFilters] = useState<TransactionFilters>({});
@@ -203,7 +203,7 @@ export default function AccountDetailPage() {
   const { data: account, isLoading: accountLoading } = useAccount(accountId);
   const isInvestmentAccount = account?.type === "investment";
   const { data: transactionsData, isLoading: transactionsLoading } =
-    useAccountTransactions(isInvestmentAccount ? 0 : accountId, {
+    useAccountTransactions(isInvestmentAccount ? "" : accountId, {
       ...filters,
       page,
       page_size: PAGE_SIZE,
@@ -211,7 +211,7 @@ export default function AccountDetailPage() {
   const { data: categoriesData } = useCategories({ page_size: 100 });
   const { data: investmentsData, isLoading: investmentsLoading } =
     useAccountInvestments(
-      isInvestmentAccount ? accountId : 0,
+      isInvestmentAccount ? accountId : "",
       { page: investmentPage, page_size: PAGE_SIZE }
     );
 
@@ -381,13 +381,13 @@ export default function AccountDetailPage() {
                 <Label className="text-xs">Category</Label>
                 <Select
                   value={
-                    filters.category_id ? String(filters.category_id) : "all"
+                    filters.category_id ?? "all"
                   }
                   onValueChange={(val) => {
                     setFilters((f) => ({
                       ...f,
                       category_id:
-                        val === "all" ? undefined : Number(val),
+                        val === "all" ? undefined : val,
                     }));
                     setPage(1);
                   }}
@@ -398,7 +398,7 @@ export default function AccountDetailPage() {
                   <SelectContent>
                     <SelectItem value="all">All Categories</SelectItem>
                     {categories.map((cat) => (
-                      <SelectItem key={cat.id} value={String(cat.id)}>
+                      <SelectItem key={cat.id} value={cat.id}>
                         {cat.name}
                       </SelectItem>
                     ))}

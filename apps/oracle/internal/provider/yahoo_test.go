@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -94,9 +95,9 @@ func TestYahooProvider_FetchPrices_Success(t *testing.T) {
 
 	p := &YahooProvider{httpClient: server.Client(), baseURL: server.URL}
 	securities := []Security{
-		{ID: 1, Symbol: "AAPL", AssetType: "stock"},
-		{ID: 2, Symbol: "MSFT", AssetType: "stock"},
-		{ID: 3, Symbol: "GOOGL", AssetType: "stock"},
+		{ID: "sec-1", Symbol: "AAPL", AssetType: "stock"},
+		{ID: "sec-2", Symbol: "MSFT", AssetType: "stock"},
+		{ID: "sec-3", Symbol: "GOOGL", AssetType: "stock"},
 	}
 
 	results, fetchErrors := p.FetchPrices(context.Background(), securities)
@@ -107,22 +108,22 @@ func TestYahooProvider_FetchPrices_Success(t *testing.T) {
 		t.Fatalf("expected 3 results, got %d", len(results))
 	}
 
-	expected := map[uint]int64{
-		1: 17872,
-		2: 42055,
-		3: 17503,
+	expected := map[string]int64{
+		"sec-1": 17872,
+		"sec-2": 42055,
+		"sec-3": 17503,
 	}
 	for _, r := range results {
 		want, ok := expected[r.SecurityID]
 		if !ok {
-			t.Errorf("unexpected security ID %d", r.SecurityID)
+			t.Errorf("unexpected security ID %s", r.SecurityID)
 			continue
 		}
 		if r.Price != want {
-			t.Errorf("security %d: got price %d, want %d", r.SecurityID, r.Price, want)
+			t.Errorf("security %s: got price %d, want %d", r.SecurityID, r.Price, want)
 		}
 		if r.Currency != "USD" {
-			t.Errorf("security %d: got currency %q, want %q", r.SecurityID, r.Currency, "USD")
+			t.Errorf("security %s: got currency %q, want %q", r.SecurityID, r.Currency, "USD")
 		}
 	}
 }
@@ -137,9 +138,9 @@ func TestYahooProvider_FetchPrices_PartialFailure(t *testing.T) {
 
 	p := &YahooProvider{httpClient: server.Client(), baseURL: server.URL}
 	securities := []Security{
-		{ID: 1, Symbol: "AAPL", AssetType: "stock"},
-		{ID: 2, Symbol: "MSFT", AssetType: "stock"},
-		{ID: 3, Symbol: "FAKESYM", AssetType: "stock"},
+		{ID: "sec-1", Symbol: "AAPL", AssetType: "stock"},
+		{ID: "sec-2", Symbol: "MSFT", AssetType: "stock"},
+		{ID: "sec-3", Symbol: "FAKESYM", AssetType: "stock"},
 	}
 
 	results, fetchErrors := p.FetchPrices(context.Background(), securities)
@@ -149,8 +150,8 @@ func TestYahooProvider_FetchPrices_PartialFailure(t *testing.T) {
 	if len(fetchErrors) != 1 {
 		t.Fatalf("expected 1 error, got %d", len(fetchErrors))
 	}
-	if fetchErrors[0].SecurityID != 3 {
-		t.Errorf("expected error for security ID 3, got %d", fetchErrors[0].SecurityID)
+	if fetchErrors[0].SecurityID != "sec-3" {
+		t.Errorf("expected error for security ID sec-3, got %s", fetchErrors[0].SecurityID)
 	}
 }
 
@@ -166,7 +167,7 @@ func TestYahooProvider_FetchPrices_ExchangeSuffix(t *testing.T) {
 
 	p := &YahooProvider{httpClient: server.Client(), baseURL: server.URL}
 	securities := []Security{
-		{ID: 1, Symbol: "SHOP", AssetType: "stock", Exchange: "TSX"},
+		{ID: "sec-1", Symbol: "SHOP", AssetType: "stock", Exchange: "TSX"},
 	}
 
 	results, fetchErrors := p.FetchPrices(context.Background(), securities)
@@ -201,7 +202,7 @@ func TestYahooProvider_FetchPrices_ProviderSymbol(t *testing.T) {
 
 	p := &YahooProvider{httpClient: server.Client(), baseURL: server.URL}
 	securities := []Security{
-		{ID: 1, Symbol: "CIMB", AssetType: "stock", Exchange: "BURSA", ProviderSymbol: "1023.KL"},
+		{ID: "sec-1", Symbol: "CIMB", AssetType: "stock", Exchange: "BURSA", ProviderSymbol: "1023.KL"},
 	}
 
 	results, fetchErrors := p.FetchPrices(context.Background(), securities)
@@ -261,7 +262,7 @@ func TestYahooProvider_FetchPrices_Concurrent(t *testing.T) {
 	securities := make([]Security, 15)
 	for i := range securities {
 		securities[i] = Security{
-			ID:        uint(i + 1),
+			ID:        fmt.Sprintf("sec-%d", i+1),
 			Symbol:    "SYM" + string(rune('A'+i)),
 			AssetType: "stock",
 		}
@@ -287,8 +288,8 @@ func TestYahooProvider_FetchPrices_HTTPError(t *testing.T) {
 
 	p := &YahooProvider{httpClient: server.Client(), baseURL: server.URL}
 	securities := []Security{
-		{ID: 1, Symbol: "AAPL", AssetType: "stock"},
-		{ID: 2, Symbol: "MSFT", AssetType: "stock"},
+		{ID: "sec-1", Symbol: "AAPL", AssetType: "stock"},
+		{ID: "sec-2", Symbol: "MSFT", AssetType: "stock"},
 	}
 
 	results, fetchErrors := p.FetchPrices(context.Background(), securities)
@@ -313,7 +314,7 @@ func TestYahooProvider_FetchPrices_ZeroPrice(t *testing.T) {
 
 	p := &YahooProvider{httpClient: server.Client(), baseURL: server.URL}
 	securities := []Security{
-		{ID: 1, Symbol: "DEAD", AssetType: "stock"},
+		{ID: "sec-1", Symbol: "DEAD", AssetType: "stock"},
 	}
 
 	results, fetchErrors := p.FetchPrices(context.Background(), securities)
@@ -337,7 +338,7 @@ func TestYahooProvider_FetchPrices_ChartError(t *testing.T) {
 
 	p := &YahooProvider{httpClient: server.Client(), baseURL: server.URL}
 	securities := []Security{
-		{ID: 1, Symbol: "DELISTED", AssetType: "stock"},
+		{ID: "sec-1", Symbol: "DELISTED", AssetType: "stock"},
 	}
 
 	results, fetchErrors := p.FetchPrices(context.Background(), securities)
@@ -372,9 +373,9 @@ func TestYahooProvider_FetchPrices_CurrencyFromResponse(t *testing.T) {
 
 	p := &YahooProvider{httpClient: server.Client(), baseURL: server.URL}
 	securities := []Security{
-		{ID: 1, Symbol: "AAPL", AssetType: "stock"},
-		{ID: 2, Symbol: "CIMB", AssetType: "stock", Exchange: "BURSA", ProviderSymbol: "1023.KL"},
-		{ID: 3, Symbol: "VUAA", AssetType: "etf", Exchange: "LSE", ProviderSymbol: "VUAA.L"},
+		{ID: "sec-1", Symbol: "AAPL", AssetType: "stock"},
+		{ID: "sec-2", Symbol: "CIMB", AssetType: "stock", Exchange: "BURSA", ProviderSymbol: "1023.KL"},
+		{ID: "sec-3", Symbol: "VUAA", AssetType: "etf", Exchange: "LSE", ProviderSymbol: "VUAA.L"},
 	}
 
 	results, fetchErrors := p.FetchPrices(context.Background(), securities)
@@ -385,25 +386,25 @@ func TestYahooProvider_FetchPrices_CurrencyFromResponse(t *testing.T) {
 		t.Fatalf("expected 3 results, got %d", len(results))
 	}
 
-	expected := map[uint]struct {
+	expected := map[string]struct {
 		price    int64
 		currency string
 	}{
-		1: {17872, "USD"},
-		2: {855, "MYR"},
-		3: {52512, "GBP"}, // GBp → GBP after ToUpper
+		"sec-1": {17872, "USD"},
+		"sec-2": {855, "MYR"},
+		"sec-3": {52512, "GBP"}, // GBp → GBP after ToUpper
 	}
 	for _, r := range results {
 		want, ok := expected[r.SecurityID]
 		if !ok {
-			t.Errorf("unexpected security ID %d", r.SecurityID)
+			t.Errorf("unexpected security ID %s", r.SecurityID)
 			continue
 		}
 		if r.Price != want.price {
-			t.Errorf("security %d: got price %d, want %d", r.SecurityID, r.Price, want.price)
+			t.Errorf("security %s: got price %d, want %d", r.SecurityID, r.Price, want.price)
 		}
 		if r.Currency != want.currency {
-			t.Errorf("security %d: got currency %q, want %q", r.SecurityID, r.Currency, want.currency)
+			t.Errorf("security %s: got currency %q, want %q", r.SecurityID, r.Currency, want.currency)
 		}
 	}
 }

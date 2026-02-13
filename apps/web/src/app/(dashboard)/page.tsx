@@ -218,7 +218,7 @@ function AccountCard({ account }: { account: Account }) {
   );
 }
 
-function BudgetMiniProgress({ budgetId }: { budgetId: number }) {
+function BudgetMiniProgress({ budgetId }: { budgetId: string }) {
   const { data: progress, isLoading } = useBudgetProgress(budgetId);
 
   if (isLoading) {

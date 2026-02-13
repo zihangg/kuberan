@@ -51,7 +51,7 @@ interface CreateTransactionDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** Pre-select an account when opening from account detail page */
-  defaultAccountId?: number;
+  defaultAccountId?: string;
 }
 
 export function CreateTransactionDialog({
@@ -60,7 +60,7 @@ export function CreateTransactionDialog({
   defaultAccountId,
 }: CreateTransactionDialogProps) {
   const [accountId, setAccountId] = useState<string>(
-    defaultAccountId ? String(defaultAccountId) : ""
+    defaultAccountId ?? ""
   );
   const [type, setType] = useState<DialogType>("expense");
   const [amount, setAmount] = useState(0);
@@ -71,7 +71,7 @@ export function CreateTransactionDialog({
 
   // Transfer-specific state
   const [fromAccountId, setFromAccountId] = useState<string>(
-    defaultAccountId ? String(defaultAccountId) : ""
+    defaultAccountId ?? ""
   );
   const [toAccountId, setToAccountId] = useState<string>("");
 
@@ -90,18 +90,18 @@ export function CreateTransactionDialog({
 
   // For transfer: filter to accounts, exclude selected from-account for to-account
   const toAccounts = accounts.filter(
-    (a) => a.is_active && String(a.id) !== fromAccountId
+    (a) => a.is_active && a.id !== fromAccountId
   );
 
   function resetForm() {
-    setAccountId(defaultAccountId ? String(defaultAccountId) : "");
+    setAccountId(defaultAccountId ?? "");
     setType("expense");
     setAmount(0);
     setCategoryId("");
     setDescription("");
     setDate(todayISO());
     setError("");
-    setFromAccountId(defaultAccountId ? String(defaultAccountId) : "");
+    setFromAccountId(defaultAccountId ?? "");
     setToAccountId("");
   }
 
@@ -117,7 +117,7 @@ export function CreateTransactionDialog({
     setCategoryId("");
     if (newType === "transfer") {
       // Pre-fill from-account with existing account selection or default
-      setFromAccountId(accountId || (defaultAccountId ? String(defaultAccountId) : ""));
+      setFromAccountId(accountId || defaultAccountId || "");
     } else {
       // When switching back from transfer, restore account from from-account
       if (type === "transfer" && fromAccountId) {
@@ -143,25 +143,23 @@ export function CreateTransactionDialog({
     }
 
     if (isTransfer) {
-      const from = Number(fromAccountId);
-      const to = Number(toAccountId);
-      if (!from) {
+      if (!fromAccountId) {
         setError("Please select a source account");
         return;
       }
-      if (!to) {
+      if (!toAccountId) {
         setError("Please select a destination account");
         return;
       }
-      if (from === to) {
+      if (fromAccountId === toAccountId) {
         setError("Cannot transfer to the same account");
         return;
       }
 
       createTransfer.mutate(
         {
-          from_account_id: from,
-          to_account_id: to,
+          from_account_id: fromAccountId,
+          to_account_id: toAccountId,
           amount,
           description: description.trim() || undefined,
           date: date ? toRFC3339(date) : undefined,
@@ -175,18 +173,17 @@ export function CreateTransactionDialog({
         }
       );
     } else {
-      const selectedAccountId = Number(accountId);
-      if (!selectedAccountId) {
+      if (!accountId) {
         setError("Please select an account");
         return;
       }
 
       createTransaction.mutate(
         {
-          account_id: selectedAccountId,
+          account_id: accountId,
           type: type as TransactionType,
           amount,
-          category_id: categoryId && categoryId !== "none" ? Number(categoryId) : undefined,
+          category_id: categoryId && categoryId !== "none" ? categoryId : undefined,
           description: description.trim() || undefined,
           date: date ? toRFC3339(date) : undefined,
         },
@@ -273,7 +270,7 @@ export function CreateTransactionDialog({
                 </SelectTrigger>
                 <SelectContent>
                   {accounts.map((a) => (
-                    <SelectItem key={a.id} value={String(a.id)}>
+                    <SelectItem key={a.id} value={a.id}>
                       {a.name}
                     </SelectItem>
                   ))}
@@ -297,7 +294,7 @@ export function CreateTransactionDialog({
                   </SelectTrigger>
                   <SelectContent>
                     {accounts.filter((a) => a.is_active).map((a) => (
-                      <SelectItem key={a.id} value={String(a.id)}>
+                      <SelectItem key={a.id} value={a.id}>
                         {a.name}
                       </SelectItem>
                     ))}
@@ -316,7 +313,7 @@ export function CreateTransactionDialog({
                   </SelectTrigger>
                   <SelectContent>
                     {toAccounts.map((a) => (
-                      <SelectItem key={a.id} value={String(a.id)}>
+                      <SelectItem key={a.id} value={a.id}>
                         {a.name}
                       </SelectItem>
                     ))}
@@ -353,7 +350,7 @@ export function CreateTransactionDialog({
                 <SelectContent>
                   <SelectItem value="none">No category</SelectItem>
                   {categories.map((cat) => (
-                    <SelectItem key={cat.id} value={String(cat.id)}>
+                    <SelectItem key={cat.id} value={cat.id}>
                       {cat.name}
                     </SelectItem>
                   ))}

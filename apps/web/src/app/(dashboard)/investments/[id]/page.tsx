@@ -70,7 +70,7 @@ function InvestmentTransactionListItem({
   transaction,
 }: {
   transaction: {
-    id: number;
+    id: string;
     date: string;
     type: InvestmentTransactionType;
     quantity: number;
@@ -167,7 +167,7 @@ function InvestmentDetailSkeleton() {
 
 export default function InvestmentDetailPage() {
   const params = useParams();
-  const investmentId = Number(params.id);
+  const investmentId = params.id as string;
 
   const [txPage, setTxPage] = useState(1);
   const [buyOpen, setBuyOpen] = useState(false);

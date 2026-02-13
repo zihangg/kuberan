@@ -43,6 +43,11 @@ type Account struct {
 
 // BeforeCreate hook to set default values based on account type
 func (a *Account) BeforeCreate(tx *gorm.DB) error {
+	// Call Base BeforeCreate to generate UUID
+	if err := a.Base.BeforeCreate(tx); err != nil {
+		return err
+	}
+
 	switch a.Type {
 	case AccountTypeCash:
 		a.Broker = ""

@@ -12,7 +12,7 @@ import (
 
 // Security represents a security returned by the Kuberan pipeline API.
 type Security struct {
-	ID             uint   `json:"id"`
+	ID             string `json:"id"`
 	Symbol         string `json:"symbol"`
 	Name           string `json:"name"`
 	AssetType      string `json:"asset_type"`
@@ -24,7 +24,7 @@ type Security struct {
 
 // RecordPriceEntry represents a single price entry to submit to the pipeline API.
 type RecordPriceEntry struct {
-	SecurityID uint   `json:"security_id"`
+	SecurityID string `json:"security_id"`
 	Price      int64  `json:"price"`
 	RecordedAt string `json:"recorded_at"` // RFC3339
 }

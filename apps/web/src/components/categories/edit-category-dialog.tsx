@@ -64,7 +64,7 @@ export function EditCategoryDialog({
   const [parentId, setParentId] = useState("");
   const [error, setError] = useState("");
 
-  const updateCategory = useUpdateCategory(category?.id ?? 0);
+  const updateCategory = useUpdateCategory(category?.id ?? "");
   const isSubmitting = updateCategory.isPending;
 
   // Load potential parents of same type, excluding self
@@ -118,7 +118,7 @@ export function EditCategoryDialog({
     const newIcon = icon.trim();
     if (newIcon !== (category.icon ?? "")) payload.icon = newIcon;
     if (color !== (category.color ?? "")) payload.color = color;
-    const newParentId = parentId && parentId !== "none" ? Number(parentId) : null;
+    const newParentId = parentId && parentId !== "none" ? parentId : null;
     const origParentId = category.parent_id ?? null;
     if (newParentId !== origParentId) payload.parent_id = newParentId;
 
@@ -221,7 +221,7 @@ export function EditCategoryDialog({
                 <SelectContent>
                   <SelectItem value="none">None</SelectItem>
                   {parentOptions.map((p) => (
-                    <SelectItem key={p.id} value={String(p.id)}>
+                    <SelectItem key={p.id} value={p.id}>
                       {p.name}
                     </SelectItem>
                   ))}

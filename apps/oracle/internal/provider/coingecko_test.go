@@ -41,8 +41,8 @@ func TestCoinGeckoProvider_FetchPrices_Success(t *testing.T) {
 
 	p := &CoinGeckoProvider{httpClient: server.Client(), baseURL: server.URL, targetCurrency: "myr"}
 	securities := []Security{
-		{ID: 1, Symbol: "BTC", AssetType: "crypto", Currency: "USD"},
-		{ID: 2, Symbol: "ETH", AssetType: "crypto", Currency: "USD"},
+		{ID: "sec-1", Symbol: "BTC", AssetType: "crypto", Currency: "USD"},
+		{ID: "sec-2", Symbol: "ETH", AssetType: "crypto", Currency: "USD"},
 	}
 
 	results, fetchErrors := p.FetchPrices(context.Background(), securities)
@@ -53,21 +53,21 @@ func TestCoinGeckoProvider_FetchPrices_Success(t *testing.T) {
 		t.Fatalf("expected 2 results, got %d", len(results))
 	}
 
-	expected := map[uint]int64{
-		1: 30053912,
-		2: 1545782,
+	expected := map[string]int64{
+		"sec-1": 30053912,
+		"sec-2": 1545782,
 	}
 	for _, r := range results {
 		want, ok := expected[r.SecurityID]
 		if !ok {
-			t.Errorf("unexpected security ID %d", r.SecurityID)
+			t.Errorf("unexpected security ID %s", r.SecurityID)
 			continue
 		}
 		if r.Price != want {
-			t.Errorf("security %d: got price %d, want %d", r.SecurityID, r.Price, want)
+			t.Errorf("security %s: got price %d, want %d", r.SecurityID, r.Price, want)
 		}
 		if r.Currency != "MYR" {
-			t.Errorf("security %d: got currency %q, want %q", r.SecurityID, r.Currency, "MYR")
+			t.Errorf("security %s: got currency %q, want %q", r.SecurityID, r.Currency, "MYR")
 		}
 	}
 }
@@ -80,7 +80,7 @@ func TestCoinGeckoProvider_FetchPrices_UnknownSymbol(t *testing.T) {
 
 	p := &CoinGeckoProvider{httpClient: server.Client(), baseURL: server.URL, targetCurrency: "myr"}
 	securities := []Security{
-		{ID: 1, Symbol: "OBSCURECOIN", AssetType: "crypto", Currency: "USD"},
+		{ID: "sec-1", Symbol: "OBSCURECOIN", AssetType: "crypto", Currency: "USD"},
 	}
 
 	results, fetchErrors := p.FetchPrices(context.Background(), securities)
@@ -90,8 +90,8 @@ func TestCoinGeckoProvider_FetchPrices_UnknownSymbol(t *testing.T) {
 	if len(fetchErrors) != 1 {
 		t.Fatalf("expected 1 error, got %d", len(fetchErrors))
 	}
-	if fetchErrors[0].SecurityID != 1 {
-		t.Errorf("expected error for security ID 1, got %d", fetchErrors[0].SecurityID)
+	if fetchErrors[0].SecurityID != "sec-1" {
+		t.Errorf("expected error for security ID sec-1, got %s", fetchErrors[0].SecurityID)
 	}
 	if !strings.Contains(fetchErrors[0].Err.Error(), "no CoinGecko mapping") {
 		t.Errorf("expected mapping error, got: %v", fetchErrors[0].Err)
@@ -111,8 +111,8 @@ func TestCoinGeckoProvider_FetchPrices_PartialResponse(t *testing.T) {
 
 	p := &CoinGeckoProvider{httpClient: server.Client(), baseURL: server.URL, targetCurrency: "myr"}
 	securities := []Security{
-		{ID: 1, Symbol: "BTC", AssetType: "crypto", Currency: "USD"},
-		{ID: 2, Symbol: "ETH", AssetType: "crypto", Currency: "USD"},
+		{ID: "sec-1", Symbol: "BTC", AssetType: "crypto", Currency: "USD"},
+		{ID: "sec-2", Symbol: "ETH", AssetType: "crypto", Currency: "USD"},
 	}
 
 	results, fetchErrors := p.FetchPrices(context.Background(), securities)
@@ -122,14 +122,14 @@ func TestCoinGeckoProvider_FetchPrices_PartialResponse(t *testing.T) {
 	if len(fetchErrors) != 1 {
 		t.Fatalf("expected 1 error, got %d", len(fetchErrors))
 	}
-	if results[0].SecurityID != 1 {
-		t.Errorf("expected result for security ID 1, got %d", results[0].SecurityID)
+	if results[0].SecurityID != "sec-1" {
+		t.Errorf("expected result for security ID sec-1, got %s", results[0].SecurityID)
 	}
 	if results[0].Currency != "MYR" {
 		t.Errorf("expected currency MYR, got %q", results[0].Currency)
 	}
-	if fetchErrors[0].SecurityID != 2 {
-		t.Errorf("expected error for security ID 2, got %d", fetchErrors[0].SecurityID)
+	if fetchErrors[0].SecurityID != "sec-2" {
+		t.Errorf("expected error for security ID sec-2, got %s", fetchErrors[0].SecurityID)
 	}
 }
 
@@ -141,8 +141,8 @@ func TestCoinGeckoProvider_FetchPrices_HTTPError(t *testing.T) {
 
 	p := &CoinGeckoProvider{httpClient: server.Client(), baseURL: server.URL, targetCurrency: "myr"}
 	securities := []Security{
-		{ID: 1, Symbol: "BTC", AssetType: "crypto", Currency: "USD"},
-		{ID: 2, Symbol: "ETH", AssetType: "crypto", Currency: "USD"},
+		{ID: "sec-1", Symbol: "BTC", AssetType: "crypto", Currency: "USD"},
+		{ID: "sec-2", Symbol: "ETH", AssetType: "crypto", Currency: "USD"},
 	}
 
 	results, fetchErrors := p.FetchPrices(context.Background(), securities)

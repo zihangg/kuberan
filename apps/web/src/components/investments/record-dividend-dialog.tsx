@@ -34,7 +34,7 @@ function getErrorMessage(error: unknown): string {
 }
 
 interface RecordDividendDialogProps {
-  investmentId: number;
+  investmentId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }

@@ -77,7 +77,7 @@ function SecurityDetailSkeleton() {
 
 export default function SecurityDetailPage() {
   const params = useParams();
-  const securityId = Number(params.id);
+  const securityId = params.id as string;
 
   const [pricePeriod, setPricePeriod] = useState<PricePeriod>("3M");
   const [pricePage, setPricePage] = useState(1);

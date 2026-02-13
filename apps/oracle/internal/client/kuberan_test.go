@@ -24,9 +24,9 @@ func TestGetSecurities_Success(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"securities": []map[string]any{
-				{"id": 1, "symbol": "AAPL", "name": "Apple Inc.", "asset_type": "stock", "currency": "USD", "exchange": "NASDAQ", "network": "", "provider_symbol": ""},
-				{"id": 2, "symbol": "BTC", "name": "Bitcoin", "asset_type": "crypto", "currency": "USD", "exchange": "", "network": "bitcoin", "provider_symbol": ""},
-				{"id": 3, "symbol": "CIMB", "name": "CIMB Group", "asset_type": "stock", "currency": "MYR", "exchange": "BURSA", "network": "", "provider_symbol": "1023.KL"},
+				{"id": "sec-1", "symbol": "AAPL", "name": "Apple Inc.", "asset_type": "stock", "currency": "USD", "exchange": "NASDAQ", "network": "", "provider_symbol": ""},
+				{"id": "sec-2", "symbol": "BTC", "name": "Bitcoin", "asset_type": "crypto", "currency": "USD", "exchange": "", "network": "bitcoin", "provider_symbol": ""},
+				{"id": "sec-3", "symbol": "CIMB", "name": "CIMB Group", "asset_type": "stock", "currency": "MYR", "exchange": "BURSA", "network": "", "provider_symbol": "1023.KL"},
 			},
 		})
 	}))
@@ -41,16 +41,16 @@ func TestGetSecurities_Success(t *testing.T) {
 		t.Fatalf("expected 3 securities, got %d", len(securities))
 	}
 
-	if securities[0].ID != 1 || securities[0].Symbol != "AAPL" || securities[0].AssetType != "stock" {
+	if securities[0].ID != "sec-1" || securities[0].Symbol != "AAPL" || securities[0].AssetType != "stock" {
 		t.Errorf("first security mismatch: %+v", securities[0])
 	}
 	if securities[0].ProviderSymbol != "" {
 		t.Errorf("first security: expected empty provider_symbol, got %q", securities[0].ProviderSymbol)
 	}
-	if securities[1].ID != 2 || securities[1].Symbol != "BTC" || securities[1].Network != "bitcoin" {
+	if securities[1].ID != "sec-2" || securities[1].Symbol != "BTC" || securities[1].Network != "bitcoin" {
 		t.Errorf("second security mismatch: %+v", securities[1])
 	}
-	if securities[2].ID != 3 || securities[2].Symbol != "CIMB" || securities[2].Exchange != "BURSA" {
+	if securities[2].ID != "sec-3" || securities[2].Symbol != "CIMB" || securities[2].Exchange != "BURSA" {
 		t.Errorf("third security mismatch: %+v", securities[2])
 	}
 	if securities[2].ProviderSymbol != "1023.KL" {
@@ -107,11 +107,11 @@ func TestRecordPrices_Success(t *testing.T) {
 
 	c := NewKuberanClient(server.URL, "test-key", server.Client())
 	prices := []RecordPriceEntry{
-		{SecurityID: 1, Price: 17872, RecordedAt: "2025-01-15T10:00:00Z"},
-		{SecurityID: 2, Price: 6723456, RecordedAt: "2025-01-15T10:00:00Z"},
-		{SecurityID: 3, Price: 10050, RecordedAt: "2025-01-15T10:00:00Z"},
-		{SecurityID: 4, Price: 500, RecordedAt: "2025-01-15T10:00:00Z"},
-		{SecurityID: 5, Price: 25000, RecordedAt: "2025-01-15T10:00:00Z"},
+		{SecurityID: "sec-1", Price: 17872, RecordedAt: "2025-01-15T10:00:00Z"},
+		{SecurityID: "sec-2", Price: 6723456, RecordedAt: "2025-01-15T10:00:00Z"},
+		{SecurityID: "sec-3", Price: 10050, RecordedAt: "2025-01-15T10:00:00Z"},
+		{SecurityID: "sec-4", Price: 500, RecordedAt: "2025-01-15T10:00:00Z"},
+		{SecurityID: "sec-5", Price: 25000, RecordedAt: "2025-01-15T10:00:00Z"},
 	}
 
 	n, err := c.RecordPrices(context.Background(), prices)
@@ -146,8 +146,8 @@ func TestRecordPrices_ValidatesRequestBody(t *testing.T) {
 
 	c := NewKuberanClient(server.URL, "my-secret-key", server.Client())
 	prices := []RecordPriceEntry{
-		{SecurityID: 1, Price: 17872, RecordedAt: "2025-01-15T10:00:00Z"},
-		{SecurityID: 2, Price: 6723456, RecordedAt: "2025-01-15T10:00:00Z"},
+		{SecurityID: "sec-1", Price: 17872, RecordedAt: "2025-01-15T10:00:00Z"},
+		{SecurityID: "sec-2", Price: 6723456, RecordedAt: "2025-01-15T10:00:00Z"},
 	}
 
 	_, err := c.RecordPrices(context.Background(), prices)
@@ -163,7 +163,7 @@ func TestRecordPrices_ValidatesRequestBody(t *testing.T) {
 	// Verify JSON structure.
 	var parsed struct {
 		Prices []struct {
-			SecurityID uint   `json:"security_id"`
+			SecurityID string `json:"security_id"`
 			Price      int64  `json:"price"`
 			RecordedAt string `json:"recorded_at"`
 		} `json:"prices"`
@@ -174,10 +174,10 @@ func TestRecordPrices_ValidatesRequestBody(t *testing.T) {
 	if len(parsed.Prices) != 2 {
 		t.Fatalf("expected 2 prices in body, got %d", len(parsed.Prices))
 	}
-	if parsed.Prices[0].SecurityID != 1 || parsed.Prices[0].Price != 17872 {
+	if parsed.Prices[0].SecurityID != "sec-1" || parsed.Prices[0].Price != 17872 {
 		t.Errorf("first price mismatch: %+v", parsed.Prices[0])
 	}
-	if parsed.Prices[1].SecurityID != 2 || parsed.Prices[1].Price != 6723456 {
+	if parsed.Prices[1].SecurityID != "sec-2" || parsed.Prices[1].Price != 6723456 {
 		t.Errorf("second price mismatch: %+v", parsed.Prices[1])
 	}
 }

@@ -192,11 +192,11 @@ export default function TransactionsPage() {
     page,
     page_size: PAGE_SIZE,
     account_id:
-      accountFilter !== "all" ? Number(accountFilter) : undefined,
+      accountFilter !== "all" ? accountFilter : undefined,
     type:
       typeFilter !== "all" ? (typeFilter as TransactionType) : undefined,
     category_id:
-      categoryFilter !== "all" ? Number(categoryFilter) : undefined,
+      categoryFilter !== "all" ? categoryFilter : undefined,
     from_date: fromDate || undefined,
     to_date: toDate || undefined,
   };
@@ -272,7 +272,7 @@ export default function TransactionsPage() {
                 <SelectContent>
                   <SelectItem value="all">All Accounts</SelectItem>
                   {accounts.map((a) => (
-                    <SelectItem key={a.id} value={String(a.id)}>
+                    <SelectItem key={a.id} value={a.id}>
                       {a.name}
                     </SelectItem>
                   ))}
@@ -315,7 +315,7 @@ export default function TransactionsPage() {
                 <SelectContent>
                   <SelectItem value="all">All Categories</SelectItem>
                   {categories.map((cat) => (
-                    <SelectItem key={cat.id} value={String(cat.id)}>
+                    <SelectItem key={cat.id} value={cat.id}>
                       {cat.name}
                     </SelectItem>
                   ))}
@@ -365,7 +365,7 @@ export default function TransactionsPage() {
             <SelectContent>
               <SelectItem value="all">All Accounts</SelectItem>
               {accounts.map((a) => (
-                <SelectItem key={a.id} value={String(a.id)}>
+                <SelectItem key={a.id} value={a.id}>
                   {a.name}
                 </SelectItem>
               ))}
@@ -408,7 +408,7 @@ export default function TransactionsPage() {
             <SelectContent>
               <SelectItem value="all">All Categories</SelectItem>
               {categories.map((cat) => (
-                <SelectItem key={cat.id} value={String(cat.id)}>
+                <SelectItem key={cat.id} value={cat.id}>
                   {cat.name}
                 </SelectItem>
               ))}

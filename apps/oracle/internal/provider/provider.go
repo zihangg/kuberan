@@ -10,7 +10,7 @@ import (
 // Security represents a security from the Kuberan API, containing
 // the fields needed by price providers to fetch quotes.
 type Security struct {
-	ID             uint
+	ID             string
 	Symbol         string
 	AssetType      string
 	Exchange       string
@@ -21,7 +21,7 @@ type Security struct {
 
 // PriceResult represents a successfully fetched price for a security.
 type PriceResult struct {
-	SecurityID uint
+	SecurityID string
 	Price      int64  // cents in the native currency reported by the data source
 	Currency   string // ISO 4217 currency code from the data source (e.g. "USD", "MYR", "GBP")
 	RecordedAt time.Time
@@ -29,14 +29,14 @@ type PriceResult struct {
 
 // FetchError represents a failed price fetch for a specific security.
 type FetchError struct {
-	SecurityID uint
+	SecurityID string
 	Symbol     string
 	Err        error
 }
 
 // Error implements the error interface.
 func (e *FetchError) Error() string {
-	return fmt.Sprintf("failed to fetch price for %s (ID %d): %v", e.Symbol, e.SecurityID, e.Err)
+	return fmt.Sprintf("failed to fetch price for %s (ID %s): %v", e.Symbol, e.SecurityID, e.Err)
 }
 
 // Provider fetches current market prices for a set of securities.

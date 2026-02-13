@@ -17,7 +17,7 @@ export const accountKeys = {
   list: (params?: PaginationParams) =>
     [...accountKeys.lists(), params] as const,
   details: () => [...accountKeys.all, "detail"] as const,
-  detail: (id: number) => [...accountKeys.details(), id] as const,
+  detail: (id: string) => [...accountKeys.details(), id] as const,
 };
 
 export function useAccounts(params?: PaginationParams) {
@@ -30,14 +30,14 @@ export function useAccounts(params?: PaginationParams) {
   });
 }
 
-export function useAccount(id: number) {
+export function useAccount(id: string) {
   return useQuery({
     queryKey: accountKeys.detail(id),
     queryFn: async () => {
       const res = await apiClient.get<AccountResponse>(`/api/v1/accounts/${id}`);
       return res.account;
     },
-    enabled: id > 0,
+    enabled: !!id,
   });
 }
 
@@ -89,7 +89,7 @@ export function useCreateCreditCardAccount() {
   });
 }
 
-export function useUpdateAccount(id: number) {
+export function useUpdateAccount(id: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (data: UpdateAccountRequest) => {

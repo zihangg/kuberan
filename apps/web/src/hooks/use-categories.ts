@@ -16,7 +16,7 @@ export const categoryKeys = {
   list: (params?: PaginationParams & { type?: CategoryType }) =>
     [...categoryKeys.lists(), params] as const,
   details: () => [...categoryKeys.all, "detail"] as const,
-  detail: (id: number) => [...categoryKeys.details(), id] as const,
+  detail: (id: string) => [...categoryKeys.details(), id] as const,
 };
 
 export function useCategories(
@@ -31,7 +31,7 @@ export function useCategories(
   });
 }
 
-export function useCategory(id: number) {
+export function useCategory(id: string) {
   return useQuery({
     queryKey: categoryKeys.detail(id),
     queryFn: async () => {
@@ -40,7 +40,7 @@ export function useCategory(id: number) {
       );
       return res.category;
     },
-    enabled: id > 0,
+    enabled: !!id,
   });
 }
 
@@ -60,7 +60,7 @@ export function useCreateCategory() {
   });
 }
 
-export function useUpdateCategory(id: number) {
+export function useUpdateCategory(id: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (data: UpdateCategoryRequest) => {
@@ -80,7 +80,7 @@ export function useUpdateCategory(id: number) {
 export function useDeleteCategory() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (id: number) => {
+    mutationFn: async (id: string) => {
       const res = await apiClient.del<DeleteResponse>(
         `/api/v1/categories/${id}`
       );

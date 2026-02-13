@@ -14,8 +14,8 @@ export const securityKeys = {
   list: (params?: SecurityFilters) =>
     [...securityKeys.lists(), params] as const,
   details: () => [...securityKeys.all, "detail"] as const,
-  detail: (id: number) => [...securityKeys.details(), id] as const,
-  prices: (id: number, from: string, to: string) =>
+  detail: (id: string) => [...securityKeys.details(), id] as const,
+  prices: (id: string, from: string, to: string) =>
     [...securityKeys.all, "prices", id, from, to] as const,
 };
 
@@ -29,7 +29,7 @@ export function useSecurities(params?: SecurityFilters) {
   });
 }
 
-export function useSecurity(id: number) {
+export function useSecurity(id: string) {
   return useQuery({
     queryKey: securityKeys.detail(id),
     queryFn: async () => {
@@ -38,12 +38,12 @@ export function useSecurity(id: number) {
       );
       return res.security;
     },
-    enabled: id > 0,
+    enabled: !!id,
   });
 }
 
 export function useSecurityPriceHistory(
-  id: number,
+  id: string,
   from: string,
   to: string,
   params?: PaginationParams
@@ -55,6 +55,6 @@ export function useSecurityPriceHistory(
         `/api/v1/securities/${id}/prices`,
         { from_date: from, to_date: to, ...params }
       ),
-    enabled: id > 0 && from.length > 0 && to.length > 0,
+    enabled: !!id && from.length > 0 && to.length > 0,
   });
 }

@@ -27,7 +27,7 @@ function getErrorMessage(error: unknown): string {
 }
 
 interface RecordBuyDialogProps {
-  investmentId: number;
+  investmentId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }

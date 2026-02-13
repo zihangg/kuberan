@@ -112,7 +112,7 @@ export function CreateBudgetDialog({
     createBudget.mutate(
       {
         name: trimmedName,
-        category_id: Number(categoryId),
+        category_id: categoryId,
         amount,
         period: period as BudgetPeriod,
         start_date: new Date(startDate).toISOString(),
@@ -169,7 +169,7 @@ export function CreateBudgetDialog({
               </SelectTrigger>
               <SelectContent>
                 {categories.map((cat) => (
-                  <SelectItem key={cat.id} value={String(cat.id)}>
+                  <SelectItem key={cat.id} value={cat.id}>
                     <span className="flex items-center gap-2">
                       {cat.name}
                       <Badge

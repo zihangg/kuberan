@@ -19,13 +19,13 @@ import { accountKeys } from "./use-accounts";
 export const transactionKeys = {
   all: ["transactions"] as const,
   lists: () => [...transactionKeys.all, "list"] as const,
-  listByAccount: (accountId: number, filters?: TransactionFilters) =>
+  listByAccount: (accountId: string, filters?: TransactionFilters) =>
     [...transactionKeys.lists(), "account", accountId, filters] as const,
   userLists: () => [...transactionKeys.all, "userList"] as const,
   userList: (filters?: UserTransactionFilters) =>
     [...transactionKeys.userLists(), filters] as const,
   details: () => [...transactionKeys.all, "detail"] as const,
-  detail: (id: number) => [...transactionKeys.details(), id] as const,
+  detail: (id: string) => [...transactionKeys.details(), id] as const,
   spendingByCategory: (from: string, to: string) =>
     [...transactionKeys.all, "spendingByCategory", from, to] as const,
   monthlySummary: (months: number) =>
@@ -35,7 +35,7 @@ export const transactionKeys = {
 };
 
 export function useAccountTransactions(
-  accountId: number,
+  accountId: string,
   filters?: TransactionFilters
 ) {
   return useQuery({
@@ -45,7 +45,7 @@ export function useAccountTransactions(
         `/api/v1/accounts/${accountId}/transactions`,
         { ...filters }
       ),
-    enabled: accountId > 0,
+    enabled: !!accountId,
   });
 }
 
@@ -59,7 +59,7 @@ export function useTransactions(filters?: UserTransactionFilters) {
   });
 }
 
-export function useTransaction(id: number) {
+export function useTransaction(id: string) {
   return useQuery({
     queryKey: transactionKeys.detail(id),
     queryFn: async () => {
@@ -68,7 +68,7 @@ export function useTransaction(id: number) {
       );
       return res.transaction;
     },
-    enabled: id > 0,
+    enabled: !!id,
   });
 }
 
@@ -115,7 +115,7 @@ export function useCreateTransfer() {
   });
 }
 
-export function useUpdateTransaction(id: number) {
+export function useUpdateTransaction(id: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (data: UpdateTransactionRequest) => {
@@ -135,7 +135,7 @@ export function useUpdateTransaction(id: number) {
 export function useDeleteTransaction() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (id: number) => {
+    mutationFn: async (id: string) => {
       await apiClient.del<DeleteResponse>(`/api/v1/transactions/${id}`);
     },
     onSuccess: () => {

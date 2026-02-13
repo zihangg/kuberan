@@ -54,7 +54,7 @@ export function EditBudgetDialog({
   const [endDate, setEndDate] = useState("");
   const [error, setError] = useState("");
 
-  const updateBudget = useUpdateBudget(budget?.id ?? 0);
+  const updateBudget = useUpdateBudget(budget?.id ?? "");
   const isSubmitting = updateBudget.isPending;
 
   // Sync form state when budget changes

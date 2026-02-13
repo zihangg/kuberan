@@ -79,7 +79,7 @@ export function EditTransactionDialog({
   const [error, setError] = useState("");
   const [deleteOpen, setDeleteOpen] = useState(false);
 
-  const updateTransaction = useUpdateTransaction(transaction?.id ?? 0);
+  const updateTransaction = useUpdateTransaction(transaction?.id ?? "");
   const deleteTransaction = useDeleteTransaction();
   const { data: accountsData } = useAccounts({ page_size: 100 });
   const { data: categoriesData } = useCategories({
@@ -98,10 +98,10 @@ export function EditTransactionDialog({
   useEffect(() => {
     if (transaction) {
       setType(transaction.type);
-      setAccountId(String(transaction.account_id));
+      setAccountId(transaction.account_id);
       setAmount(transaction.amount);
       setCategoryId(
-        transaction.category_id ? String(transaction.category_id) : "none"
+        transaction.category_id ?? "none"
       );
       setDescription(transaction.description ?? "");
       setDate(transaction.date ? transaction.date.split("T")[0] : "");
@@ -119,8 +119,7 @@ export function EditTransactionDialog({
     if (!transaction) return;
     setError("");
 
-    const selectedAccountId = Number(accountId);
-    if (!selectedAccountId) {
+    if (!accountId) {
       setError("Please select an account");
       return;
     }
@@ -132,14 +131,14 @@ export function EditTransactionDialog({
     // Build payload with only changed fields
     const payload: UpdateTransactionRequest = {};
 
-    if (selectedAccountId !== transaction.account_id)
-      payload.account_id = selectedAccountId;
+    if (accountId !== transaction.account_id)
+      payload.account_id = accountId;
     if (type !== transaction.type) payload.type = type;
     if (amount !== transaction.amount) payload.amount = amount;
 
     // Category: compare new value with original
     const newCatId =
-      categoryId && categoryId !== "none" ? Number(categoryId) : null;
+      categoryId && categoryId !== "none" ? categoryId : null;
     const origCatId = transaction.category_id ?? null;
     if (newCatId !== origCatId) payload.category_id = newCatId;
 
@@ -244,7 +243,7 @@ export function EditTransactionDialog({
                   </SelectTrigger>
                   <SelectContent>
                     {accounts.map((a) => (
-                      <SelectItem key={a.id} value={String(a.id)}>
+                      <SelectItem key={a.id} value={a.id}>
                         {a.name}
                       </SelectItem>
                     ))}
@@ -278,7 +277,7 @@ export function EditTransactionDialog({
                   <SelectContent>
                     <SelectItem value="none">No category</SelectItem>
                     {categories.map((cat) => (
-                      <SelectItem key={cat.id} value={String(cat.id)}>
+                      <SelectItem key={cat.id} value={cat.id}>
                         {cat.name}
                       </SelectItem>
                     ))}

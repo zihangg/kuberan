@@ -62,7 +62,7 @@ export function EditAccountDialog({
   const [creditLimit, setCreditLimit] = useState(0);
   const [error, setError] = useState("");
 
-  const updateAccount = useUpdateAccount(account?.id ?? 0);
+  const updateAccount = useUpdateAccount(account?.id ?? "");
   const isSubmitting = updateAccount.isPending;
 
   // Sync form state when account changes

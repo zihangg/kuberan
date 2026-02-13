@@ -30,7 +30,7 @@ function getErrorMessage(error: unknown): string {
 }
 
 interface RecordSellDialogProps {
-  investmentId: number;
+  investmentId: string;
   currentQuantity: number;
   open: boolean;
   onOpenChange: (open: boolean) => void;

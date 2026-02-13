@@ -45,7 +45,7 @@ function getErrorMessage(error: unknown): string {
 }
 
 interface AddInvestmentDialogProps {
-  accountId: number;
+  accountId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
@@ -213,7 +213,7 @@ export function AddInvestmentDialog({
                       {securities.map((sec) => (
                         <CommandItem
                           key={sec.id}
-                          value={String(sec.id)}
+                          value={sec.id}
                           onSelect={() => {
                             setSelectedSecurity(sec);
                             setComboboxOpen(false);

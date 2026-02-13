@@ -27,7 +27,7 @@ import { DeleteBudgetDialog } from "@/components/budgets/delete-budget-dialog";
 import { formatCurrency } from "@/lib/format";
 import type { Budget, BudgetPeriod } from "@/types/models";
 
-function BudgetProgressBar({ budgetId }: { budgetId: number }) {
+function BudgetProgressBar({ budgetId }: { budgetId: string }) {
   const { data: progress, isLoading } = useBudgetProgress(budgetId);
 
   if (isLoading) {

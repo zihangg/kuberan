@@ -16,8 +16,8 @@ export const budgetKeys = {
   lists: () => [...budgetKeys.all, "list"] as const,
   list: (filters?: BudgetFilters) => [...budgetKeys.lists(), filters] as const,
   details: () => [...budgetKeys.all, "detail"] as const,
-  detail: (id: number) => [...budgetKeys.details(), id] as const,
-  progress: (id: number) =>
+  detail: (id: string) => [...budgetKeys.details(), id] as const,
+  progress: (id: string) =>
     [...budgetKeys.all, "progress", id] as const,
 };
 
@@ -31,7 +31,7 @@ export function useBudgets(filters?: BudgetFilters) {
   });
 }
 
-export function useBudget(id: number) {
+export function useBudget(id: string) {
   return useQuery({
     queryKey: budgetKeys.detail(id),
     queryFn: async () => {
@@ -40,11 +40,11 @@ export function useBudget(id: number) {
       );
       return res.budget;
     },
-    enabled: id > 0,
+    enabled: !!id,
   });
 }
 
-export function useBudgetProgress(id: number) {
+export function useBudgetProgress(id: string) {
   return useQuery({
     queryKey: budgetKeys.progress(id),
     queryFn: async () => {
@@ -53,7 +53,7 @@ export function useBudgetProgress(id: number) {
       );
       return res.progress;
     },
-    enabled: id > 0,
+    enabled: !!id,
   });
 }
 
@@ -73,7 +73,7 @@ export function useCreateBudget() {
   });
 }
 
-export function useUpdateBudget(id: number) {
+export function useUpdateBudget(id: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (data: UpdateBudgetRequest) => {
@@ -93,7 +93,7 @@ export function useUpdateBudget(id: number) {
 export function useDeleteBudget() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (id: number) => {
+    mutationFn: async (id: string) => {
       const res = await apiClient.del<DeleteResponse>(
         `/api/v1/budgets/${id}`
       );

@@ -116,7 +116,7 @@ function CategoryCard({
 /** Sort flat category list into tree order: parents first, children indented after. */
 function treeOrder(categories: Category[]): (Category & { isChild: boolean })[] {
   const result: (Category & { isChild: boolean })[] = [];
-  const childrenMap = new Map<number, Category[]>();
+  const childrenMap = new Map<string, Category[]>();
   const topLevel: Category[] = [];
 
   for (const cat of categories) {
