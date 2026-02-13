@@ -429,9 +429,12 @@ export default function DashboardPage() {
               )}
             </div>
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {accounts.slice(0, 6).map((account) => (
-                <AccountCard key={account.id} account={account} />
-              ))}
+              {accounts
+                .filter((account) => account.balance !== 0)
+                .slice(0, 6)
+                .map((account) => (
+                  <AccountCard key={account.id} account={account} />
+                ))}
             </div>
           </div>
 
