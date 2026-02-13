@@ -22,13 +22,13 @@ func NewCategoryService(db *gorm.DB) CategoryServicer {
 
 // CreateCategory creates a new category
 func (s *categoryService) CreateCategory(
-	userID uint,
+	userID string,
 	name string,
 	categoryType models.CategoryType,
 	description string,
 	icon string,
 	color string,
-	parentID *uint,
+	parentID *string,
 ) (*models.Category, error) {
 	// Validate input
 	if name == "" {
@@ -77,7 +77,7 @@ func (s *categoryService) CreateCategory(
 }
 
 // GetUserCategories retrieves a paginated list of categories for a user.
-func (s *categoryService) GetUserCategories(userID uint, page pagination.PageRequest) (*pagination.PageResponse[models.Category], error) {
+func (s *categoryService) GetUserCategories(userID string, page pagination.PageRequest) (*pagination.PageResponse[models.Category], error) {
 	page.Defaults()
 
 	var totalItems int64
@@ -96,7 +96,7 @@ func (s *categoryService) GetUserCategories(userID uint, page pagination.PageReq
 }
 
 // GetUserCategoriesByType retrieves a paginated list of categories of a specific type for a user.
-func (s *categoryService) GetUserCategoriesByType(userID uint, categoryType models.CategoryType, page pagination.PageRequest) (*pagination.PageResponse[models.Category], error) {
+func (s *categoryService) GetUserCategoriesByType(userID string, categoryType models.CategoryType, page pagination.PageRequest) (*pagination.PageResponse[models.Category], error) {
 	page.Defaults()
 
 	var totalItems int64
@@ -115,7 +115,7 @@ func (s *categoryService) GetUserCategoriesByType(userID uint, categoryType mode
 }
 
 // GetCategoryByID retrieves a category by ID for a specific user
-func (s *categoryService) GetCategoryByID(userID, categoryID uint) (*models.Category, error) {
+func (s *categoryService) GetCategoryByID(userID, categoryID string) (*models.Category, error) {
 	var category models.Category
 	if err := s.db.Where("id = ? AND user_id = ?", categoryID, userID).First(&category).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -128,13 +128,13 @@ func (s *categoryService) GetCategoryByID(userID, categoryID uint) (*models.Cate
 
 // UpdateCategory updates an existing category
 func (s *categoryService) UpdateCategory(
-	userID uint,
-	categoryID uint,
+	userID string,
+	categoryID string,
 	name string,
 	description string,
 	icon string,
 	color string,
-	parentID *uint,
+	parentID *string,
 ) (*models.Category, error) {
 	// Get the category
 	category, err := s.GetCategoryByID(userID, categoryID)
@@ -143,7 +143,7 @@ func (s *categoryService) UpdateCategory(
 	}
 
 	// If parentID is provided, check that it exists, belongs to the user, and is not the category itself
-	if parentID != nil && *parentID != 0 {
+	if parentID != nil && *parentID != "" {
 		if *parentID == categoryID {
 			return nil, apperrors.ErrSelfParentCategory
 		}
@@ -186,7 +186,7 @@ func (s *categoryService) UpdateCategory(
 }
 
 // DeleteCategory deletes a category
-func (s *categoryService) DeleteCategory(userID, categoryID uint) error {
+func (s *categoryService) DeleteCategory(userID, categoryID string) error {
 	// Get the category to ensure it exists and belongs to the user
 	category, err := s.GetCategoryByID(userID, categoryID)
 	if err != nil {

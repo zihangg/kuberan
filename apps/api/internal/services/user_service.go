@@ -76,9 +76,9 @@ func (s *userService) GetUserByEmail(email string) (*models.User, error) {
 }
 
 // GetUserByID retrieves a user by ID
-func (s *userService) GetUserByID(id uint) (*models.User, error) {
+func (s *userService) GetUserByID(id string) (*models.User, error) {
 	var user models.User
-	if err := s.db.First(&user, id).Error; err != nil {
+	if err := s.db.Where("id = ?", id).First(&user).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, apperrors.ErrUserNotFound
 		}
@@ -128,7 +128,7 @@ func (s *userService) AttemptLogin(email, password string) (*models.User, error)
 }
 
 // StoreRefreshTokenHash stores the hash of a refresh token for the given user.
-func (s *userService) StoreRefreshTokenHash(userID uint, tokenHash string) error {
+func (s *userService) StoreRefreshTokenHash(userID string, tokenHash string) error {
 	if err := s.db.Model(&models.User{}).Where("id = ?", userID).Update("refresh_token_hash", tokenHash).Error; err != nil {
 		return apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
@@ -136,9 +136,9 @@ func (s *userService) StoreRefreshTokenHash(userID uint, tokenHash string) error
 }
 
 // GetRefreshTokenHash returns the stored refresh token hash for the given user.
-func (s *userService) GetRefreshTokenHash(userID uint) (string, error) {
+func (s *userService) GetRefreshTokenHash(userID string) (string, error) {
 	var user models.User
-	if err := s.db.Select("refresh_token_hash").First(&user, userID).Error; err != nil {
+	if err := s.db.Select("refresh_token_hash").Where("id = ?", userID).First(&user).Error; err != nil {
 		return "", apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
 	return user.RefreshTokenHash, nil

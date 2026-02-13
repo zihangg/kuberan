@@ -13,8 +13,8 @@ const (
 // Budget represents a budget plan for a category
 type Budget struct {
 	Base
-	UserID     uint         `gorm:"not null" json:"user_id"`
-	CategoryID uint         `gorm:"not null" json:"category_id"`
+	UserID     string       `gorm:"type:uuid;not null" json:"user_id"`
+	CategoryID string       `gorm:"type:uuid;not null" json:"category_id"`
 	Name       string       `gorm:"not null" json:"name"`
 	Amount     int64        `gorm:"type:bigint;not null" json:"amount"`
 	Period     BudgetPeriod `gorm:"not null" json:"period"`

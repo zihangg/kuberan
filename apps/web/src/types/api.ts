@@ -120,8 +120,8 @@ export interface UpdateAccountRequest {
 
 // Transaction requests
 export interface CreateTransactionRequest {
-  account_id: number;
-  category_id?: number;
+  account_id: string; // UUIDv7
+  category_id?: string; // UUIDv7
   type: TransactionType;
   amount: number; // cents, > 0
   description?: string;
@@ -129,16 +129,16 @@ export interface CreateTransactionRequest {
 }
 
 export interface CreateTransferRequest {
-  from_account_id: number;
-  to_account_id: number;
+  from_account_id: string; // UUIDv7
+  to_account_id: string; // UUIDv7
   amount: number; // cents, > 0
   description?: string;
   date?: string; // ISO 8601
 }
 
 export interface UpdateTransactionRequest {
-  account_id?: number;
-  category_id?: number | null;
+  account_id?: string; // UUIDv7
+  category_id?: string | null; // UUIDv7
   type?: TransactionType;
   amount?: number; // cents, > 0
   description?: string;
@@ -149,13 +149,13 @@ export interface TransactionFilters extends PaginationParams {
   from_date?: string;
   to_date?: string;
   type?: TransactionType;
-  category_id?: number;
+  category_id?: string; // UUIDv7
   min_amount?: number;
   max_amount?: number;
 }
 
 export interface UserTransactionFilters extends TransactionFilters {
-  account_id?: number;
+  account_id?: string; // UUIDv7
 }
 
 // Category requests
@@ -165,7 +165,7 @@ export interface CreateCategoryRequest {
   description?: string;
   icon?: string;
   color?: string; // hex color
-  parent_id?: number;
+  parent_id?: string; // UUIDv7
 }
 
 export interface UpdateCategoryRequest {
@@ -173,7 +173,7 @@ export interface UpdateCategoryRequest {
   description?: string;
   icon?: string;
   color?: string;
-  parent_id?: number;
+  parent_id?: string; // UUIDv7
 }
 
 // Budget responses
@@ -187,7 +187,7 @@ export interface BudgetProgressResponse {
 
 // Budget requests
 export interface CreateBudgetRequest {
-  category_id: number;
+  category_id: string; // UUIDv7
   name: string;
   amount: number; // cents, > 0
   period: BudgetPeriod;
@@ -210,7 +210,7 @@ export interface BudgetFilters extends PaginationParams {
 
 // Chart/analytics response types
 export interface SpendingByCategoryItem {
-  category_id: number | null;
+  category_id: string | null; // UUIDv7
   category_name: string;
   category_color: string;
   category_icon: string;
@@ -254,8 +254,8 @@ export interface PortfolioResponse {
 
 // Investment requests
 export interface AddInvestmentRequest {
-  account_id: number;
-  security_id: number;
+  account_id: string; // UUIDv7
+  security_id: string; // UUIDv7
   quantity: number; // float, > 0
   purchase_price: number; // cents, > 0
   wallet_address?: string;

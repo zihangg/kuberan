@@ -26,8 +26,8 @@ func NewTransactionHandler(transactionService services.TransactionServicer, audi
 
 // CreateTransactionRequest represents the request payload for creating a transaction
 type CreateTransactionRequest struct {
-	AccountID   uint                   `json:"account_id" binding:"required"`
-	CategoryID  *uint                  `json:"category_id"`
+	AccountID   string                 `json:"account_id" binding:"required"`
+	CategoryID  *string                `json:"category_id"`
 	Type        models.TransactionType `json:"type" binding:"required,transaction_type"`
 	Amount      int64                  `json:"amount" binding:"required,gt=0"`
 	Description string                 `json:"description" binding:"max=500"`
@@ -38,8 +38,8 @@ type CreateTransactionRequest struct {
 type TransactionResponse struct {
 	ID          uint                   `json:"id"`
 	UserID      uint                   `json:"user_id"`
-	AccountID   uint                   `json:"account_id"`
-	CategoryID  *uint                  `json:"category_id,omitempty"`
+	AccountID   *string                 `json:"account_id"`
+	CategoryID  string                 `json:"category_id,omitempty"`
 	Type        models.TransactionType `json:"type"`
 	Amount      int64                  `json:"amount"`
 	Description string                 `json:"description"`
@@ -104,8 +104,8 @@ func (h *TransactionHandler) CreateTransaction(c *gin.Context) {
 
 // CreateTransferRequest represents the request payload for creating a transfer
 type CreateTransferRequest struct {
-	FromAccountID uint    `json:"from_account_id" binding:"required"`
-	ToAccountID   uint    `json:"to_account_id" binding:"required"`
+	FromAccountID string  `json:"from_account_id" binding:"required"`
+	ToAccountID   string  `json:"to_account_id" binding:"required"`
 	Amount        int64   `json:"amount" binding:"required,gt=0"`
 	Description   string  `json:"description" binding:"max=500"`
 	Date          *string `json:"date"`
@@ -268,13 +268,7 @@ func (h *TransactionHandler) GetUserTransactions(c *gin.Context) {
 	}
 
 	if v := c.Query("account_id"); v != "" {
-		id, parseErr := strconv.ParseUint(v, 10, 32)
-		if parseErr != nil {
-			respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, "invalid account_id"))
-			return
-		}
-		acctID := uint(id)
-		filter.AccountID = &acctID
+		filter.AccountID = &v
 	}
 
 	result, err := h.transactionService.GetUserTransactions(userID, page, filter)
@@ -317,12 +311,7 @@ func parseTransactionFilter(c *gin.Context) (services.TransactionFilter, error) 
 	}
 
 	if v := c.Query("category_id"); v != "" {
-		id, err := strconv.ParseUint(v, 10, 32)
-		if err != nil {
-			return filter, apperrors.WithMessage(apperrors.ErrInvalidInput, "invalid category_id")
-		}
-		catID := uint(id)
-		filter.CategoryID = &catID
+		filter.CategoryID = &v
 	}
 
 	if v := c.Query("min_amount"); v != "" {
@@ -382,8 +371,8 @@ func (h *TransactionHandler) GetTransactionByID(c *gin.Context) {
 
 // UpdateTransactionRequest represents the request payload for updating a transaction.
 type UpdateTransactionRequest struct {
-	AccountID   *uint                   `json:"account_id"`
-	CategoryID  *int64                  `json:"category_id"`
+	AccountID   *string                 `json:"account_id"`
+	CategoryID  *string                 `json:"category_id"`
 	Type        *models.TransactionType `json:"type" binding:"omitempty,transaction_type"`
 	Amount      *int64                  `json:"amount" binding:"omitempty,gt=0"`
 	Description *string                 `json:"description" binding:"omitempty,max=500"`
@@ -431,15 +420,13 @@ func (h *TransactionHandler) UpdateTransaction(c *gin.Context) {
 		Description: req.Description,
 	}
 
-	// Handle CategoryID: nil in JSON = don't change; negative/zero = clear; positive = set
+	// Handle CategoryID: nil in JSON = don't change; empty string = clear; non-empty = set
 	if req.CategoryID != nil {
-		if *req.CategoryID <= 0 {
-			var nilUint *uint
-			updateFields.CategoryID = &nilUint
+		if *req.CategoryID == "" {
+			var nilStr *string
+			updateFields.CategoryID = &nilStr
 		} else {
-			catID := uint(*req.CategoryID)
-			catIDPtr := &catID
-			updateFields.CategoryID = &catIDPtr
+			updateFields.CategoryID = &req.CategoryID
 		}
 	}
 

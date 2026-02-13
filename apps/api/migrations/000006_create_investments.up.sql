@@ -1,9 +1,9 @@
 CREATE TABLE IF NOT EXISTS investments (
-    id BIGSERIAL PRIMARY KEY,
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v7(),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     deleted_at TIMESTAMPTZ,
-    account_id BIGINT NOT NULL REFERENCES accounts(id),
+    account_id UUID NOT NULL REFERENCES accounts(id),
     symbol VARCHAR(20) NOT NULL,
     asset_type VARCHAR(20) NOT NULL,
     name VARCHAR(200) NOT NULL,

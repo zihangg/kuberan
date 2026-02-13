@@ -1,9 +1,9 @@
 CREATE TABLE IF NOT EXISTS accounts (
-    id BIGSERIAL PRIMARY KEY,
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v7(),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     deleted_at TIMESTAMPTZ,
-    user_id BIGINT NOT NULL REFERENCES users(id),
+    user_id UUID NOT NULL REFERENCES users(id),
     name VARCHAR(100) NOT NULL,
     type VARCHAR(20) NOT NULL,
     description VARCHAR(500) DEFAULT '',

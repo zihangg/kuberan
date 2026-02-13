@@ -15,16 +15,16 @@ const (
 // Transaction represents a financial transaction in the system
 type Transaction struct {
 	Base
-	UserID      uint            `gorm:"not null" json:"user_id"`
-	AccountID   uint            `gorm:"not null" json:"account_id"`
-	CategoryID  *uint           `json:"category_id,omitempty"`
+	UserID      string          `gorm:"type:uuid;not null" json:"user_id"`
+	AccountID   string          `gorm:"type:uuid;not null" json:"account_id"`
+	CategoryID  *string         `gorm:"type:uuid" json:"category_id,omitempty"`
 	Type        TransactionType `gorm:"not null" json:"type"`
 	Amount      int64           `gorm:"type:bigint;not null" json:"amount"`
 	Description string          `json:"description"`
 	Date        time.Time       `gorm:"not null" json:"date"`
 
 	// For transfers
-	ToAccountID *uint `json:"to_account_id,omitempty"`
+	ToAccountID *string `gorm:"type:uuid" json:"to_account_id,omitempty"`
 
 	// Relationships
 	Account   Account   `gorm:"foreignKey:AccountID" json:"account"`

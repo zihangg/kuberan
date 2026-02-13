@@ -11,13 +11,13 @@ const (
 // Category represents a transaction category
 type Category struct {
 	Base
-	UserID      uint         `gorm:"not null" json:"user_id"`
+	UserID      string       `gorm:"type:uuid;not null" json:"user_id"`
 	Name        string       `gorm:"not null" json:"name"`
 	Type        CategoryType `gorm:"not null" json:"type"`
 	Description string       `json:"description"`
 	Icon        string       `json:"icon"`
 	Color       string       `json:"color"`
-	ParentID    *uint        `json:"parent_id,omitempty"`
+	ParentID    *string      `gorm:"type:uuid" json:"parent_id,omitempty"`
 
 	// Relationships
 	Parent       *Category     `gorm:"foreignKey:ParentID" json:"parent,omitempty"`

@@ -1,6 +1,6 @@
 CREATE TABLE IF NOT EXISTS security_prices (
-    id BIGSERIAL PRIMARY KEY,
-    security_id BIGINT NOT NULL REFERENCES securities(id),
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v7(),
+    security_id UUID NOT NULL REFERENCES securities(id),
     price BIGINT NOT NULL,
     recorded_at TIMESTAMPTZ NOT NULL,
 

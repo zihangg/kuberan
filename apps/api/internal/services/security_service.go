@@ -60,7 +60,7 @@ func (s *securityService) CreateSecurity(
 }
 
 // GetSecurityByID returns a security by its ID.
-func (s *securityService) GetSecurityByID(id uint) (*models.Security, error) {
+func (s *securityService) GetSecurityByID(id string) (*models.Security, error) {
 	var security models.Security
 	if err := s.db.First(&security, id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -125,7 +125,7 @@ func (s *securityService) RecordPrices(prices []SecurityPriceInput) (int, error)
 
 // GetPriceHistory returns paginated price history for a security within a date range.
 func (s *securityService) GetPriceHistory(
-	securityID uint,
+	securityID string,
 	from, to time.Time,
 	page pagination.PageRequest,
 ) (*pagination.PageResponse[models.SecurityPrice], error) {

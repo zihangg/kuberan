@@ -22,7 +22,7 @@ func NewAccountService(db *gorm.DB) AccountServicer {
 }
 
 // CreateCashAccount creates a new cash account for a user
-func (s *accountService) CreateCashAccount(userID uint, name, description, currency string, initialBalance int64) (*models.Account, error) {
+func (s *accountService) CreateCashAccount(userID string, name, description, currency string, initialBalance int64) (*models.Account, error) {
 	// Validate input
 	if name == "" {
 		return nil, apperrors.WithMessage(apperrors.ErrInvalidInput, "account name is required")
@@ -72,7 +72,7 @@ func (s *accountService) CreateCashAccount(userID uint, name, description, curre
 }
 
 // CreateInvestmentAccount creates a new investment account for a user.
-func (s *accountService) CreateInvestmentAccount(userID uint, name, description, currency, broker, accountNumber string) (*models.Account, error) {
+func (s *accountService) CreateInvestmentAccount(userID string, name, description, currency, broker, accountNumber string) (*models.Account, error) {
 	if name == "" {
 		return nil, apperrors.WithMessage(apperrors.ErrInvalidInput, "account name is required")
 	}
@@ -100,7 +100,7 @@ func (s *accountService) CreateInvestmentAccount(userID uint, name, description,
 }
 
 // CreateCreditCardAccount creates a new credit card account for a user.
-func (s *accountService) CreateCreditCardAccount(userID uint, name, description, currency string, creditLimit int64, interestRate float64, dueDate *time.Time) (*models.Account, error) {
+func (s *accountService) CreateCreditCardAccount(userID string, name, description, currency string, creditLimit int64, interestRate float64, dueDate *time.Time) (*models.Account, error) {
 	if name == "" {
 		return nil, apperrors.WithMessage(apperrors.ErrInvalidInput, "account name is required")
 	}
@@ -133,7 +133,7 @@ func (s *accountService) CreateCreditCardAccount(userID uint, name, description,
 }
 
 // GetUserAccounts retrieves a paginated list of accounts for a user.
-func (s *accountService) GetUserAccounts(userID uint, page pagination.PageRequest) (*pagination.PageResponse[models.Account], error) {
+func (s *accountService) GetUserAccounts(userID string, page pagination.PageRequest) (*pagination.PageResponse[models.Account], error) {
 	page.Defaults()
 
 	var totalItems int64
@@ -156,7 +156,7 @@ func (s *accountService) GetUserAccounts(userID uint, page pagination.PageReques
 }
 
 // GetAccountByID retrieves an account by ID for a specific user
-func (s *accountService) GetAccountByID(userID, accountID uint) (*models.Account, error) {
+func (s *accountService) GetAccountByID(userID, accountID string) (*models.Account, error) {
 	var account models.Account
 	if err := s.db.Where("id = ? AND user_id = ? AND is_active = ?", accountID, userID, true).First(&account).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -178,7 +178,7 @@ func (s *accountService) GetAccountByID(userID, accountID uint) (*models.Account
 
 // UpdateAccount updates an existing account for any account type.
 // Only fields relevant to the account's type are applied.
-func (s *accountService) UpdateAccount(userID, accountID uint, fields AccountUpdateFields) (*models.Account, error) {
+func (s *accountService) UpdateAccount(userID, accountID string, fields AccountUpdateFields) (*models.Account, error) {
 	account, err := s.GetAccountByID(userID, accountID)
 	if err != nil {
 		return nil, err
@@ -264,7 +264,7 @@ func (s *accountService) UpdateAccountBalance(tx *gorm.DB, account *models.Accou
 // in the given slice. Non-investment accounts are left unchanged.
 func (s *accountService) enrichInvestmentBalances(accounts []models.Account) error {
 	// Collect investment account IDs
-	var investmentAccountIDs []uint
+	var investmentAccountIDs []string
 	for i := range accounts {
 		if accounts[i].Type == models.AccountTypeInvestment {
 			investmentAccountIDs = append(investmentAccountIDs, accounts[i].ID)
@@ -276,8 +276,8 @@ func (s *accountService) enrichInvestmentBalances(accounts []models.Account) err
 
 	// Fetch investments for those accounts
 	type holding struct {
-		AccountID  uint
-		SecurityID uint
+		AccountID  string
+		SecurityID string
 		Quantity   float64
 	}
 	var holdings []holding
@@ -293,11 +293,11 @@ func (s *accountService) enrichInvestmentBalances(accounts []models.Account) err
 	}
 
 	// Collect distinct security IDs
-	secIDSet := make(map[uint]struct{})
+	secIDSet := make(map[string]struct{})
 	for _, h := range holdings {
 		secIDSet[h.SecurityID] = struct{}{}
 	}
-	secIDs := make([]uint, 0, len(secIDSet))
+	secIDs := make([]string, 0, len(secIDSet))
 	for id := range secIDSet {
 		secIDs = append(secIDs, id)
 	}
@@ -309,7 +309,7 @@ func (s *accountService) enrichInvestmentBalances(accounts []models.Account) err
 	}
 
 	// Accumulate market value per account
-	balances := make(map[uint]int64)
+	balances := make(map[string]int64)
 	for _, h := range holdings {
 		balances[h.AccountID] += int64(h.Quantity * float64(prices[h.SecurityID]))
 	}

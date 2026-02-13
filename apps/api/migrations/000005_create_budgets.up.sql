@@ -1,10 +1,10 @@
 CREATE TABLE IF NOT EXISTS budgets (
-    id BIGSERIAL PRIMARY KEY,
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v7(),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     deleted_at TIMESTAMPTZ,
-    user_id BIGINT NOT NULL REFERENCES users(id),
-    category_id BIGINT NOT NULL REFERENCES categories(id),
+    user_id UUID NOT NULL REFERENCES users(id),
+    category_id UUID NOT NULL REFERENCES categories(id),
     name VARCHAR(100) NOT NULL,
     amount BIGINT NOT NULL,
     period VARCHAR(20) NOT NULL,

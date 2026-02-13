@@ -47,13 +47,13 @@ func CreateTestUserWithEmail(t *testing.T, db *gorm.DB, email string) *models.Us
 }
 
 // CreateTestCashAccount creates a cash account with zero balance.
-func CreateTestCashAccount(t *testing.T, db *gorm.DB, userID uint) *models.Account {
+func CreateTestCashAccount(t *testing.T, db *gorm.DB, userID string) *models.Account {
 	t.Helper()
 	return CreateTestCashAccountWithBalance(t, db, userID, 0)
 }
 
 // CreateTestCashAccountWithBalance creates a cash account with the given balance (in cents).
-func CreateTestCashAccountWithBalance(t *testing.T, db *gorm.DB, userID uint, balance int64) *models.Account {
+func CreateTestCashAccountWithBalance(t *testing.T, db *gorm.DB, userID string, balance int64) *models.Account {
 	t.Helper()
 
 	account := &models.Account{
@@ -71,7 +71,7 @@ func CreateTestCashAccountWithBalance(t *testing.T, db *gorm.DB, userID uint, ba
 }
 
 // CreateTestInvestmentAccount creates an investment account.
-func CreateTestInvestmentAccount(t *testing.T, db *gorm.DB, userID uint) *models.Account {
+func CreateTestInvestmentAccount(t *testing.T, db *gorm.DB, userID string) *models.Account {
 	t.Helper()
 
 	account := &models.Account{
@@ -88,7 +88,7 @@ func CreateTestInvestmentAccount(t *testing.T, db *gorm.DB, userID uint) *models
 }
 
 // CreateTestCreditCardAccount creates a credit card account with the given balance.
-func CreateTestCreditCardAccount(t *testing.T, db *gorm.DB, userID uint, balance int64) *models.Account {
+func CreateTestCreditCardAccount(t *testing.T, db *gorm.DB, userID string, balance int64) *models.Account {
 	t.Helper()
 
 	account := &models.Account{
@@ -107,7 +107,7 @@ func CreateTestCreditCardAccount(t *testing.T, db *gorm.DB, userID uint, balance
 }
 
 // CreateTestDebtAccount creates a debt account with the given balance.
-func CreateTestDebtAccount(t *testing.T, db *gorm.DB, userID uint, balance int64) *models.Account {
+func CreateTestDebtAccount(t *testing.T, db *gorm.DB, userID string, balance int64) *models.Account {
 	t.Helper()
 
 	account := &models.Account{
@@ -126,7 +126,7 @@ func CreateTestDebtAccount(t *testing.T, db *gorm.DB, userID uint, balance int64
 }
 
 // CreateTestCategory creates a category of the given type.
-func CreateTestCategory(t *testing.T, db *gorm.DB, userID uint, categoryType models.CategoryType) *models.Category {
+func CreateTestCategory(t *testing.T, db *gorm.DB, userID string, categoryType models.CategoryType) *models.Category {
 	t.Helper()
 
 	category := &models.Category{
@@ -141,7 +141,7 @@ func CreateTestCategory(t *testing.T, db *gorm.DB, userID uint, categoryType mod
 }
 
 // CreateTestTransaction creates a transaction of the given type and amount (in cents).
-func CreateTestTransaction(t *testing.T, db *gorm.DB, userID, accountID uint, txType models.TransactionType, amount int64) *models.Transaction {
+func CreateTestTransaction(t *testing.T, db *gorm.DB, userID, accountID string, txType models.TransactionType, amount int64) *models.Transaction {
 	t.Helper()
 
 	tx := &models.Transaction{
@@ -158,7 +158,7 @@ func CreateTestTransaction(t *testing.T, db *gorm.DB, userID, accountID uint, tx
 }
 
 // CreateTestBudget creates a monthly budget for the given category.
-func CreateTestBudget(t *testing.T, db *gorm.DB, userID, categoryID uint) *models.Budget {
+func CreateTestBudget(t *testing.T, db *gorm.DB, userID, categoryID string) *models.Budget {
 	t.Helper()
 
 	budget := &models.Budget{
@@ -200,7 +200,7 @@ func CreateTestSecurityWithParams(t *testing.T, db *gorm.DB, symbol, name string
 }
 
 // CreateTestInvestment creates an investment holding in the given account.
-func CreateTestInvestment(t *testing.T, db *gorm.DB, accountID, securityID uint) *models.Investment {
+func CreateTestInvestment(t *testing.T, db *gorm.DB, accountID, securityID string) *models.Investment {
 	t.Helper()
 
 	inv := &models.Investment{
@@ -216,7 +216,7 @@ func CreateTestInvestment(t *testing.T, db *gorm.DB, accountID, securityID uint)
 }
 
 // CreateTestSecurityPrice creates a security price record for testing.
-func CreateTestSecurityPrice(t *testing.T, db *gorm.DB, securityID uint, price int64, recordedAt time.Time) *models.SecurityPrice {
+func CreateTestSecurityPrice(t *testing.T, db *gorm.DB, securityID string, price int64, recordedAt time.Time) *models.SecurityPrice {
 	t.Helper()
 
 	sp := &models.SecurityPrice{

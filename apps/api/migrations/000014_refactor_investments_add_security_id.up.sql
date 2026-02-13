@@ -1,4 +1,4 @@
-ALTER TABLE investments ADD COLUMN security_id BIGINT REFERENCES securities(id);
+ALTER TABLE investments ADD COLUMN security_id UUID REFERENCES securities(id);
 CREATE INDEX idx_investments_security_id ON investments(security_id);
 
 ALTER TABLE investments DROP COLUMN symbol;

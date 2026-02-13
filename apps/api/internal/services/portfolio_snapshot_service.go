@@ -23,7 +23,7 @@ func NewPortfolioSnapshotService(db *gorm.DB) PortfolioSnapshotServicer {
 // ComputeAndRecordSnapshots computes and stores a net worth snapshot for all active users.
 func (s *portfolioSnapshotService) ComputeAndRecordSnapshots(recordedAt time.Time) (int, error) {
 	// Find all distinct active user IDs
-	var userIDs []uint
+	var userIDs []string
 	if err := s.db.Model(&models.Account{}).
 		Where("is_active = ?", true).
 		Distinct("user_id").
@@ -63,7 +63,7 @@ func (s *portfolioSnapshotService) ComputeAndRecordSnapshots(recordedAt time.Tim
 }
 
 // computeSnapshot calculates a user's net worth breakdown.
-func (s *portfolioSnapshotService) computeSnapshot(userID uint, recordedAt time.Time) (*models.PortfolioSnapshot, error) {
+func (s *portfolioSnapshotService) computeSnapshot(userID string, recordedAt time.Time) (*models.PortfolioSnapshot, error) {
 	// Cash balance: sum of cash account balances
 	var cashBalance int64
 	if err := s.db.Model(&models.Account{}).
@@ -82,7 +82,7 @@ func (s *portfolioSnapshotService) computeSnapshot(userID uint, recordedAt time.
 		Find(&investments).Error; err != nil {
 		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
-	secIDs := make([]uint, 0, len(investments))
+	secIDs := make([]string, 0, len(investments))
 	for i := range investments {
 		secIDs = append(secIDs, investments[i].SecurityID)
 	}
@@ -117,7 +117,7 @@ func (s *portfolioSnapshotService) computeSnapshot(userID uint, recordedAt time.
 
 // GetSnapshots returns paginated snapshots for a user within a date range.
 func (s *portfolioSnapshotService) GetSnapshots(
-	userID uint,
+	userID string,
 	from, to time.Time,
 	page pagination.PageRequest,
 ) (*pagination.PageResponse[models.PortfolioSnapshot], error) {

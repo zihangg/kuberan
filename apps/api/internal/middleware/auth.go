@@ -27,7 +27,7 @@ func getJWTKey() []byte {
 
 // JWTClaims represents the claims in the JWT
 type JWTClaims struct {
-	UserID    uint   `json:"user_id"`
+	UserID    string `json:"user_id"`
 	Email     string `json:"email"`
 	TokenType string `json:"token_type"`
 	jwt.RegisteredClaims
@@ -44,7 +44,7 @@ func GenerateAccessToken(user *models.User) (string, error) {
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 			NotBefore: jwt.NewNumericDate(time.Now()),
 			Issuer:    "kuberan-api",
-			Subject:   fmt.Sprintf("%d", user.ID),
+			Subject:   user.ID,
 		},
 	}
 
@@ -63,7 +63,7 @@ func GenerateRefreshToken(user *models.User) (string, error) {
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 			NotBefore: jwt.NewNumericDate(time.Now()),
 			Issuer:    "kuberan-api",
-			Subject:   fmt.Sprintf("%d", user.ID),
+			Subject:   user.ID,
 		},
 	}
 

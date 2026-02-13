@@ -19,7 +19,7 @@ const (
 // Account represents a financial account in the system
 type Account struct {
 	Base
-	UserID      uint        `gorm:"not null" json:"user_id"`
+	UserID      string      `gorm:"type:uuid;not null" json:"user_id"`
 	Name        string      `gorm:"not null" json:"name"`
 	Type        AccountType `gorm:"not null" json:"type"`
 	Description string      `json:"description"`

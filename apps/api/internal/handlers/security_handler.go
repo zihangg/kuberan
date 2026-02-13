@@ -45,7 +45,7 @@ type RecordPricesRequest struct {
 
 // RecordPriceEntry represents a single price entry in a bulk request.
 type RecordPriceEntry struct {
-	SecurityID uint      `json:"security_id" binding:"required"`
+	SecurityID string    `json:"security_id" binding:"required"`
 	Price      int64     `json:"price" binding:"required,gt=0"`
 	RecordedAt time.Time `json:"recorded_at" binding:"required"`
 }
@@ -81,7 +81,7 @@ func (h *SecurityHandler) CreateSecurity(c *gin.Context) {
 		return
 	}
 
-	h.auditService.Log(0, "CREATE_SECURITY", "security", security.ID, c.ClientIP(),
+	h.auditService.Log("", "CREATE_SECURITY", "security", security.ID, c.ClientIP(),
 		map[string]interface{}{"symbol": req.Symbol, "asset_type": string(req.AssetType)})
 
 	c.JSON(http.StatusCreated, gin.H{"security": security})

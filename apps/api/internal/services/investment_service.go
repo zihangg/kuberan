@@ -14,13 +14,13 @@ import (
 // getLatestPrices fetches the most recent price for each security ID from security_prices.
 // Returns a map of security_id -> price (int64 cents). Securities with no price entries
 // are not included in the map.
-func getLatestPrices(db *gorm.DB, securityIDs []uint) (map[uint]int64, error) {
+func getLatestPrices(db *gorm.DB, securityIDs []string) (map[string]int64, error) {
 	if len(securityIDs) == 0 {
-		return map[uint]int64{}, nil
+		return map[string]int64{}, nil
 	}
 
 	type priceRow struct {
-		SecurityID uint
+		SecurityID string
 		Price      int64
 	}
 	var rows []priceRow
@@ -37,7 +37,7 @@ func getLatestPrices(db *gorm.DB, securityIDs []uint) (map[uint]int64, error) {
 		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
 
-	result := make(map[uint]int64, len(rows))
+	result := make(map[string]int64, len(rows))
 	for _, r := range rows {
 		result[r.SecurityID] = r.Price
 	}
@@ -57,7 +57,7 @@ func NewInvestmentService(db *gorm.DB, accountService AccountServicer) Investmen
 
 // AddInvestment adds a new investment holding to an investment account.
 func (s *investmentService) AddInvestment(
-	userID, accountID, securityID uint,
+	userID, accountID, securityID string,
 	quantity float64,
 	purchasePrice int64,
 	walletAddress string,
@@ -130,7 +130,7 @@ func (s *investmentService) AddInvestment(
 	}
 
 	// Populate current price from security_prices for the response
-	prices, err := getLatestPrices(s.db, []uint{securityID})
+	prices, err := getLatestPrices(s.db, []string{securityID})
 	if err != nil {
 		return nil, err
 	}
@@ -141,7 +141,7 @@ func (s *investmentService) AddInvestment(
 }
 
 // GetAccountInvestments returns a paginated list of investments for an account.
-func (s *investmentService) GetAccountInvestments(userID, accountID uint, page pagination.PageRequest) (*pagination.PageResponse[models.Investment], error) {
+func (s *investmentService) GetAccountInvestments(userID, accountID string, page pagination.PageRequest) (*pagination.PageResponse[models.Investment], error) {
 	// Verify account exists and belongs to user
 	if _, err := s.accountService.GetAccountByID(userID, accountID); err != nil {
 		return nil, err
@@ -162,7 +162,7 @@ func (s *investmentService) GetAccountInvestments(userID, accountID uint, page p
 	}
 
 	// Batch populate current prices from security_prices
-	secIDs := make([]uint, 0, len(investments))
+	secIDs := make([]string, 0, len(investments))
 	for i := range investments {
 		secIDs = append(secIDs, investments[i].SecurityID)
 	}
@@ -180,11 +180,11 @@ func (s *investmentService) GetAccountInvestments(userID, accountID uint, page p
 
 // GetAllInvestments returns a paginated list of all investments across all active
 // investment accounts for the given user.
-func (s *investmentService) GetAllInvestments(userID uint, page pagination.PageRequest) (*pagination.PageResponse[models.Investment], error) {
+func (s *investmentService) GetAllInvestments(userID string, page pagination.PageRequest) (*pagination.PageResponse[models.Investment], error) {
 	page.Defaults()
 
 	// Find all active investment account IDs for the user
-	var accountIDs []uint
+	var accountIDs []string
 	if err := s.db.Model(&models.Account{}).
 		Where("user_id = ? AND type = ? AND is_active = ?", userID, models.AccountTypeInvestment, true).
 		Pluck("id", &accountIDs).Error; err != nil {
@@ -210,7 +210,7 @@ func (s *investmentService) GetAllInvestments(userID uint, page pagination.PageR
 	}
 
 	// Batch populate current prices from security_prices
-	secIDs := make([]uint, 0, len(investments))
+	secIDs := make([]string, 0, len(investments))
 	for i := range investments {
 		secIDs = append(secIDs, investments[i].SecurityID)
 	}
@@ -227,7 +227,7 @@ func (s *investmentService) GetAllInvestments(userID uint, page pagination.PageR
 }
 
 // GetInvestmentByID returns an investment if the parent account belongs to the user.
-func (s *investmentService) GetInvestmentByID(userID, investmentID uint) (*models.Investment, error) {
+func (s *investmentService) GetInvestmentByID(userID, investmentID string) (*models.Investment, error) {
 	var investment models.Investment
 	if err := s.db.Preload("Account").Preload("Security").First(&investment, investmentID).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -242,7 +242,7 @@ func (s *investmentService) GetInvestmentByID(userID, investmentID uint) (*model
 	}
 
 	// Populate current price from security_prices
-	prices, err := getLatestPrices(s.db, []uint{investment.SecurityID})
+	prices, err := getLatestPrices(s.db, []string{investment.SecurityID})
 	if err != nil {
 		return nil, err
 	}
@@ -252,7 +252,7 @@ func (s *investmentService) GetInvestmentByID(userID, investmentID uint) (*model
 }
 
 // GetPortfolio returns an aggregated portfolio summary across all investment accounts.
-func (s *investmentService) GetPortfolio(userID uint) (*PortfolioSummary, error) {
+func (s *investmentService) GetPortfolio(userID string) (*PortfolioSummary, error) {
 	// Get all investment accounts for the user
 	var accounts []models.Account
 	if err := s.db.Where("user_id = ? AND type = ? AND is_active = ?", userID, models.AccountTypeInvestment, true).
@@ -260,7 +260,7 @@ func (s *investmentService) GetPortfolio(userID uint) (*PortfolioSummary, error)
 		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
 
-	accountIDs := make([]uint, len(accounts))
+	accountIDs := make([]string, len(accounts))
 	for i := range accounts {
 		accountIDs[i] = accounts[i].ID
 	}
@@ -280,7 +280,7 @@ func (s *investmentService) GetPortfolio(userID uint) (*PortfolioSummary, error)
 	}
 
 	// Batch fetch live prices from security_prices
-	secIDs := make([]uint, 0, len(investments))
+	secIDs := make([]string, 0, len(investments))
 	for i := range investments {
 		secIDs = append(secIDs, investments[i].SecurityID)
 	}
@@ -318,7 +318,7 @@ func (s *investmentService) GetPortfolio(userID uint) (*PortfolioSummary, error)
 
 // RecordBuy records a buy transaction and updates the investment holding.
 func (s *investmentService) RecordBuy(
-	userID, investmentID uint,
+	userID, investmentID string,
 	date time.Time,
 	quantity float64,
 	pricePerUnit int64,
@@ -369,7 +369,7 @@ func (s *investmentService) RecordBuy(
 
 // RecordSell records a sell transaction and adjusts the investment holding proportionally.
 func (s *investmentService) RecordSell(
-	userID, investmentID uint,
+	userID, investmentID string,
 	date time.Time,
 	quantity float64,
 	pricePerUnit int64,
@@ -432,7 +432,7 @@ func (s *investmentService) RecordSell(
 
 // RecordDividend records a dividend transaction without changing quantity or cost basis.
 func (s *investmentService) RecordDividend(
-	userID, investmentID uint,
+	userID, investmentID string,
 	date time.Time,
 	amount int64,
 	dividendType, notes string,
@@ -459,7 +459,7 @@ func (s *investmentService) RecordDividend(
 
 // RecordSplit records a stock split and multiplies the investment quantity.
 func (s *investmentService) RecordSplit(
-	userID, investmentID uint,
+	userID, investmentID string,
 	date time.Time,
 	splitRatio float64,
 	notes string,
@@ -499,7 +499,7 @@ func (s *investmentService) RecordSplit(
 }
 
 // GetInvestmentTransactions returns a paginated list of transactions for an investment.
-func (s *investmentService) GetInvestmentTransactions(userID, investmentID uint, page pagination.PageRequest) (*pagination.PageResponse[models.InvestmentTransaction], error) {
+func (s *investmentService) GetInvestmentTransactions(userID, investmentID string, page pagination.PageRequest) (*pagination.PageResponse[models.InvestmentTransaction], error) {
 	// Verify investment exists and user owns it
 	if _, err := s.GetInvestmentByID(userID, investmentID); err != nil {
 		return nil, err

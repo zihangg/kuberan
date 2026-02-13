@@ -28,9 +28,9 @@ func NewTransactionService(db *gorm.DB, accountService AccountServicer) Transact
 
 // CreateTransaction creates a new transaction for a user's account
 func (s *transactionService) CreateTransaction(
-	userID uint,
-	accountID uint,
-	categoryID *uint,
+	userID string,
+	accountID string,
+	categoryID *string,
 	transactionType models.TransactionType,
 	amount int64,
 	description string,
@@ -41,7 +41,7 @@ func (s *transactionService) CreateTransaction(
 		return nil, apperrors.WithMessage(apperrors.ErrInvalidInput, "amount must be greater than zero")
 	}
 
-	if accountID == 0 {
+	if accountID == "" {
 		return nil, apperrors.WithMessage(apperrors.ErrInvalidInput, "account ID is required")
 	}
 
@@ -71,9 +71,9 @@ func (s *transactionService) CreateTransaction(
 // createTransactionWithDB creates a transaction with a given database connection (useful for transactions)
 func (s *transactionService) createTransactionWithDB(
 	tx *gorm.DB,
-	userID uint,
+	userID string,
 	account *models.Account,
-	categoryID *uint,
+	categoryID *string,
 	transactionType models.TransactionType,
 	amount int64,
 	description string,
@@ -103,7 +103,7 @@ func (s *transactionService) createTransactionWithDB(
 
 // CreateTransfer creates an account-to-account transfer within a single DB transaction.
 func (s *transactionService) CreateTransfer(
-	userID, fromAccountID, toAccountID uint,
+	userID, fromAccountID, toAccountID string,
 	amount int64,
 	description string,
 	date time.Time,
@@ -175,7 +175,7 @@ func reverseType(t models.TransactionType) models.TransactionType {
 
 // UpdateTransaction updates an existing income/expense transaction.
 // Transfer and investment transactions cannot be edited.
-func (s *transactionService) UpdateTransaction(userID, transactionID uint, updates TransactionUpdateFields) (*models.Transaction, error) {
+func (s *transactionService) UpdateTransaction(userID, transactionID string, updates TransactionUpdateFields) (*models.Transaction, error) {
 	transaction, err := s.GetTransactionByID(userID, transactionID)
 	if err != nil {
 		return nil, err
@@ -275,7 +275,7 @@ func (s *transactionService) UpdateTransaction(userID, transactionID uint, updat
 }
 
 // GetAccountTransactions retrieves a paginated, filtered list of transactions for a specific account.
-func (s *transactionService) GetAccountTransactions(userID, accountID uint, page pagination.PageRequest, filter TransactionFilter) (*pagination.PageResponse[models.Transaction], error) {
+func (s *transactionService) GetAccountTransactions(userID, accountID string, page pagination.PageRequest, filter TransactionFilter) (*pagination.PageResponse[models.Transaction], error) {
 	// First verify the account belongs to the user
 	_, err := s.accountService.GetAccountByID(userID, accountID)
 	if err != nil {
@@ -329,7 +329,7 @@ func applyTransactionFilters(q *gorm.DB, f TransactionFilter) *gorm.DB {
 }
 
 // GetUserTransactions retrieves a paginated, filtered list of all transactions for a user across all accounts.
-func (s *transactionService) GetUserTransactions(userID uint, page pagination.PageRequest, filter TransactionFilter) (*pagination.PageResponse[models.Transaction], error) {
+func (s *transactionService) GetUserTransactions(userID string, page pagination.PageRequest, filter TransactionFilter) (*pagination.PageResponse[models.Transaction], error) {
 	page.Defaults()
 
 	base := s.db.Model(&models.Transaction{}).Where("user_id = ?", userID)
@@ -353,7 +353,7 @@ func (s *transactionService) GetUserTransactions(userID uint, page pagination.Pa
 }
 
 // GetTransactionByID retrieves a transaction by ID for a specific user
-func (s *transactionService) GetTransactionByID(userID, transactionID uint) (*models.Transaction, error) {
+func (s *transactionService) GetTransactionByID(userID, transactionID string) (*models.Transaction, error) {
 	var transaction models.Transaction
 	if err := s.db.Where("id = ? AND user_id = ?", transactionID, userID).First(&transaction).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -365,7 +365,7 @@ func (s *transactionService) GetTransactionByID(userID, transactionID uint) (*mo
 }
 
 // DeleteTransaction deletes a transaction and updates the account balance
-func (s *transactionService) DeleteTransaction(userID, transactionID uint) error {
+func (s *transactionService) DeleteTransaction(userID, transactionID string) error {
 	transaction, err := s.GetTransactionByID(userID, transactionID)
 	if err != nil {
 		return err
@@ -406,7 +406,7 @@ func (s *transactionService) DeleteTransaction(userID, transactionID uint) error
 }
 
 // GetMonthlySummary returns monthly income and expense totals for the last N months.
-func (s *transactionService) GetMonthlySummary(userID uint, months int) ([]MonthlySummaryItem, error) {
+func (s *transactionService) GetMonthlySummary(userID string, months int) ([]MonthlySummaryItem, error) {
 	now := time.Now()
 	startMonth := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC).AddDate(0, -(months - 1), 0)
 
@@ -448,7 +448,7 @@ func (s *transactionService) GetMonthlySummary(userID uint, months int) ([]Month
 }
 
 // GetDailySpending returns daily expense totals for a date range.
-func (s *transactionService) GetDailySpending(userID uint, from, to time.Time) ([]DailySpendingItem, error) {
+func (s *transactionService) GetDailySpending(userID string, from, to time.Time) ([]DailySpendingItem, error) {
 	// Normalize to start/end of day
 	current := time.Date(from.Year(), from.Month(), from.Day(), 0, 0, 0, 0, time.UTC)
 	end := time.Date(to.Year(), to.Month(), to.Day(), 0, 0, 0, 0, time.UTC)
@@ -499,9 +499,9 @@ var categoryColorPalette = []string{
 }
 
 // GetSpendingByCategory returns expense totals grouped by category for a date range.
-func (s *transactionService) GetSpendingByCategory(userID uint, from, to time.Time) (*SpendingByCategory, error) {
+func (s *transactionService) GetSpendingByCategory(userID string, from, to time.Time) (*SpendingByCategory, error) {
 	type categorySpend struct {
-		CategoryID *uint
+		CategoryID *string
 		Total      int64
 	}
 
@@ -527,16 +527,20 @@ func (s *transactionService) GetSpendingByCategory(userID uint, from, to time.Ti
 
 		if r.CategoryID != nil {
 			var category models.Category
-			if catErr := s.db.First(&category, *r.CategoryID).Error; catErr != nil {
+			if catErr := s.db.Where("id = ?", *r.CategoryID).First(&category).Error; catErr != nil {
 				item.CategoryName = "Unknown Category"
 				item.CategoryColor = "#9CA3AF"
 			} else {
 				item.CategoryName = category.Name
 				item.CategoryColor = category.Color
 				item.CategoryIcon = category.Icon
-				// Generate a deterministic fallback color if the category has no color set
+				// Use hash of UUID for deterministic color if category has no color set
 				if item.CategoryColor == "" {
-					item.CategoryColor = categoryColorPalette[*r.CategoryID%uint(len(categoryColorPalette))]
+					hash := 0
+					for _, c := range *r.CategoryID {
+						hash = hash*31 + int(c)
+					}
+					item.CategoryColor = categoryColorPalette[hash%len(categoryColorPalette)]
 				}
 			}
 		} else {

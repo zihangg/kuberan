@@ -1,6 +1,6 @@
 CREATE TABLE IF NOT EXISTS portfolio_snapshots (
-    id BIGSERIAL PRIMARY KEY,
-    user_id BIGINT NOT NULL REFERENCES users(id),
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v7(),
+    user_id UUID NOT NULL REFERENCES users(id),
     recorded_at TIMESTAMPTZ NOT NULL,
     total_net_worth BIGINT NOT NULL DEFAULT 0,
     cash_balance BIGINT NOT NULL DEFAULT 0,

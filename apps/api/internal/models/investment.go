@@ -5,8 +5,8 @@ import "time"
 // Investment represents a holding of a specific investment asset.
 type Investment struct {
 	Base
-	AccountID        uint    `gorm:"not null" json:"account_id"`
-	SecurityID       uint    `gorm:"not null" json:"security_id"`
+	AccountID        string  `gorm:"type:uuid;not null" json:"account_id"`
+	SecurityID       string  `gorm:"type:uuid;not null" json:"security_id"`
 	Quantity         float64 `gorm:"not null" json:"quantity"`
 	CostBasis        int64   `gorm:"type:bigint;not null" json:"cost_basis"`
 	RealizedGainLoss int64   `gorm:"type:bigint;not null;default:0" json:"realized_gain_loss"`
@@ -33,7 +33,7 @@ const (
 // InvestmentTransaction represents a transaction for an investment.
 type InvestmentTransaction struct {
 	Base
-	InvestmentID     uint                      `gorm:"not null" json:"investment_id"`
+	InvestmentID     string                    `gorm:"type:uuid;not null" json:"investment_id"`
 	Type             InvestmentTransactionType `gorm:"not null" json:"type"`
 	Date             time.Time                 `gorm:"not null" json:"date"`
 	Quantity         float64                   `gorm:"not null" json:"quantity"`

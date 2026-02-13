@@ -122,7 +122,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 
 	user, err := h.userService.AttemptLogin(req.Email, req.Password)
 	if err != nil {
-		h.auditService.Log(0, "LOGIN_FAILED", "user", 0, c.ClientIP(),
+		h.auditService.Log("", "LOGIN_FAILED", "user", "", c.ClientIP(),
 			map[string]interface{}{"email": req.Email})
 		respondWithError(c, err)
 		return

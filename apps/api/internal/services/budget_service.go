@@ -23,7 +23,7 @@ func NewBudgetService(db *gorm.DB) BudgetServicer {
 
 // CreateBudget creates a new budget for a category.
 func (s *budgetService) CreateBudget(
-	userID, categoryID uint,
+	userID, categoryID string,
 	name string,
 	amount int64,
 	period models.BudgetPeriod,
@@ -59,7 +59,7 @@ func (s *budgetService) CreateBudget(
 
 // GetUserBudgets returns a paginated list of budgets for the user with optional filters.
 func (s *budgetService) GetUserBudgets(
-	userID uint,
+	userID string,
 	page pagination.PageRequest,
 	isActive *bool,
 	period *models.BudgetPeriod,
@@ -89,7 +89,7 @@ func (s *budgetService) GetUserBudgets(
 }
 
 // GetBudgetByID returns a budget by ID if it belongs to the user.
-func (s *budgetService) GetBudgetByID(userID, budgetID uint) (*models.Budget, error) {
+func (s *budgetService) GetBudgetByID(userID, budgetID string) (*models.Budget, error) {
 	var budget models.Budget
 	if err := s.db.Preload("Category").Where("id = ? AND user_id = ?", budgetID, userID).First(&budget).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -102,7 +102,7 @@ func (s *budgetService) GetBudgetByID(userID, budgetID uint) (*models.Budget, er
 
 // UpdateBudget updates an existing budget's fields.
 func (s *budgetService) UpdateBudget(
-	userID, budgetID uint,
+	userID, budgetID string,
 	name string,
 	amount *int64,
 	period *models.BudgetPeriod,
@@ -137,7 +137,7 @@ func (s *budgetService) UpdateBudget(
 }
 
 // DeleteBudget soft-deletes a budget.
-func (s *budgetService) DeleteBudget(userID, budgetID uint) error {
+func (s *budgetService) DeleteBudget(userID, budgetID string) error {
 	budget, err := s.GetBudgetByID(userID, budgetID)
 	if err != nil {
 		return err
@@ -150,7 +150,7 @@ func (s *budgetService) DeleteBudget(userID, budgetID uint) error {
 }
 
 // GetBudgetProgress calculates spending vs budget for the current period.
-func (s *budgetService) GetBudgetProgress(userID, budgetID uint) (*BudgetProgress, error) {
+func (s *budgetService) GetBudgetProgress(userID, budgetID string) (*BudgetProgress, error) {
 	budget, err := s.GetBudgetByID(userID, budgetID)
 	if err != nil {
 		return nil, err

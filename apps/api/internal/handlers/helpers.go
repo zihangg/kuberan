@@ -2,13 +2,13 @@ package handlers
 
 import (
 	"errors"
-	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
 
 	apperrors "kuberan/internal/errors"
 	"kuberan/internal/logger"
+	"kuberan/internal/uuid"
 )
 
 // parseFlexibleTime parses a date/time string accepting both RFC3339
@@ -28,24 +28,31 @@ func parseFlexibleTime(value string) (time.Time, error) {
 
 // getUserID extracts the authenticated user ID from the Gin context.
 // Returns ErrUnauthorized if not present.
-func getUserID(c *gin.Context) (uint, error) {
+func getUserID(c *gin.Context) (string, error) {
 	userID, exists := c.Get("userID")
 	if !exists {
-		return 0, apperrors.ErrUnauthorized
+		return "", apperrors.ErrUnauthorized
 	}
-	return userID.(uint), nil
+	id, ok := userID.(string)
+	if !ok {
+		return "", apperrors.ErrUnauthorized
+	}
+	return id, nil
 }
 
-// parsePathID parses a uint path parameter.
-// Returns ErrInvalidInput if the parameter is not a valid positive integer.
+// parsePathID parses a UUID path parameter.
+// Returns ErrInvalidInput if the parameter is not a valid UUID.
 //
 //nolint:unparam // param is intentionally generic for reuse across handlers with different path params
-func parsePathID(c *gin.Context, param string) (uint, error) {
-	id, err := strconv.ParseUint(c.Param(param), 10, 32)
-	if err != nil {
-		return 0, apperrors.WithMessage(apperrors.ErrInvalidInput, "Invalid "+param)
+func parsePathID(c *gin.Context, param string) (string, error) {
+	id := c.Param(param)
+	if id == "" {
+		return "", apperrors.WithMessage(apperrors.ErrInvalidInput, "Invalid "+param)
 	}
-	return uint(id), nil
+	if !uuid.IsValid(id) {
+		return "", apperrors.WithMessage(apperrors.ErrInvalidInput, "Invalid "+param+" format")
+	}
+	return id, nil
 }
 
 // respondWithError writes a consistent JSON error response. If the error is an
