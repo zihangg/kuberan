@@ -201,9 +201,9 @@ function AccountCard({ account }: { account: Account }) {
     <Link href={`/accounts/${account.id}`}>
       <Card className="transition-colors hover:bg-accent/50">
         <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-base">{account.name}</CardTitle>
-            <Badge variant="secondary">
+          <div className="flex items-center justify-between gap-2 min-w-0">
+            <CardTitle className="text-base truncate min-w-0">{account.name}</CardTitle>
+            <Badge variant="secondary" className="shrink-0">
               {ACCOUNT_TYPE_LABELS[account.type] ?? account.type}
             </Badge>
           </div>
