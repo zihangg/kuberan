@@ -42,6 +42,9 @@ type Config struct {
 
 	// Pipeline
 	PipelineAPIKey string
+
+	// Bot
+	BotInternalSecret string
 }
 
 var appConfig *Config
@@ -74,6 +77,9 @@ func Load() (*Config, error) {
 
 		// Pipeline
 		PipelineAPIKey: os.Getenv("PIPELINE_API_KEY"),
+
+		// Bot
+		BotInternalSecret: os.Getenv("BOT_INTERNAL_SECRET"),
 	}
 
 	// Parse JWT expiration duration
