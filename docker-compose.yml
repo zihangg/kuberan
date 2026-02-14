@@ -19,6 +19,7 @@ services:
       - DB_NAME=kuberan
       - DB_SSLMODE=disable
       - PIPELINE_API_KEY=${PIPELINE_API_KEY}
+      - BOT_INTERNAL_SECRET=${BOT_INTERNAL_SECRET}
     depends_on:
       postgres:
         condition: service_healthy
@@ -53,6 +54,20 @@ services:
     profiles:
       - oracle
     restart: "no"
+  bot:
+    build:
+      context: ./apps/bot
+      dockerfile: Dockerfile.dev
+    volumes:
+      - ./apps/bot:/app
+    environment:
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - API_BASE_URL=http://api:8080
+      - BOT_INTERNAL_SECRET=${BOT_INTERNAL_SECRET}
+      - LOG_LEVEL=INFO
+    depends_on:
+      - api
+    restart: unless-stopped
 
   postgres:
     image: postgres:16-alpine
