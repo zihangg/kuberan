@@ -53,3 +53,10 @@ docker-compose.override.yml
 
 sql/
 backups/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
