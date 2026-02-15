@@ -29,7 +29,6 @@ def handle():
 /help - Show this help message
 /start - Link your Kuberan account
 /cancel - Cancel current operation
-/clear - Clear the chat
 
 *Tips:*
 - Amounts can include decimals (e.g., 50.50)
