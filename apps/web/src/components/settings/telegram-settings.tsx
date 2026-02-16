@@ -13,7 +13,7 @@ import { Copy, Check, Unlink, RefreshCw, ExternalLink } from "lucide-react";
 const BOT_USERNAME = "KuberanFinBot";
 
 export function TelegramSettings() {
-  const { data, isLoading, error, refetch } = useTelegramLink();
+  const { data, isLoading, refetch } = useTelegramLink();
   const generateCode = useGenerateLinkCode();
   const unlinkMutation = useUnlinkTelegram();
 
