@@ -17,7 +17,7 @@ declare global {
 function getApiBaseUrl(): string {
   // 1. Server-side: use API_URL env var directly
   if (typeof window === "undefined") {
-    return process.env.API_URL || "http://localhost:8080";
+    return process.env.NEXT_PUBLIC_API_URL || process.env.API_URL || "http://localhost:8080";
   }
 
   // 2. Client-side: check runtime config injected by server component

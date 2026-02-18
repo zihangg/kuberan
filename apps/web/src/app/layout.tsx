@@ -32,7 +32,7 @@ export default function RootLayout({
         <script
           dangerouslySetInnerHTML={{
             __html: `window.__KUBERAN_CONFIG__=${JSON.stringify({
-              apiUrl: process.env.API_URL || "",
+              apiUrl: process.env.NEXT_PUBLIC_API_URL || "",
             })}`,
           }}
         />

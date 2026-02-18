@@ -113,9 +113,6 @@ func run() error {
 
 	// Initialize Gin router
 	router := gin.New()
-	router.Use(gin.Recovery())
-	router.Use(middleware.RequestLogging())
-	router.Use(middleware.ErrorHandler())
 
 	// CORS middleware — CORS_ORIGIN env var controls allowed origins (default: *)
 	router.Use(func(c *gin.Context) {
@@ -131,6 +128,9 @@ func run() error {
 
 		c.Next()
 	})
+	router.Use(gin.Recovery())
+	router.Use(middleware.RequestLogging())
+	router.Use(middleware.ErrorHandler())
 
 	// Swagger documentation
 	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
