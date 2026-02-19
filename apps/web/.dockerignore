@@ -1,0 +1,24 @@
+# Dependencies (reinstalled in Docker)
+node_modules/
+
+# Build output
+.next/
+out/
+dist/
+
+# Development
+dockerfiles/
+.env
+.env.*
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+
+# Documentation
+*.md

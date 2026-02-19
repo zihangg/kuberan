@@ -1,0 +1,32 @@
+# Build artifacts
+bin/
+tmp/
+*.exe
+*.out
+
+# Development
+.air.toml
+dockerfiles/
+dev/
+.env
+.env.*
+
+# Tests
+*_test.go
+tests/
+internal/testutil/
+coverage.out
+coverage.html
+
+# Documentation
+*.md
+internal/docs/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store

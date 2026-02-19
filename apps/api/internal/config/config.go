@@ -42,6 +42,9 @@ type Config struct {
 
 	// Pipeline
 	PipelineAPIKey string
+
+	// CORS
+	CORSOrigin string
 }
 
 var appConfig *Config
@@ -74,6 +77,9 @@ func Load() (*Config, error) {
 
 		// Pipeline
 		PipelineAPIKey: os.Getenv("PIPELINE_API_KEY"),
+
+		// CORS
+		CORSOrigin: getEnv("CORS_ORIGIN", "*"),
 	}
 
 	// Parse JWT expiration duration

@@ -21,7 +21,10 @@ type Manager struct {
 
 // NewManager creates a new database manager
 func NewManager(config *Config) (*Manager, error) {
-	db, err := gorm.Open(postgres.Open(config.DSN()), &gorm.Config{})
+	db, err := gorm.Open(postgres.New(postgres.Config{
+		DSN:                  config.DSN(),
+		PreferSimpleProtocol: true, // Required for Supabase Supavisor connection pooling
+	}), &gorm.Config{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to database: %w", err)
 	}
