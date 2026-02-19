@@ -1,0 +1,5 @@
+# Kuberan Oracle - Fetch security prices every 30 minutes
+# Install with: crontab deploy/cron/oracle-cron
+# Or append with: (crontab -l; cat deploy/cron/oracle-cron) | crontab -
+
+*/30 * * * * cd /opt/kuberan && docker compose -f docker-compose.prod.yml run --rm oracle >> /var/log/kuberan-oracle.log 2>&1

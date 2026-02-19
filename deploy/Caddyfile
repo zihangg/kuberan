@@ -1,0 +1,16 @@
+{$DOMAIN} {
+	# API backend
+	handle /api/* {
+		reverse_proxy api:8080
+	}
+
+	# Swagger documentation
+	handle /swagger/* {
+		reverse_proxy api:8080
+	}
+
+	# Frontend (everything else)
+	handle {
+		reverse_proxy web:3000
+	}
+}
