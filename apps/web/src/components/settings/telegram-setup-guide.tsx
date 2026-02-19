@@ -6,7 +6,7 @@ import {
 } from "@/components/ui/accordion";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
-const BOT_USERNAME = "KuberanFinBot";
+const BOT_USERNAME = process.env.NEXT_PUBLIC_BOT_USERNAME ?? "KuberanFinBot";
 
 export function TelegramSetupGuide() {
   return (
