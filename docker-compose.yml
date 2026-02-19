@@ -36,6 +36,8 @@ services:
       - "3000:3000"
     # NEXT_PUBLIC_API_URL is now auto-detected on the client side
     # Add it here only if you need to override the default behavior
+    environment:
+      - NEXT_PUBLIC_BOT_USERNAME=${NEXT_PUBLIC_BOT_USERNAME:-KuberanFinBot}
     depends_on:
       - api
     restart: unless-stopped
@@ -67,6 +69,8 @@ services:
       - LOG_LEVEL=INFO
     depends_on:
       - api
+    profiles:
+      - bot
     restart: unless-stopped
 
   postgres:

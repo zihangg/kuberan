@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { TelegramSetupGuide } from "./telegram-setup-guide";
 import { Copy, Check, Unlink, RefreshCw, ExternalLink } from "lucide-react";
 
-const BOT_USERNAME = "KuberanFinBot";
+const BOT_USERNAME = process.env.NEXT_PUBLIC_BOT_USERNAME ?? "KuberanFinBot";
 
 export function TelegramSettings() {
   const { data, isLoading, refetch } = useTelegramLink();
