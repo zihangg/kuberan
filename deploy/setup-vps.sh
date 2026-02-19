@@ -1,17 +1,16 @@
 #!/usr/bin/env bash
 #
 # One-time VPS setup for Kuberan production deployment.
-# Run this on a fresh VPS (Ubuntu 22.04+ / Debian 12+).
+# Run this on a fresh Ubuntu 22.04+ / Debian 12+ machine.
 #
-# Usage: curl -sSL <raw-url> | bash
-#    or: bash deploy/setup-vps.sh
+# Usage: bash deploy/setup-vps.sh
 #
 set -euo pipefail
 
 INSTALL_DIR="/opt/kuberan"
 
 echo "========================================="
-echo "  Kuberan VPS Setup"
+echo "  Kuberan Setup"
 echo "========================================="
 
 # --- Docker ---
@@ -54,10 +53,11 @@ if [ ! -f "$INSTALL_DIR/.env.prod" ]; then
     chmod 600 "$INSTALL_DIR/.env.prod"
     echo ""
     echo "    IMPORTANT: Edit $INSTALL_DIR/.env.prod with your production values:"
-    echo "    - DOMAIN (your domain name)"
+    echo "    - CF_TUNNEL_TOKEN (from Cloudflare Zero Trust > Tunnels)"
     echo "    - JWT_SECRET (generate: openssl rand -hex 32)"
     echo "    - PIPELINE_API_KEY (generate: openssl rand -hex 32)"
     echo "    - DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME (Supabase credentials)"
+    echo "    - CORS_ORIGIN and NEXT_PUBLIC_API_URL (your domain, e.g. https://kuberan.example.com)"
     echo ""
     echo "    Run: nano $INSTALL_DIR/.env.prod"
     echo ""
@@ -69,13 +69,13 @@ fi
 echo "==> Setting up oracle cron job (every 30 minutes)..."
 CRON_CMD="*/30 * * * * cd $INSTALL_DIR && docker compose -f docker-compose.prod.yml run --rm oracle >> /var/log/kuberan-oracle.log 2>&1"
 
-# Add cron job if not already present
-(crontab -l 2>/dev/null || true) | grep -v "kuberan.*oracle" | { cat; echo "$CRON_CMD"; } | crontab -
-echo "    Oracle cron job installed."
+# Add cron job to root's crontab if not already present
+(sudo crontab -l 2>/dev/null || true) | grep -v "kuberan.*oracle" | { cat; echo "$CRON_CMD"; } | sudo crontab -
+echo "    Oracle cron job installed (root crontab)."
 
 # --- Log rotation ---
 echo "==> Setting up log rotation..."
-cat > /etc/logrotate.d/kuberan-oracle << 'EOF'
+sudo tee /etc/logrotate.d/kuberan-oracle > /dev/null << 'EOF'
 /var/log/kuberan-oracle.log {
     weekly
     rotate 4
@@ -91,7 +91,10 @@ echo "  Setup complete!"
 echo "========================================="
 echo ""
 echo "Next steps:"
-echo "  1. Edit .env.prod:  nano $INSTALL_DIR/.env.prod"
-echo "  2. Point your domain's DNS A record to this server's IP"
+echo "  1. Create a Cloudflare Tunnel:"
+echo "     - Go to Cloudflare Dashboard > Zero Trust > Networks > Tunnels"
+echo "     - Create a tunnel, copy the token"
+echo "     - Configure public hostname routes in the tunnel dashboard"
+echo "  2. Edit .env.prod:  nano $INSTALL_DIR/.env.prod"
 echo "  3. Deploy:          cd $INSTALL_DIR && ./deploy/deploy.sh"
 echo ""

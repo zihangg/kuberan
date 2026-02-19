@@ -14,7 +14,7 @@ if [ ! -f .env.prod ]; then
 fi
 
 # Symlink .env.prod to .env so Docker Compose reads it automatically
-# for variable interpolation (${DOMAIN}, ${NEXT_PUBLIC_API_URL}, etc.)
+# for variable interpolation (${CF_TUNNEL_TOKEN}, ${NEXT_PUBLIC_API_URL}, etc.)
 ln -sf .env.prod .env
 
 echo "==> Building images..."
@@ -36,4 +36,4 @@ echo "==> Done. Services:"
 $COMPOSE ps
 
 echo ""
-echo "Site should be live at https://${DOMAIN:-localhost}"
+echo "Site should be live at ${NEXT_PUBLIC_API_URL:-https://localhost}"
