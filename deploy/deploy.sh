@@ -22,7 +22,10 @@ echo "==> Building images..."
 $COMPOSE build
 
 echo "==> Running database migrations..."
-$COMPOSE run --rm api /migrate up
+# Migrations use advisory locks which require a direct connection,
+# not the Supavisor transaction-mode pooler (port 6543).
+# Override DB_PORT to use Supabase's direct connection (port 5432).
+$COMPOSE run --rm -e DB_PORT=5432 api /migrate up
 
 echo "==> Starting services..."
 $COMPOSE up -d
