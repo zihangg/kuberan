@@ -29,7 +29,7 @@ func (s *accountService) CreateCashAccount(userID string, name, description, cur
 	}
 
 	if currency == "" {
-		currency = "USD" // Default currency
+		currency = "MYR" // Default currency
 	}
 
 	// Create account
@@ -78,7 +78,7 @@ func (s *accountService) CreateInvestmentAccount(userID string, name, descriptio
 	}
 
 	if currency == "" {
-		currency = "USD"
+		currency = "MYR"
 	}
 
 	account := &models.Account{
@@ -106,7 +106,7 @@ func (s *accountService) CreateCreditCardAccount(userID string, name, descriptio
 	}
 
 	if currency == "" {
-		currency = "USD"
+		currency = "MYR"
 	}
 
 	account := &models.Account{
