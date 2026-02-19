@@ -13,10 +13,9 @@ if [ ! -f .env.prod ]; then
     exit 1
 fi
 
-# Source .env.prod for variable interpolation
-set -a
-source .env.prod
-set +a
+# Symlink .env.prod to .env so Docker Compose reads it automatically
+# for variable interpolation (${DOMAIN}, ${NEXT_PUBLIC_API_URL}, etc.)
+ln -sf .env.prod .env
 
 echo "==> Building images..."
 $COMPOSE build
