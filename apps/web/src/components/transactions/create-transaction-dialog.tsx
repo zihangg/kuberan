@@ -439,7 +439,24 @@ export function CreateTransactionDialog({
             <div className="grid grid-cols-2 gap-3">
               {!defaultAccountId && (
                 <div className="flex min-w-0 flex-col gap-1.5">
-                  <Label htmlFor="tx-account">Account</Label>
+                  {/* "Make default" rides on the label row so the field lines
+                      up with Date; the current default is starred in the list. */}
+                  <div className="flex items-center justify-between gap-2">
+                    <Label htmlFor="tx-account">Account</Label>
+                    {selectedAccount &&
+                      canBeDefaultAccount(selectedAccount) &&
+                      selectedAccount.id !== savedDefaultAccountId && (
+                        <button
+                          type="button"
+                          onClick={handleMakeDefault}
+                          disabled={isSubmitting || setDefaultAccount.isPending}
+                          className="-my-2 inline-flex items-center gap-1 py-2 text-xs whitespace-nowrap text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
+                        >
+                          <Star className="size-3" />
+                          {setDefaultAccount.isPending ? "Saving…" : "Make default"}
+                        </button>
+                      )}
+                  </div>
                   <Select
                     value={selectedAccountId}
                     onValueChange={setAccountId}
@@ -451,31 +468,20 @@ export function CreateTransactionDialog({
                     <SelectContent>
                       {accounts.map((a) => (
                         <SelectItem key={a.id} value={a.id}>
-                          {a.name}
+                          <span className="truncate">{a.name}</span>
+                          {a.id === savedDefaultAccountId && (
+                            <>
+                              <Star
+                                aria-hidden
+                                className="size-3 fill-current text-muted-foreground"
+                              />
+                              <span className="sr-only">(default)</span>
+                            </>
+                          )}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
-                  {selectedAccount && canBeDefaultAccount(selectedAccount) && (
-                    <div className="flex justify-end">
-                      {selectedAccount.id === savedDefaultAccountId ? (
-                        <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                          <Star className="size-3 fill-current" />
-                          Default account
-                        </span>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={handleMakeDefault}
-                          disabled={isSubmitting || setDefaultAccount.isPending}
-                          className="-my-2 inline-flex items-center gap-1 py-2 text-xs text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
-                        >
-                          <Star className="size-3" />
-                          {setDefaultAccount.isPending ? "Saving…" : "Make default"}
-                        </button>
-                      )}
-                    </div>
-                  )}
                 </div>
               )}
               <div
