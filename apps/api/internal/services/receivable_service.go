@@ -137,15 +137,8 @@ func (s *receivableService) CreateSharedExpense(userID string, in CreateSharedEx
 	}
 
 	categoryID := in.CategoryID
-	if categoryID != nil {
-		var n int64
-		if err := s.db.Model(&models.Category{}).
-			Where("id = ? AND user_id = ?", *categoryID, userID).Count(&n).Error; err != nil {
-			return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
-		}
-		if n == 0 {
-			return nil, apperrors.ErrCategoryNotFound
-		}
+	if err := ensureCategoryOwned(s.db, userID, categoryID); err != nil {
+		return nil, err
 	}
 
 	// Auto-categorize via rules exactly like CreateTransaction, except in full

@@ -94,8 +94,9 @@ func parseTxnType(v string) (models.TransactionType, *mcp.CallToolResult) {
 }
 
 // checkCategory verifies that categoryID belongs to the user and that its type
-// matches txType. The transaction service does not check category ownership,
-// so the MCP layer does.
+// matches txType. The transaction service enforces ownership itself; the type
+// match is an MCP-only rule (the web app allows any category), applied because
+// a model picking an income category for an expense is almost always a mistake.
 func (s *Server) checkCategory(userID, categoryID string, txType models.TransactionType) *mcp.CallToolResult {
 	category, err := s.services.Categories.GetCategoryByID(userID, categoryID)
 	if err != nil {

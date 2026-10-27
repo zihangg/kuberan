@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"kuberan/internal/logger"
 	"kuberan/internal/models"
+	"kuberan/internal/uuid"
 
 	"gorm.io/gorm"
 )
@@ -20,7 +21,28 @@ func NewAuditService(db *gorm.DB) AuditServicer {
 
 // Log records an audit event. Errors are logged but never propagate
 // to avoid disrupting the main operation.
+//
+// user_id and resource_id are UUID columns. An empty ID is stored as NULL; a
+// non-empty ID that is not a UUID (e.g. a non-UUID OAuth client_id) is stored
+// as NULL with the raw value kept in changes under "user_ref" or
+// "resource_ref", so the event is never dropped by a type error.
 func (s *auditService) Log(userID, action, resourceType, resourceID, ipAddress string, changes map[string]any) {
+	userRef, userRaw := auditUUID(userID)
+	resourceRef, resourceRaw := auditUUID(resourceID)
+	if userRaw != "" || resourceRaw != "" {
+		merged := make(map[string]any, len(changes)+2)
+		for k, v := range changes {
+			merged[k] = v
+		}
+		if userRaw != "" {
+			merged["user_ref"] = userRaw
+		}
+		if resourceRaw != "" {
+			merged["resource_ref"] = resourceRaw
+		}
+		changes = merged
+	}
+
 	var changesJSON string
 	if changes != nil {
 		data, err := json.Marshal(changes)
@@ -33,10 +55,10 @@ func (s *auditService) Log(userID, action, resourceType, resourceID, ipAddress s
 	}
 
 	entry := &models.AuditLog{
-		UserID:       userID,
+		UserID:       userRef,
 		Action:       action,
 		ResourceType: resourceType,
-		ResourceID:   resourceID,
+		ResourceID:   resourceRef,
 		IPAddress:    ipAddress,
 		Changes:      changesJSON,
 	}
@@ -50,4 +72,17 @@ func (s *auditService) Log(userID, action, resourceType, resourceID, ipAddress s
 			"resource_id", resourceID,
 		)
 	}
+}
+
+// auditUUID maps an ID to a UUID column value: nil for "", the canonical form
+// for a valid UUID, and nil plus the raw value for anything else.
+func auditUUID(id string) (ref *string, raw string) {
+	if id == "" {
+		return nil, ""
+	}
+	canonical, err := uuid.Parse(id)
+	if err != nil {
+		return nil, id
+	}
+	return &canonical, ""
 }

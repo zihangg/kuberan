@@ -297,7 +297,7 @@ func TestCreateTransactionTool(t *testing.T) {
 		if err := e.db.Where("action = ?", "MCP_CREATE_TRANSACTION").First(&log).Error; err != nil {
 			t.Fatalf("expected an audit row: %v", err)
 		}
-		if log.UserID != e.user.ID || log.IPAddress != "203.0.113.7" ||
+		if log.UserID == nil || *log.UserID != e.user.ID || log.IPAddress != "203.0.113.7" ||
 			!strings.Contains(log.Changes, testClientID) || !strings.Contains(log.Changes, `"via":"mcp"`) {
 			t.Errorf("unexpected audit row: %+v", log)
 		}
