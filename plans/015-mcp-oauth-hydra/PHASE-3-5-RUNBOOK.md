@@ -181,3 +181,36 @@ back: redeploy the pre-Phase-4 api/mcp image, run
 `go run cmd/migrate/main.go down 1` to re-add `users.mcp_token_hash` (migration
 `000023`), re-issue a legacy token, and re-add the connector in Claude. Single
 user -> the cutover window is small and acceptable.
+
+---
+
+## 5. Enabling MCP write access (plan 022)
+
+Write access is off by default. See `docs/mcp-oauth.md` ("Write access") for
+the design.
+
+1. **Deploy with writes off.** Migration `000033` replaces
+   `trusted_oauth_clients` with `oauth_client_grants`, so existing trust rows are
+   dropped: the next connect shows the consent screen once. Re-run the section 1
+   fast checks. `scopes_supported` must still list only `read:*`.
+2. **Turn writes on.** Set `MCP_WRITE_ENABLED=true` in `.env.prod`. Both the
+   `api` and `mcp` services read it, so restart both. Check that
+   `scopes_supported` now also lists `write:transactions write:categories
+   write:budgets`.
+3. **Re-add the connector.** Existing DCR clients were registered with only
+   `read:*`, and Hydra rejects an authorize request for scopes outside a
+   client's registered set. Remove the connector in Claude and add it again so
+   it re-registers.
+4. **E2E pass criteria:**
+   - Connect *without* ticking any "Allow changes" box. Asking Claude to add a
+     transaction returns "not allowed to make changes".
+   - Settings > Connected apps shows the client as "Read only".
+   - Reconnect, tick "Add and edit transactions". Claude asks before calling
+     `create_transaction`. The transaction appears in the web app, and an
+     `MCP_CREATE_TRANSACTION` row in `audit_logs` carries the client's
+     `client_id`.
+   - Settings > Connected apps > Disconnect. The very next write fails
+     immediately. Reads stop within 15 minutes and refresh is rejected.
+5. **Rollback.** Set `MCP_WRITE_ENABLED=false` and restart `api` and `mcp`. The
+   write tools disappear and `write:*` scopes can no longer be registered or
+   granted. Grants keep their recorded write scopes, but no tool accepts them.

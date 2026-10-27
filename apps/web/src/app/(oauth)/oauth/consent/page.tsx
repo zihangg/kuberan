@@ -57,7 +57,7 @@ function ScopeCheckbox({
     <label className="flex items-center gap-2 text-sm">
       <input
         type="checkbox"
-        className="border-input size-4 rounded"
+        className="border-input size-4 shrink-0 rounded"
         checked={checked}
         onChange={(e) => onChange(scope, e.target.checked)}
         disabled={disabled}
@@ -266,7 +266,7 @@ function OAuthConsent() {
         <label className="flex items-center gap-2 text-sm">
           <input
             type="checkbox"
-            className="border-input size-4 rounded"
+            className="border-input size-4 shrink-0 rounded"
             checked={rememberClient}
             onChange={(e) => setRememberClient(e.target.checked)}
             disabled={isSubmitting}

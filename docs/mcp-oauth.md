@@ -40,9 +40,9 @@ Kratos.
 | Ory Hydra (`oryd/hydra`, pinned in compose) | `:4444` public, `:4445` admin | Authorization Server: authorize/token endpoints, JWKS signing keys, refresh rotation, client store |
 | MCP server | `apps/api/cmd/mcp`, `internal/mcp/`, `:8081` | OAuth **Resource Server**: validates access tokens offline against Hydra's JWKS |
 | Login/consent bridge | `internal/handlers/oauth_handler.go`, `internal/hydra/` | Browser-callable endpoints that resolve Hydra's login/consent challenges via the admin API (the browser never talks to `:4445`) |
-| Hardened DCR proxy | `internal/handlers/registration_handler.go`, served at `/oauth2/register` on `:8080` | Fronts client self-registration: forces public clients + PKCE (S256), restricts grants to `authorization_code`/`refresh_token`, caps scopes to the `read:*` set (a client requesting no scopes gets the full default `read:*` set rather than an unusable empty-scope client) and always registers `openid offline offline_access`, audits + alerts every registration |
-| Login/consent pages | `apps/web` `/oauth/login`, `/oauth/consent` | UI for Hydra's login/consent redirects |
-| `trusted_oauth_clients` table | migration + `internal/services` | Trust-on-first-use: unknown clients get a consent screen; remembered clients auto-accept |
+| Hardened DCR proxy | `internal/handlers/registration_handler.go`, served at `/oauth2/register` on `:8080` | Fronts client self-registration: forces public clients + PKCE (S256), restricts grants to `authorization_code`/`refresh_token`, caps scopes to the registered API set (`read:*`, plus `write:*` when `MCP_WRITE_ENABLED`; a client requesting no scopes gets the full set rather than an unusable empty-scope client) and always registers `openid offline offline_access`, audits + alerts every registration |
+| Login/consent pages | `apps/web` `/oauth/login`, `/oauth/consent` | UI for Hydra's login/consent redirects; per-scope checkboxes, write scopes in a separate "Allow changes" section, unticked by default |
+| `oauth_client_grants` table | migration `000033` + `internal/services/oauth_grant_service.go` | Per-user, per-scope consent: what each client was granted and which scopes the user has reviewed. A remembered client auto-accepts only for reviewed scopes. Backs Settings > Connected apps and the MCP write guard (plan 022) |
 
 Hydra stores its own tables via `hydra migrate sql` (the `hydra-migrate`
 compose service) in a dedicated database/schema on the same Postgres instance -
@@ -73,8 +73,8 @@ sequenceDiagram
     Note over K: user signs in (bcrypt via UserService)
     K->>H: AcceptLogin(sub = Kuberan user ID)
     H->>K: redirect with consent_challenge
-    Note over K: TOFU - unknown client: consent screen<br/>remembered client: auto-accept
-    K->>H: AcceptConsent(granted read:* scopes)
+    Note over K: unknown client or new scope: consent screen<br/>remembered client, reviewed scopes: auto-accept
+    K->>H: AcceptConsent(scopes the user ticked)
     H-->>C: authorization code
     C->>H: POST /oauth2/token (code + PKCE verifier)
     H-->>C: access JWT (15m TTL) + rotating refresh token
@@ -102,15 +102,18 @@ Hydra's cached JWKS - no per-request DB or network hop:
 - RS256 signature, `exp`/`nbf`, `iss` == Hydra issuer, `aud` contains
   `MCP_RESOURCE_URL`.
 - `sub` is the Kuberan user ID (set by the bridge at `AcceptLogin`).
+- `client_id` is the OAuth client; the write guard checks it against the
+  user's grant (see "Write access").
 - Scopes: Hydra emits them as the **`scp` claim (JSON array)**; the validator
   reads `scp` first and falls back to `scope` (space-delimited string, the
   convention other servers use). See "hard-won interop notes" below.
 
 Each MCP tool then enforces its required scope via `requireScope` (e.g.
 `list_accounts` needs `read:accounts`). The canonical scope set is
-`config.DefaultOAuthScopes`; Hydra v2.x has no global scope registry, so scope
+`config.DefaultOAuthScopes`, plus `config.DefaultOAuthWriteScopes` when
+`MCP_WRITE_ENABLED` is set; Hydra v2.x has no global scope registry, so scope
 policy is enforced entirely code-side (DCR proxy caps, consent bridge grants
-the subset, RS enforces per tool).
+the subset the user ticks, RS enforces per tool).
 
 Tradeoff: dropping the per-request user lookup means `IsActive` is checked at
 login time, not per call. Mitigations: 15-minute access TTL + inactive users
@@ -135,6 +138,66 @@ access token and force re-authorization. So:
 
 Clients registered before this change lack `offline_access` in their
 registration; remove and re-add the connector so it re-registers.
+
+## Consent and connected apps
+
+Consent decisions are stored per user and client in `oauth_client_grants`
+(plan 022): `approved_scopes` (granted), `reviewed_scopes` (shown on the
+consent screen, granted or not) and `auto_accept` ("remember this
+application").
+
+- **Auto-accept** happens only when the grant is remembered, not revoked, and
+  every requested scope is already in `reviewed_scopes`. It grants the
+  requested scopes the user approved, never more. A client that starts asking
+  for a new scope (for example `write:transactions` after writes are enabled)
+  brings the consent screen back, with previous choices pre-ticked.
+- **Accept** grants the scopes the user ticked (`granted_scopes`), capped to
+  what the client requested and the registered set. If a request omits
+  `granted_scopes`, only `read:*` is granted, so an outdated page can never
+  grant write access. The grant row is written before Hydra issues anything.
+- **Settings > Connected apps** (`GET /api/v1/oauth/clients`,
+  `DELETE /api/v1/oauth/clients/:client_id`) lists active grants and
+  disconnects a client. Disconnecting calls Hydra's
+  `DELETE /admin/oauth2/auth/sessions/consent?subject=&client=` (revokes the
+  consent and its refresh tokens), then marks the grant revoked and audits
+  `OAUTH_CLIENT_REVOKED`. If Hydra fails, nothing changes and the user can
+  retry. An access JWT already issued keeps working for reads until it
+  expires (15 minutes max) but is refused for writes at once (below).
+
+## Write access (plan 022)
+
+Off by default. `MCP_WRITE_ENABLED=true` (read by both `api` and `mcp`) adds
+`write:transactions`, `write:categories` and `write:budgets` to the scope set
+and registers the write tools:
+
+| Scope | Tools |
+|---|---|
+| `write:transactions` | `create_transaction`, `create_transfer`, `update_transaction`, `categorize_transactions`, `record_repayment`, `write_off_receivable` |
+| `write:categories` | `create_category`, `update_category` |
+| `write:budgets` | `create_budget`, `update_budget` |
+
+Nothing deletes records, and investments, accounts and fixed deposits stay
+read-only. Every write goes through `authorizeWrite` (`internal/mcp/write.go`):
+
+1. the token carries the scope (`requireScope`);
+2. the user's grant for the token's `client_id` is active, includes the scope,
+   and the user is active: one indexed query per write, which is what makes
+   disconnecting and deactivation take effect immediately for writes;
+3. a per-(user, client) rate limit (`MCP_WRITE_RATE_PER_MINUTE`, default 30;
+   `MCP_WRITE_RATE_PER_DAY`, default 500), held in memory.
+
+Tools also bound amounts (positive, at most `MCP_MAX_WRITE_AMOUNT` cents,
+default $10,000), dates (at most 7 days ahead) and description length, check
+that a category belongs to the user and matches the transaction type, and
+audit each write as `MCP_<ACTION>` with `via: "mcp"`, `client_id` and the
+tool name (updates record before and after values). Amounts are in dollars,
+like the read tools' filters. All tools carry MCP annotations
+(`readOnlyHint`, `destructiveHint`) so clients can ask the user before a
+write, and every write tool's description tells the model to confirm first.
+
+After enabling writes, remove and re-add the connector: existing DCR clients
+were registered with `read:*` only, and Hydra refuses to authorize scopes
+outside a client's registration. Runbook: `plans/015-mcp-oauth-hydra/PHASE-3-5-RUNBOOK.md` section 5.
 
 ## Deployment topology
 

@@ -1,5 +1,27 @@
 # Plan 022 — MCP Write Access
 
+**Status: implemented** (all phases). Where the code differs from the plan below:
+
+- **Amounts are in dollars**, not cents. The read tools' amount filters already take
+  dollars, and the model is less likely to get dollars wrong. Tools convert to cents with
+  `dollarsToCents`. `MCP_MAX_WRITE_AMOUNT` is still in cents.
+- **`categorize_transactions` takes at most 25 IDs**, not 50, so a full batch always fits
+  the default 30-per-minute rate limit. Each ID counts as one write.
+- **Category ownership is checked in the MCP layer** (`checkCategory`). The transaction
+  service does not verify that a `category_id` belongs to the user, a gap that predates
+  this plan (REST has it too). The tools also reject a category whose type doesn't match
+  the transaction type.
+- **Disconnect calls Hydra first, then revokes locally**, so a Hydra failure leaves
+  everything unchanged and the user can retry.
+- **Files:** write tools live in `internal/mcp/tools_*_write.go`, with the guard, argument
+  helpers and rate limiter in `internal/mcp/write.go`. The connected-apps endpoints are
+  methods on `OAuthHandler` (`internal/handlers/oauth_clients_handler.go`). The settings UI
+  is a new "Connected apps" tab.
+- **Verified** with unit, handler and integration tests (SQLite), and a local smoke run
+  against Postgres 16 with the real `api` and `mcp` binaries and a stub JWKS/admin server
+  standing in for Hydra. The real-Claude E2E in Phase 5 is still to be done on a
+  deployment.
+
 ## Context
 
 The MCP server (`apps/api/cmd/mcp`, `internal/mcp/`) is read-only. Plan 015 chose that on purpose
