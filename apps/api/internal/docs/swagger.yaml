@@ -2543,6 +2543,28 @@ paths:
       summary: Login user
       tags:
       - auth
+  /auth/logout:
+    post:
+      consumes:
+      - application/json
+      description: Revoke the refresh session for this device
+      parameters:
+      - description: Refresh token
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handlers.RefreshRequest'
+      responses:
+        "204":
+          description: Logged out
+        "400":
+          description: Invalid input
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      summary: Logout
+      tags:
+      - auth
   /auth/refresh:
     post:
       consumes:

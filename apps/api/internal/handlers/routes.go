@@ -48,6 +48,7 @@ func RegisterRoutes(router *gin.Engine, h Routes, secrets RouteSecrets) {
 	auth.POST("/register", h.Auth.Register)
 	auth.POST("/login", h.Auth.Login)
 	auth.POST("/refresh", h.Auth.RefreshToken)
+	auth.POST("/logout", h.Auth.Logout)
 
 	// OAuth login/consent bridge (public: driven by the apps/web pages during the
 	// Hydra authorization flow, before a Kuberan session exists). See plan 15.

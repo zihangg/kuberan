@@ -293,8 +293,10 @@ func TestOAuthDCRProxyHardensClient(t *testing.T) {
 	if resp := toStringSlice(create["response_types"]); strings.Join(resp, ",") != "code" {
 		t.Fatalf("expected response_types [code], got %v", resp)
 	}
-	if scope, _ := create["scope"].(string); scope != "read:accounts" {
-		t.Fatalf("expected capped scope 'read:accounts', got %q", scope)
+	// Disallowed scopes are dropped; protocol scopes are always registered so
+	// the client can receive refresh tokens.
+	if scope, _ := create["scope"].(string); scope != "read:accounts openid offline offline_access" {
+		t.Fatalf("expected capped scope 'read:accounts openid offline offline_access', got %q", scope)
 	}
 
 	// The registration is audited (single-user intrusion signal).
@@ -328,8 +330,8 @@ func TestOAuthDCRProxyServedAtStandardPath(t *testing.T) {
 	if got := create["token_endpoint_auth_method"]; got != "none" {
 		t.Fatalf("expected public client at /oauth2/register, got %v", got)
 	}
-	if scope, _ := create["scope"].(string); scope != "read:accounts" {
-		t.Fatalf("expected capped scope 'read:accounts' at /oauth2/register, got %q", scope)
+	if scope, _ := create["scope"].(string); scope != "read:accounts openid offline offline_access" {
+		t.Fatalf("expected capped scope at /oauth2/register, got %q", scope)
 	}
 }
 

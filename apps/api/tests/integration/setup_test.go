@@ -70,6 +70,7 @@ func setupIsolatedDB(t *testing.T) *gorm.DB {
 		&models.InvestmentTransaction{},
 		&models.AuditLog{},
 		&models.TrustedOAuthClient{},
+		&models.RefreshSession{},
 		&models.TransactionRule{},
 		&models.TransactionRuleCondition{},
 		&models.TransactionRuleAction{},

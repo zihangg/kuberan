@@ -13,13 +13,17 @@ import (
 
 	"kuberan/internal/config"
 	"kuberan/internal/models"
+	"kuberan/internal/uuid"
 )
 
 const (
-	accessTokenExpiry  = 15 * time.Minute
-	refreshTokenExpiry = 7 * 24 * time.Hour
-	botTokenExpiry     = 365 * 24 * time.Hour // 1 year for bot tokens
+	accessTokenExpiry = 15 * time.Minute
+	botTokenExpiry    = 365 * 24 * time.Hour // 1 year for bot tokens
 )
+
+// RefreshTokenExpiry is the lifetime of a refresh token. Each refresh issues a
+// new one, so a device stays signed in as long as it is used at least this often.
+const RefreshTokenExpiry = 7 * 24 * time.Hour
 
 // getJWTKey returns the JWT key from configuration
 func getJWTKey() []byte {
@@ -60,7 +64,10 @@ func GenerateRefreshToken(user *models.User) (string, error) {
 		Email:     user.Email,
 		TokenType: "refresh",
 		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(refreshTokenExpiry)),
+			// A unique ID keeps tokens minted in the same second (two devices,
+			// or a grace-period re-rotation) distinct, so their hashes differ.
+			ID:        uuid.New(),
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(RefreshTokenExpiry)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 			NotBefore: jwt.NewNumericDate(time.Now()),
 			Issuer:    "kuberan-api",

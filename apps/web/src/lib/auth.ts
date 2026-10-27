@@ -8,6 +8,7 @@ export const {
   getRefreshToken,
   setRefreshToken,
   clearTokens,
+  revokeSession,
 } = tokenStore;
 
 // Re-export JWT parsing utilities (single source of truth in token-utils.ts)

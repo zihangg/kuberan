@@ -176,7 +176,8 @@ Non-monetary floats that remain as float64: `Investment.Quantity`, `SplitRatio`,
 
 ### Authentication
 - JWT access tokens (short-lived, 15min) + refresh tokens (7d)
-- Refresh token hash stored in user record
+- Refresh tokens are per device: each login creates a `refresh_sessions` row (token hash only); refresh rotates within that session with a 2-minute grace for the rotated-out token, so other devices and racing tabs stay signed in
+- `POST /api/v1/auth/logout` revokes the current device's session
 - Account lockout after 5 failed login attempts (15min cooldown)
 - `LastLoginAt` tracking
 
@@ -259,7 +260,8 @@ When using AI coding agents (Claude Code, Cursor, Copilot, etc.) to modify this 
 ```
 POST /api/v1/auth/register     # Register new user
 POST /api/v1/auth/login        # Login, returns access + refresh tokens
-POST /api/v1/auth/refresh      # Refresh access token
+POST /api/v1/auth/refresh      # Refresh access token (rotates this device's session)
+POST /api/v1/auth/logout       # Revoke this device's refresh session
 GET  /api/health               # Health check (includes DB ping)
 GET  /swagger/*                # Swagger UI
 

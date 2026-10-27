@@ -15,6 +15,12 @@ import (
 const (
 	maxFailedAttempts = 5
 	lockoutDuration   = 15 * time.Minute
+
+	// refreshRotationGrace is how long a rotated-out refresh token stays
+	// usable for its session.
+	refreshRotationGrace = 2 * time.Minute
+	// maxRefreshSessionsPerUser caps concurrently signed-in devices per user.
+	maxRefreshSessionsPerUser = 20
 )
 
 // userService handles user-related business logic.
@@ -138,21 +144,96 @@ func (s *userService) saveLoginState(user *models.User) {
 	})
 }
 
-// StoreRefreshTokenHash stores the hash of a refresh token for the given user.
-func (s *userService) StoreRefreshTokenHash(userID, tokenHash string) error {
-	if err := s.db.Model(&models.User{}).Where("id = ?", userID).Update("refresh_token_hash", tokenHash).Error; err != nil {
+// CreateRefreshSession starts a new per-device refresh session holding the
+// hash of its first refresh token. Expired sessions for the user are pruned,
+// and the oldest are dropped beyond maxRefreshSessionsPerUser, so the table
+// stays bounded even if clients never log out.
+func (s *userService) CreateRefreshSession(userID, tokenHash, userAgent, ipAddress string, expiresAt time.Time) error {
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Unscoped().Where("user_id = ? AND expires_at <= ?", userID, time.Now()).
+			Delete(&models.RefreshSession{}).Error; err != nil {
+			return err
+		}
+
+		session := models.RefreshSession{
+			UserID:    userID,
+			TokenHash: tokenHash,
+			ExpiresAt: expiresAt,
+			UserAgent: truncateRunes(userAgent, 255),
+			IPAddress: truncateRunes(ipAddress, 45),
+		}
+		if err := tx.Create(&session).Error; err != nil {
+			return err
+		}
+
+		var stale []string
+		if err := tx.Model(&models.RefreshSession{}).Where("user_id = ?", userID).
+			Order("created_at DESC").Offset(maxRefreshSessionsPerUser).Pluck("id", &stale).Error; err != nil {
+			return err
+		}
+		if len(stale) > 0 {
+			return tx.Unscoped().Where("id IN ?", stale).Delete(&models.RefreshSession{}).Error
+		}
+		return nil
+	})
+	if err != nil {
 		return apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
 	return nil
 }
 
-// GetRefreshTokenHash returns the stored refresh token hash for the given user.
-func (s *userService) GetRefreshTokenHash(userID string) (string, error) {
-	var user models.User
-	if err := s.db.Select("refresh_token_hash").Where("id = ?", userID).First(&user).Error; err != nil {
-		return "", apperrors.Wrap(apperrors.ErrInternalServer, err)
+// RotateRefreshSession swaps oldHash for newHash in the user's session that
+// holds it and extends the session to expiresAt. oldHash is accepted if it is
+// the session's current token, or the token rotated out less than
+// refreshRotationGrace ago (two tabs refreshing at once, or a lost response).
+// Each branch is a single conditional UPDATE, so concurrent rotations of the
+// same token cannot both win the current-token branch. Returns ErrUnauthorized
+// when no live session matches.
+func (s *userService) RotateRefreshSession(userID, oldHash, newHash string, expiresAt time.Time) error {
+	now := time.Now()
+
+	res := s.db.Model(&models.RefreshSession{}).
+		Where("user_id = ? AND token_hash = ? AND expires_at > ?", userID, oldHash, now).
+		Updates(map[string]interface{}{
+			"previous_token_hash": gorm.Expr("token_hash"),
+			"token_hash":          newHash,
+			"rotated_at":          now,
+			"expires_at":          expiresAt,
+		})
+	if res.Error != nil {
+		return apperrors.Wrap(apperrors.ErrInternalServer, res.Error)
 	}
-	return user.RefreshTokenHash, nil
+	if res.RowsAffected == 1 {
+		return nil
+	}
+
+	// Grace path: keep previous_token_hash as is so the window is measured
+	// from the first rotation and cannot be extended by replaying the token.
+	res = s.db.Model(&models.RefreshSession{}).
+		Where("user_id = ? AND previous_token_hash = ? AND rotated_at > ? AND expires_at > ?",
+			userID, oldHash, now.Add(-refreshRotationGrace), now).
+		Updates(map[string]interface{}{
+			"token_hash": newHash,
+			"expires_at": expiresAt,
+		})
+	if res.Error != nil {
+		return apperrors.Wrap(apperrors.ErrInternalServer, res.Error)
+	}
+	if res.RowsAffected == 1 {
+		return nil
+	}
+	return apperrors.ErrUnauthorized
+}
+
+// RevokeRefreshSession ends the session holding tokenHash (logout). Revoking a
+// token that matches no session is not an error.
+func (s *userService) RevokeRefreshSession(userID, tokenHash string) error {
+	if err := s.db.Unscoped().
+		Where("user_id = ? AND (token_hash = ? OR previous_token_hash = ?)", userID, tokenHash, tokenHash).
+		Delete(&models.RefreshSession{}).Error; err != nil {
+		return apperrors.Wrap(apperrors.ErrInternalServer, err)
+	}
+	return nil
 }
 
 // ProfileSettingsUpdate lists the profile settings to change. A nil
