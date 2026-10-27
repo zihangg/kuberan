@@ -31,6 +31,9 @@ services:
       - STORAGE_ACCESS_KEY=${STORAGE_ACCESS_KEY:-kuberan-receipts}
       - STORAGE_SECRET_KEY=${STORAGE_SECRET_KEY:-kuberan-receipts-secret}
       - STORAGE_USE_PATH_STYLE=true
+      # MCP write access (plan 022): must match the mcp service, since the api
+      # registers and grants the write:* scopes the mcp server enforces.
+      - MCP_WRITE_ENABLED=${MCP_WRITE_ENABLED:-false}
     depends_on:
       postgres:
         condition: service_healthy
@@ -111,6 +114,13 @@ services:
       # JWT_SECRET (the legacy static MCP token path was removed in Phase 4).
       - HYDRA_ISSUER_URL=${HYDRA_ISSUER_URL:-http://hydra:4444}
       - MCP_RESOURCE_URL=${MCP_RESOURCE_URL:-http://localhost:8081}
+      # MCP write access (plan 022): registers the write tools. Keep in sync
+      # with the api service. Limits default to $10,000 per change and
+      # 30/minute, 500/day per connected app.
+      - MCP_WRITE_ENABLED=${MCP_WRITE_ENABLED:-false}
+      - MCP_MAX_WRITE_AMOUNT=${MCP_MAX_WRITE_AMOUNT:-1000000}
+      - MCP_WRITE_RATE_PER_MINUTE=${MCP_WRITE_RATE_PER_MINUTE:-30}
+      - MCP_WRITE_RATE_PER_DAY=${MCP_WRITE_RATE_PER_DAY:-500}
     depends_on:
       postgres:
         condition: service_healthy

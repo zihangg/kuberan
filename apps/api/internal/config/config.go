@@ -55,8 +55,16 @@ type Config struct {
 	HydraIssuerURL      string // public issuer, e.g. https://auth.<domain>
 	HydraAdminURL       string // private admin API, e.g. http://hydra:4445
 	MCPResourceURL      string // RS resource identifier, e.g. https://mcp.<domain>
-	OAuthScopes         string // space-delimited read:* scope set
+	OAuthScopes         string // space-delimited API scope set (read:*, plus write:* when MCP writes are enabled)
 	HydraPinnedClientID string // optional pinned client (if not using TOFU)
+
+	// MCP write access (plan 022). Off by default; when off, write scopes are
+	// neither advertised, registrable nor grantable, and write tools are not
+	// registered.
+	MCPWriteEnabled       bool
+	MCPMaxWriteAmount     int64 // per-call ceiling in cents
+	MCPWriteRatePerMinute int   // per (user, client)
+	MCPWriteRatePerDay    int   // per (user, client)
 
 	// Storage (receipt attachments). See plans/017-transaction-receipts.
 	StorageEndpoint     string // e.g. http://minio:9000 (internal only)
@@ -71,6 +79,10 @@ type Config struct {
 // DefaultOAuthScopes is the full granular read:* scope set the RS enforces.
 const DefaultOAuthScopes = "read:accounts read:transactions read:budgets " +
 	"read:categories read:investments read:portfolio read:snapshots"
+
+// DefaultOAuthWriteScopes is the write:* scope set added to OAuthScopes when
+// MCP writes are enabled (plan 022).
+const DefaultOAuthWriteScopes = "write:transactions write:categories write:budgets"
 
 var appConfig *Config
 
@@ -116,6 +128,12 @@ func Load() (*Config, error) {
 		OAuthScopes:         getEnv("OAUTH_SCOPES", DefaultOAuthScopes),
 		HydraPinnedClientID: os.Getenv("HYDRA_PINNED_CLIENT_ID"),
 
+		// MCP write access
+		MCPWriteEnabled:       getEnvBool("MCP_WRITE_ENABLED", false),
+		MCPMaxWriteAmount:     getEnvInt64("MCP_MAX_WRITE_AMOUNT", 1_000_000),
+		MCPWriteRatePerMinute: int(getEnvInt64("MCP_WRITE_RATE_PER_MINUTE", 30)),
+		MCPWriteRatePerDay:    int(getEnvInt64("MCP_WRITE_RATE_PER_DAY", 500)),
+
 		// Storage (receipt attachments)
 		StorageEndpoint:     os.Getenv("STORAGE_ENDPOINT"),
 		StorageBucket:       os.Getenv("STORAGE_BUCKET"),
@@ -124,6 +142,10 @@ func Load() (*Config, error) {
 		StorageUsePathStyle: getEnvBool("STORAGE_USE_PATH_STYLE", true),
 		MaxUploadBytes:      getEnvInt64("MAX_UPLOAD_BYTES", 10*1024*1024),
 		MaxAttachmentsPerTx: int(getEnvInt64("MAX_ATTACHMENTS_PER_TX", 10)),
+	}
+
+	if config.MCPWriteEnabled {
+		config.OAuthScopes += " " + DefaultOAuthWriteScopes
 	}
 
 	// Parse JWT expiration duration

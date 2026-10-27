@@ -20,7 +20,7 @@ const receivablesScope = "read:transactions"
 
 func (s *Server) registerReceivableTools() {
 	s.mcp.AddTool(
-		mcp.NewTool("list_receivables",
+		readTool("list_receivables",
 			mcp.WithDescription("List money owed to the user (shared expenses, loans, claims, deposits, refunds), newest expense first. "+
 				"Each entry shows counterparty, kind, amount, paid, written off, outstanding, status and the originating expense. "+
 				"Receivables are not counted in net worth until repaid."),
@@ -34,7 +34,7 @@ func (s *Server) registerReceivableTools() {
 	)
 
 	s.mcp.AddTool(
-		mcp.NewTool("get_receivables_summary",
+		readTool("get_receivables_summary",
 			mcp.WithDescription("Summarize open receivables (money others still owe the user): total outstanding, by counterparty and by kind. "+
 				"Receivables are excluded from net worth; this is informational only."),
 		),

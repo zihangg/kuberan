@@ -64,7 +64,7 @@ func validateISO4217(fl validator.FieldLevel) bool {
 }
 
 func validateHexColor(fl validator.FieldLevel) bool {
-	return hexColorRegex.MatchString(fl.Field().String())
+	return IsHexColor(fl.Field().String())
 }
 
 func validateTransactionType(fl validator.FieldLevel) bool {
@@ -105,4 +105,10 @@ func validateAssetType(fl validator.FieldLevel) bool {
 		return true
 	}
 	return false
+}
+
+// IsHexColor reports whether s is a #RGB or #RRGGBB color, the format the
+// hex_color binding accepts. Exported for callers outside Gin binding (MCP).
+func IsHexColor(s string) bool {
+	return hexColorRegex.MatchString(s)
 }

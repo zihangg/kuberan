@@ -48,6 +48,8 @@ func run() error {
 	investmentService := services.NewInvestmentService(db, accountService)
 	snapshotService := services.NewPortfolioSnapshotService(db)
 	receivableService := services.NewReceivableService(db, accountService, ruleService)
+	auditService := services.NewAuditService(db)
+	grantService := services.NewOAuthGrantService(db)
 
 	// MCP_PORT accepts either a bare port ("8081") or a full listen address
 	// (":8081", "0.0.0.0:8081"). Normalize to a valid net.Listen address.
@@ -59,7 +61,7 @@ func run() error {
 		addr = ":" + addr
 	}
 
-	logger.Get().Infof("Starting MCP server on %s", addr)
+	logger.Get().Infof("Starting MCP server on %s (writes enabled: %t)", addr, cfg.MCPWriteEnabled)
 
 	// The Resource Server validates Hydra-issued JWT access tokens offline
 	// against the authorization server's published JWKS.
@@ -75,9 +77,16 @@ func run() error {
 		Investments:  investmentService,
 		Snapshots:    snapshotService,
 		Receivables:  receivableService,
+		Audit:        auditService,
+		Grants:       grantService,
 	}, addr, mcpserver.OAuthConfig{
 		Issuer:      cfg.HydraIssuerURL,
 		ResourceURL: cfg.MCPResourceURL,
 		Scopes:      cfg.OAuthScopes,
-	}, validator)
+	}, validator, mcpserver.WriteConfig{
+		Enabled:       cfg.MCPWriteEnabled,
+		MaxAmount:     cfg.MCPMaxWriteAmount,
+		RatePerMinute: cfg.MCPWriteRatePerMinute,
+		RatePerDay:    cfg.MCPWriteRatePerDay,
+	})
 }

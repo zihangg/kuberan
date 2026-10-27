@@ -23,6 +23,9 @@ type AccessClaims struct {
 	Subject string
 	// Scopes is the granted scope set, parsed from the space-delimited `scope`.
 	Scopes []string
+	// ClientID is the OAuth client the token was issued to (Hydra `client_id`).
+	// The MCP write guard checks it against the user's consent grant.
+	ClientID string
 }
 
 // TokenValidator validates a raw bearer access token and returns its claims.
@@ -116,9 +119,12 @@ func (v *HydraValidator) Validate(ctx context.Context, raw string) (*AccessClaim
 		scopeClaim = claims["scope"]
 	}
 
+	clientID, _ := claims["client_id"].(string)
+
 	return &AccessClaims{
-		Subject: sub,
-		Scopes:  parseScopes(scopeClaim),
+		Subject:  sub,
+		Scopes:   parseScopes(scopeClaim),
+		ClientID: clientID,
 	}, nil
 }
 

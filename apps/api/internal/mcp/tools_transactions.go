@@ -15,7 +15,7 @@ import (
 
 func (s *Server) registerTransactionTools() {
 	s.mcp.AddTool(
-		mcp.NewTool("list_transactions",
+		readTool("list_transactions",
 			mcp.WithDescription("Search and list transactions with filters. Returns date, description, amount, category, and account."),
 			mcp.WithString("account_id", mcp.Description("Filter to a specific account ID")),
 			mcp.WithString("category_id", mcp.Description("Filter to a specific category ID")),
@@ -31,7 +31,7 @@ func (s *Server) registerTransactionTools() {
 	)
 
 	s.mcp.AddTool(
-		mcp.NewTool("get_spending_by_category",
+		readTool("get_spending_by_category",
 			mcp.WithDescription("Get total spending broken down by category for a date range. Great for understanding where money goes."),
 			mcp.WithString("from_date", mcp.Required(), mcp.Description("Start date (YYYY-MM-DD)")),
 			mcp.WithString("to_date", mcp.Required(), mcp.Description("End date (YYYY-MM-DD)")),
@@ -40,7 +40,7 @@ func (s *Server) registerTransactionTools() {
 	)
 
 	s.mcp.AddTool(
-		mcp.NewTool("get_monthly_summary",
+		readTool("get_monthly_summary",
 			mcp.WithDescription("Get monthly income vs expenses summary for the last N months. Shows net savings trend."),
 			mcp.WithNumber("months", mcp.Description("Number of months to look back (default 6)")),
 		),
@@ -48,7 +48,7 @@ func (s *Server) registerTransactionTools() {
 	)
 
 	s.mcp.AddTool(
-		mcp.NewTool("get_daily_spending",
+		readTool("get_daily_spending",
 			mcp.WithDescription("Get daily expense totals for a date range. Useful for spotting spending patterns."),
 			mcp.WithString("from_date", mcp.Required(), mcp.Description("Start date (YYYY-MM-DD)")),
 			mcp.WithString("to_date", mcp.Required(), mcp.Description("End date (YYYY-MM-DD)")),
@@ -57,7 +57,7 @@ func (s *Server) registerTransactionTools() {
 	)
 
 	s.mcp.AddTool(
-		mcp.NewTool("get_daily_summary",
+		readTool("get_daily_summary",
 			mcp.WithDescription("Get daily income and expense totals for a date range. Useful for a calendar-style view of cash flow."),
 			mcp.WithString("from_date", mcp.Required(), mcp.Description("Start date (YYYY-MM-DD)")),
 			mcp.WithString("to_date", mcp.Required(), mcp.Description("End date (YYYY-MM-DD)")),
@@ -66,7 +66,7 @@ func (s *Server) registerTransactionTools() {
 	)
 
 	s.mcp.AddTool(
-		mcp.NewTool("get_top_expenses",
+		readTool("get_top_expenses",
 			mcp.WithDescription("Get the largest expense transactions for a date range, ordered by amount descending."),
 			mcp.WithString("from_date", mcp.Required(), mcp.Description("Start date (YYYY-MM-DD)")),
 			mcp.WithString("to_date", mcp.Required(), mcp.Description("End date (YYYY-MM-DD)")),

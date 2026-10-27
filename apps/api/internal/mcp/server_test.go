@@ -154,6 +154,31 @@ func TestMakeAuthFromRequest(t *testing.T) {
 		}
 	})
 
+	t.Run("valid token sets client ID and caller IP", func(t *testing.T) {
+		v := fakeValidator{claims: &AccessClaims{Subject: "user-42", ClientID: "claude-client"}}
+		fn := makeAuthFromRequest(v)
+
+		req := httptest.NewRequest("POST", "/mcp", http.NoBody)
+		req.Header.Set("Authorization", "Bearer sometoken")
+		req.Header.Set("CF-Connecting-IP", "198.51.100.4")
+		ctx := fn(context.Background(), req)
+
+		if got, _ := ctx.Value(clientIDKey{}).(string); got != "claude-client" {
+			t.Errorf("client ID = %q, want claude-client", got)
+		}
+		if got, _ := ctx.Value(clientIPKey{}).(string); got != "198.51.100.4" {
+			t.Errorf("IP = %q, want the CF-Connecting-IP address", got)
+		}
+	})
+
+	t.Run("caller IP falls back to the peer address", func(t *testing.T) {
+		req := httptest.NewRequest("POST", "/mcp", http.NoBody)
+		req.RemoteAddr = "192.0.2.10:54321"
+		if got := requestIP(req); got != "192.0.2.10" {
+			t.Errorf("IP = %q, want 192.0.2.10", got)
+		}
+	})
+
 	t.Run("missing header yields no user", func(t *testing.T) {
 		fn := makeAuthFromRequest(fakeValidator{})
 		req := httptest.NewRequest("POST", "/mcp", nil)
