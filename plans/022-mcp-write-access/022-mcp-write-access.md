@@ -7,10 +7,10 @@
   `dollarsToCents`. `MCP_MAX_WRITE_AMOUNT` is still in cents.
 - **`categorize_transactions` takes at most 25 IDs**, not 50, so a full batch always fits
   the default 30-per-minute rate limit. Each ID counts as one write.
-- **Category ownership is checked in the MCP layer** (`checkCategory`). The transaction
-  service does not verify that a `category_id` belongs to the user, a gap that predates
-  this plan (REST has it too). The tools also reject a category whose type doesn't match
-  the transaction type.
+- **Category ownership**: implementing this surfaced that the transaction service never
+  checked that a `category_id` belongs to the user (REST was affected too). That's now
+  fixed in the service (`ensureCategoryOwned`). The MCP tools additionally reject a
+  category whose type doesn't match the transaction type.
 - **Disconnect calls Hydra first, then revokes locally**, so a Hydra failure leaves
   everything unchanged and the user can retry.
 - **Files:** write tools live in `internal/mcp/tools_*_write.go`, with the guard, argument
