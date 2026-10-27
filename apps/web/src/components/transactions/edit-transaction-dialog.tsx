@@ -50,6 +50,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { ExistingAttachments } from "@/components/transactions/transaction-attachments";
+import { CategoryPicker } from "@/components/transactions/category-picker";
 import { formatCurrency, formatDate, toRFC3339 } from "@/lib/format";
 import type { Transaction, TransactionType } from "@/types/models";
 import type { RuleConditionInput, UpdateTransactionRequest } from "@/types/api";
@@ -277,7 +278,7 @@ export function EditTransactionDialog({
                   ? "Edit Transaction"
                   : "Transaction Details"}
             </DialogTitle>
-            <DialogDescription>
+            <DialogDescription className={cn(isEditable && "max-sm:sr-only")}>
               {isReimbursement
                 ? "A repayment received against money owed to you."
                 : isEditable
@@ -329,7 +330,7 @@ export function EditTransactionDialog({
                           : undefined
                       }
                       className={cn(
-                        "flex items-center justify-center gap-1.5 rounded-lg px-2 py-2 text-sm font-medium transition-all disabled:opacity-50",
+                        "flex min-h-11 items-center justify-center gap-1.5 rounded-lg px-2 py-2 text-sm font-medium sm:min-h-0 transition-all disabled:opacity-50",
                         active
                           ? cn("bg-background shadow-sm", opt.activeText)
                           : "text-muted-foreground hover:text-foreground"
@@ -346,7 +347,7 @@ export function EditTransactionDialog({
               <div className="flex flex-col gap-1.5">
                 <Label
                   htmlFor="edit-tx-amount"
-                  className="text-xs font-medium uppercase tracking-wide text-muted-foreground"
+                  className="text-xs font-medium uppercase tracking-wide text-muted-foreground max-sm:sr-only"
                 >
                   Amount
                 </Label>
@@ -361,70 +362,60 @@ export function EditTransactionDialog({
                 />
               </div>
 
-              {/* Account */}
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="edit-tx-account">Account</Label>
-                <Select
-                  value={accountId}
-                  onValueChange={setAccountId}
-                  disabled={isSaving}
-                >
-                  <SelectTrigger id="edit-tx-account" className="w-full">
-                    <SelectValue placeholder="Select account" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {accounts.map((a) => (
-                      <SelectItem key={a.id} value={a.id}>
-                        {a.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+              {/* Account + Date */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="flex min-w-0 flex-col gap-1.5">
+                  <Label htmlFor="edit-tx-account">Account</Label>
+                  <Select
+                    value={accountId}
+                    onValueChange={setAccountId}
+                    disabled={isSaving}
+                  >
+                    <SelectTrigger id="edit-tx-account" className="w-full">
+                      <SelectValue placeholder="Select account" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {accounts.map((a) => (
+                        <SelectItem key={a.id} value={a.id}>
+                          {a.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex min-w-0 flex-col gap-1.5">
+                  <Label htmlFor="edit-tx-date">Date</Label>
+                  <Input
+                    id="edit-tx-date"
+                    type="date"
+                    value={date}
+                    onChange={(e) => setDate(e.target.value)}
+                    disabled={isSaving}
+                  />
+                </div>
               </div>
 
               {/* Category */}
               <div className="flex flex-col gap-1.5">
-                <Label htmlFor="edit-tx-category">Category</Label>
-                <Select
+                <CategoryPicker
+                  id="edit-tx-category"
+                  categories={categories}
+                  type={type === "income" ? "income" : "expense"}
                   value={categoryId}
-                  onValueChange={setCategoryId}
+                  onChange={setCategoryId}
                   disabled={isSaving}
-                >
-                  <SelectTrigger id="edit-tx-category" className="w-full">
-                    <SelectValue placeholder="Select category (optional)" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">No category</SelectItem>
-                    {categories.map((cat) => (
-                      <SelectItem key={cat.id} value={cat.id}>
-                        {cat.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                />
                 <Button
                   type="button"
                   variant="ghost"
                   size="sm"
-                  className="h-auto self-start px-0 text-xs text-muted-foreground hover:bg-transparent hover:text-foreground"
+                  className="h-auto self-start px-0 py-1.5 text-xs text-muted-foreground hover:bg-transparent hover:text-foreground"
                   onClick={handleCreateRule}
                   disabled={isSaving}
                 >
                   <Wand2 className="size-3.5" />
                   Create a rule to auto-categorize similar
                 </Button>
-              </div>
-
-              {/* Date */}
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="edit-tx-date">Date</Label>
-                <Input
-                  id="edit-tx-date"
-                  type="date"
-                  value={date}
-                  onChange={(e) => setDate(e.target.value)}
-                  disabled={isSaving}
-                />
               </div>
 
               {/* Note */}

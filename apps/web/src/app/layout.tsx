@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import localFont from "next/font/local";
 import { ThemeProvider } from "@/providers/theme-provider";
@@ -36,6 +36,15 @@ const geistPixel = localFont({
 export const metadata: Metadata = {
   title: "Kuberan",
   description: "Personal finance tracker",
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  // Shrink the layout viewport when the on-screen keyboard opens (Android
+  // Chrome), so bottom sheets ride up with it instead of hiding behind it.
+  // iOS ignores this; DialogContent handles it there.
+  interactiveWidget: "resizes-content",
 };
 
 export default function RootLayout({

@@ -1,12 +1,20 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ChevronLeft, ChevronRight, Paperclip, Plus, X } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  Paperclip,
+  Plus,
+  SlidersHorizontal,
+  X,
+} from "lucide-react";
 
 import { useAccounts } from "@/hooks/use-accounts";
 import { useTransactions } from "@/hooks/use-transactions";
 import { useCategories } from "@/hooks/use-categories";
 import { formatCurrency, formatDate } from "@/lib/format";
+import { cn } from "@/lib/utils";
 import { transactionVisual } from "@/lib/domain-visuals";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -65,11 +73,12 @@ function TransactionRow({
             </>
           )}
           <SharedKindBadge transaction={transaction} />
-          <span className="truncate">{accountName}</span>
+          <span className="min-w-0 truncate">{accountName}</span>
           {transaction.category && (
             <>
               <span>·</span>
-              <span className="flex items-center gap-1 truncate">
+              {/* The category is the more useful half; the account gives way. */}
+              <span className="flex max-w-[60%] shrink-0 items-center gap-1 truncate">
                 {transaction.category.color && (
                   <span
                     className="size-2 shrink-0 rounded-full"
@@ -101,6 +110,7 @@ export default function TransactionsPage() {
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const [txDialogOpen, setTxDialogOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [editTxOpen, setEditTxOpen] = useState(false);
   const [selectedTransaction, setSelectedTransaction] =
     useState<Transaction | null>(null);
@@ -187,8 +197,44 @@ export default function TransactionsPage() {
         </Button>
       </div>
 
+      {/* Mobile: filters fold away behind one button */}
+      <div className="flex items-center gap-2 sm:hidden">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setFiltersOpen((o) => !o)}
+          aria-expanded={filtersOpen}
+          aria-controls="tx-filters"
+        >
+          <SlidersHorizontal className="size-4" />
+          Filters
+          {activeFilterCount > 0 && (
+            <span className="rounded-full bg-primary px-1.5 text-xs text-primary-foreground">
+              {activeFilterCount}
+            </span>
+          )}
+        </Button>
+        {activeFilterCount > 0 && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={clearFilters}
+            className="text-muted-foreground"
+          >
+            <X className="size-4" />
+            Clear
+          </Button>
+        )}
+      </div>
+
       {/* Filter toolbar */}
-      <div className="flex flex-wrap items-center gap-2">
+      <div
+        id="tx-filters"
+        className={cn(
+          "grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center",
+          !filtersOpen && "max-sm:hidden"
+        )}
+      >
         <Select
           value={accountFilter}
           onValueChange={(v) => {
@@ -196,7 +242,7 @@ export default function TransactionsPage() {
             resetPage();
           }}
         >
-          <SelectTrigger className="h-9 w-auto min-w-[9rem]">
+          <SelectTrigger className="col-span-2 w-full sm:h-9 sm:w-auto sm:min-w-[9rem]">
             <SelectValue placeholder="Account" />
           </SelectTrigger>
           <SelectContent>
@@ -216,7 +262,7 @@ export default function TransactionsPage() {
             resetPage();
           }}
         >
-          <SelectTrigger className="h-9 w-auto min-w-[7.5rem]">
+          <SelectTrigger className="w-full sm:h-9 sm:w-auto sm:min-w-[7.5rem]">
             <SelectValue placeholder="Type" />
           </SelectTrigger>
           <SelectContent>
@@ -236,7 +282,7 @@ export default function TransactionsPage() {
             resetPage();
           }}
         >
-          <SelectTrigger className="h-9 w-auto min-w-[9rem]">
+          <SelectTrigger className="w-full sm:h-9 sm:w-auto sm:min-w-[9rem]">
             <SelectValue placeholder="Category" />
           </SelectTrigger>
           <SelectContent>
@@ -257,9 +303,9 @@ export default function TransactionsPage() {
             setFromDate(e.target.value);
             resetPage();
           }}
-          className="h-9 w-auto"
+          className="sm:h-9 sm:w-auto"
         />
-        <span className="text-sm text-muted-foreground">–</span>
+        <span className="hidden text-sm text-muted-foreground sm:inline">–</span>
         <Input
           type="date"
           aria-label="To date"
@@ -268,7 +314,7 @@ export default function TransactionsPage() {
             setToDate(e.target.value);
             resetPage();
           }}
-          className="h-9 w-auto"
+          className="sm:h-9 sm:w-auto"
         />
 
         {activeFilterCount > 0 && (
@@ -276,7 +322,7 @@ export default function TransactionsPage() {
             variant="ghost"
             size="sm"
             onClick={clearFilters}
-            className="h-9 text-muted-foreground"
+            className="hidden h-9 text-muted-foreground sm:inline-flex"
           >
             <X className="size-4" />
             Clear

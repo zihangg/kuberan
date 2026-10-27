@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -30,6 +30,7 @@ import {
 } from "@/hooks/use-transactions";
 import { useCategories } from "@/hooks/use-categories";
 import { StagedAttachments } from "@/components/transactions/transaction-attachments";
+import { CategoryPicker } from "@/components/transactions/category-picker";
 import { attachmentKeys } from "@/hooks/use-attachments";
 import type { AttachmentResponse } from "@/types/api";
 import { Button } from "@/components/ui/button";
@@ -132,6 +133,8 @@ export function CreateTransactionDialog({
   const [stagedFiles, setStagedFiles] = useState<File[]>([]);
   const [uploading, setUploading] = useState(false);
   const [owed, setOwed] = useState<OwedBackState>(initialOwedBackState);
+
+  const amountRef = useRef<HTMLInputElement>(null);
 
   // Transfer-specific state
   const [fromAccountId, setFromAccountId] = useState<string>("");
@@ -360,12 +363,19 @@ export function CreateTransactionDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent
+        className="sm:max-w-md"
+        onOpenAutoFocus={(e) => {
+          // Start on the amount, the one field every entry needs.
+          e.preventDefault();
+          amountRef.current?.focus();
+        }}
+      >
         <DialogHeader>
           <DialogTitle>
             {isTransfer ? "Transfer funds" : "New transaction"}
           </DialogTitle>
-          <DialogDescription>
+          <DialogDescription className="max-sm:sr-only">
             {isTransfer
               ? "Move money between your accounts."
               : "Record an income or expense."}
@@ -385,7 +395,7 @@ export function CreateTransactionDialog({
                   onClick={() => handleTypeChange(opt.value)}
                   disabled={isSubmitting}
                   className={cn(
-                    "flex items-center justify-center gap-1.5 rounded-lg px-2 py-2 text-sm font-medium transition-all disabled:opacity-50",
+                    "flex min-h-11 items-center justify-center gap-1.5 rounded-lg px-2 py-2 text-sm font-medium sm:min-h-0 transition-all disabled:opacity-50",
                     active
                       ? cn("bg-background shadow-sm", opt.activeText)
                       : "text-muted-foreground hover:text-foreground"
@@ -402,11 +412,12 @@ export function CreateTransactionDialog({
           <div className="flex flex-col gap-1.5">
             <Label
               htmlFor="tx-amount"
-              className="text-xs font-medium uppercase tracking-wide text-muted-foreground"
+              className="text-xs font-medium uppercase tracking-wide text-muted-foreground max-sm:sr-only"
             >
               Amount
             </Label>
             <CurrencyInput
+              ref={amountRef}
               id="tx-amount"
               value={amount}
               onChange={setAmount}
@@ -423,52 +434,71 @@ export function CreateTransactionDialog({
             </div>
           )}
 
-          {/* Account (expense/income) */}
-          {!isTransfer && !defaultAccountId && (
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="tx-account">Account</Label>
-              <Select
-                value={selectedAccountId}
-                onValueChange={setAccountId}
-                disabled={isSubmitting}
-              >
-                <SelectTrigger id="tx-account" className="w-full">
-                  <SelectValue placeholder="Select account" />
-                </SelectTrigger>
-                <SelectContent>
-                  {accounts.map((a) => (
-                    <SelectItem key={a.id} value={a.id}>
-                      {a.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {selectedAccount && canBeDefaultAccount(selectedAccount) && (
-                <div className="flex justify-end">
-                  {selectedAccount.id === savedDefaultAccountId ? (
-                    <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                      <Star className="size-3 fill-current" />
-                      Default account
-                    </span>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={handleMakeDefault}
-                      disabled={isSubmitting || setDefaultAccount.isPending}
-                      className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
-                    >
-                      <Star className="size-3" />
-                      {setDefaultAccount.isPending ? "Saving…" : "Make default"}
-                    </button>
+          {/* Account (expense/income) + Date */}
+          {!isTransfer && (
+            <div className="grid grid-cols-2 gap-3">
+              {!defaultAccountId && (
+                <div className="flex min-w-0 flex-col gap-1.5">
+                  <Label htmlFor="tx-account">Account</Label>
+                  <Select
+                    value={selectedAccountId}
+                    onValueChange={setAccountId}
+                    disabled={isSubmitting}
+                  >
+                    <SelectTrigger id="tx-account" className="w-full">
+                      <SelectValue placeholder="Select account" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {accounts.map((a) => (
+                        <SelectItem key={a.id} value={a.id}>
+                          {a.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {selectedAccount && canBeDefaultAccount(selectedAccount) && (
+                    <div className="flex justify-end">
+                      {selectedAccount.id === savedDefaultAccountId ? (
+                        <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                          <Star className="size-3 fill-current" />
+                          Default account
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={handleMakeDefault}
+                          disabled={isSubmitting || setDefaultAccount.isPending}
+                          className="-my-2 inline-flex items-center gap-1 py-2 text-xs text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
+                        >
+                          <Star className="size-3" />
+                          {setDefaultAccount.isPending ? "Saving…" : "Make default"}
+                        </button>
+                      )}
+                    </div>
                   )}
                 </div>
               )}
+              <div
+                className={cn(
+                  "flex min-w-0 flex-col gap-1.5",
+                  defaultAccountId && "col-span-2"
+                )}
+              >
+                <Label htmlFor="tx-date">Date</Label>
+                <Input
+                  id="tx-date"
+                  type="date"
+                  value={date}
+                  onChange={(e) => setDate(e.target.value)}
+                  disabled={isSubmitting}
+                />
+              </div>
             </div>
           )}
 
           {/* From / To (transfer) */}
           {isTransfer && (
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid grid-cols-2 gap-3">
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="tx-from-account">From</Label>
                 <Select
@@ -514,39 +544,29 @@ export function CreateTransactionDialog({
 
           {/* Category (expense/income) */}
           {!isTransfer && (
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="tx-category">Category</Label>
-              <Select
-                value={categoryId}
-                onValueChange={setCategoryId}
-                disabled={isSubmitting}
-              >
-                <SelectTrigger id="tx-category" className="w-full">
-                  <SelectValue placeholder="Select category (optional)" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">No category</SelectItem>
-                  {categories.map((cat) => (
-                    <SelectItem key={cat.id} value={cat.id}>
-                      {cat.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-
-          {/* Date + Description */}
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="tx-date">Date</Label>
-            <Input
-              id="tx-date"
-              type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
+            <CategoryPicker
+              id="tx-category"
+              categories={categories}
+              type={type === "income" ? "income" : "expense"}
+              value={categoryId}
+              onChange={setCategoryId}
               disabled={isSubmitting}
             />
-          </div>
+          )}
+
+          {/* Date (transfer; expense/income has it beside the account) */}
+          {isTransfer && (
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="tx-date">Date</Label>
+              <Input
+                id="tx-date"
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                disabled={isSubmitting}
+              />
+            </div>
+          )}
 
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="tx-description">Note</Label>
