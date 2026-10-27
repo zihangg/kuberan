@@ -26,13 +26,24 @@ strategies:
 
 ttl:
   access_token: 15m
-  refresh_token: 720h
+  # Refresh tokens rotate on every use and each new one gets a fresh TTL, so
+  # this is an idle timeout: a long-running MCP client (e.g. an agent that may
+  # sit unused for weeks) stays connected as long as it refreshes within 90d.
+  refresh_token: 2160h
   id_token: 1h
   auth_code: 10m
 
 oauth2:
   # Never leak internal error details to clients.
   expose_internal_errors: false
+  grant:
+    refresh_token:
+      # Keep a just-rotated refresh token usable briefly. Without this, a client
+      # that refreshes twice concurrently, or retries after a lost response,
+      # presents a spent token; Hydra treats that as token reuse and revokes
+      # the whole chain, disconnecting the client. 5m is Hydra's max without a
+      # reuse count.
+      rotation_grace_period: 5m
 
 oidc:
   subject_identifiers:

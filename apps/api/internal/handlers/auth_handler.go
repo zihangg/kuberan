@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -81,7 +82,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
-	accessToken, refreshToken, err := h.generateTokenPair(user)
+	accessToken, refreshToken, err := h.startSession(c, user)
 	if err != nil {
 		respondWithError(c, err)
 		return
@@ -124,7 +125,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
-	accessToken, refreshToken, err := h.generateTokenPair(user)
+	accessToken, refreshToken, err := h.startSession(c, user)
 	if err != nil {
 		respondWithError(c, err)
 		return
@@ -165,29 +166,25 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 		return
 	}
 
-	// Verify the token hash matches what's stored in the DB
-	storedHash, err := h.userService.GetRefreshTokenHash(claims.UserID)
-	if err != nil {
-		respondWithError(c, err)
-		return
-	}
-
-	incomingHash := middleware.HashToken(req.RefreshToken)
-	if storedHash == "" || storedHash != incomingHash {
-		respondWithError(c, apperrors.ErrUnauthorized)
-		return
-	}
-
-	// Get the user to generate new tokens
 	user, err := h.userService.GetUserByID(claims.UserID)
 	if err != nil {
 		respondWithError(c, err)
 		return
 	}
+	if !user.IsActive {
+		respondWithError(c, apperrors.ErrUnauthorized)
+		return
+	}
 
-	// Generate new token pair (rotation)
-	accessToken, refreshToken, err := h.generateTokenPair(user)
+	accessToken, refreshToken, err := issueTokenPair(user)
 	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	// Rotate within this device's session only; other devices are unaffected.
+	if err := h.userService.RotateRefreshSession(user.ID, middleware.HashToken(req.RefreshToken),
+		middleware.HashToken(refreshToken), time.Now().Add(middleware.RefreshTokenExpiry)); err != nil {
 		respondWithError(c, err)
 		return
 	}
@@ -197,6 +194,34 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 		"refresh_token": refreshToken,
 		"user":          userPayload(user),
 	})
+}
+
+// Logout ends the device session that owns the given refresh token. Other
+// devices stay signed in. It always succeeds so a stale token can't block logout.
+// @Summary     Logout
+// @Description Revoke the refresh session for this device
+// @Tags        auth
+// @Accept      json
+// @Param       request body RefreshRequest true "Refresh token"
+// @Success     204 "Logged out"
+// @Failure     400 {object} ErrorResponse "Invalid input"
+// @Router      /auth/logout [post]
+func (h *AuthHandler) Logout(c *gin.Context) {
+	var req RefreshRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, err.Error()))
+		return
+	}
+
+	if claims, err := middleware.ValidateRefreshToken(req.RefreshToken); err == nil {
+		if err := h.userService.RevokeRefreshSession(claims.UserID, middleware.HashToken(req.RefreshToken)); err != nil {
+			respondWithError(c, err)
+			return
+		}
+		h.auditService.Log(claims.UserID, "LOGOUT", "user", claims.UserID, c.ClientIP(), nil)
+	}
+
+	c.Status(http.StatusNoContent)
 }
 
 // GetProfile returns the user's profile
@@ -322,9 +347,24 @@ func (h *AuthHandler) UpdateProfileSettings(c *gin.Context) {
 	})
 }
 
-// generateTokenPair creates a new access/refresh token pair and stores
-// the refresh token hash in the database.
-func (h *AuthHandler) generateTokenPair(user *models.User) (accessToken, refreshToken string, err error) {
+// startSession issues a token pair for a fresh login and records a new
+// per-device refresh session for it.
+func (h *AuthHandler) startSession(c *gin.Context, user *models.User) (accessToken, refreshToken string, err error) {
+	accessToken, refreshToken, err = issueTokenPair(user)
+	if err != nil {
+		return "", "", err
+	}
+
+	if err := h.userService.CreateRefreshSession(user.ID, middleware.HashToken(refreshToken),
+		c.Request.UserAgent(), c.ClientIP(), time.Now().Add(middleware.RefreshTokenExpiry)); err != nil {
+		return "", "", err
+	}
+
+	return accessToken, refreshToken, nil
+}
+
+// issueTokenPair signs a new access/refresh token pair without persisting it.
+func issueTokenPair(user *models.User) (accessToken, refreshToken string, err error) {
 	accessToken, err = middleware.GenerateAccessToken(user)
 	if err != nil {
 		return "", "", apperrors.Wrap(apperrors.ErrInternalServer, err)
@@ -333,11 +373,6 @@ func (h *AuthHandler) generateTokenPair(user *models.User) (accessToken, refresh
 	refreshToken, err = middleware.GenerateRefreshToken(user)
 	if err != nil {
 		return "", "", apperrors.Wrap(apperrors.ErrInternalServer, err)
-	}
-
-	// Store refresh token hash for validation on refresh
-	if err := h.userService.StoreRefreshTokenHash(user.ID, middleware.HashToken(refreshToken)); err != nil {
-		return "", "", err
 	}
 
 	return accessToken, refreshToken, nil

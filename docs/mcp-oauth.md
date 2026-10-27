@@ -40,7 +40,7 @@ Kratos.
 | Ory Hydra (`oryd/hydra`, pinned in compose) | `:4444` public, `:4445` admin | Authorization Server: authorize/token endpoints, JWKS signing keys, refresh rotation, client store |
 | MCP server | `apps/api/cmd/mcp`, `internal/mcp/`, `:8081` | OAuth **Resource Server**: validates access tokens offline against Hydra's JWKS |
 | Login/consent bridge | `internal/handlers/oauth_handler.go`, `internal/hydra/` | Browser-callable endpoints that resolve Hydra's login/consent challenges via the admin API (the browser never talks to `:4445`) |
-| Hardened DCR proxy | `internal/handlers/registration_handler.go`, served at `/oauth2/register` on `:8080` | Fronts client self-registration: forces public clients + PKCE (S256), restricts grants to `authorization_code`/`refresh_token`, caps scopes to the `read:*` set (a client requesting no scopes gets the full default `read:*` set rather than an unusable empty-scope client), audits + alerts every registration |
+| Hardened DCR proxy | `internal/handlers/registration_handler.go`, served at `/oauth2/register` on `:8080` | Fronts client self-registration: forces public clients + PKCE (S256), restricts grants to `authorization_code`/`refresh_token`, caps scopes to the `read:*` set (a client requesting no scopes gets the full default `read:*` set rather than an unusable empty-scope client) and always registers `openid offline offline_access`, audits + alerts every registration |
 | Login/consent pages | `apps/web` `/oauth/login`, `/oauth/consent` | UI for Hydra's login/consent redirects |
 | `trusted_oauth_clients` table | migration + `internal/services` | Trust-on-first-use: unknown clients get a consent screen; remembered clients auto-accept |
 
@@ -116,6 +116,25 @@ Tradeoff: dropping the per-request user lookup means `IsActive` is checked at
 login time, not per call. Mitigations: 15-minute access TTL + inactive users
 are rejected by `GetUserByEmail` at `AcceptLogin` (pinned by a regression
 test).
+
+### Long-lived connections (refresh tokens)
+
+Hydra only issues a refresh token when `offline_access` (or `offline`) is
+granted, and refuses to refresh a grant whose scopes exceed the client's
+registered set. MCP clients often register and authorize with just the RS's
+`scopes_supported` (`read:*`), which would leave them with a bare 15-minute
+access token and force re-authorization. So:
+
+- the DCR proxy always registers `openid offline offline_access`;
+- the consent bridge grants `offline_access` whenever the client is registered
+  for it, even if it was not requested (`withOfflineAccess`);
+- `ttl.refresh_token` is `2160h` (refresh tokens rotate, so this is an idle
+  timeout of 90 days);
+- `oauth2.grant.refresh_token.rotation_grace_period` is `5m`, so a concurrent
+  or retried refresh does not trip Hydra's reuse detection and revoke the chain.
+
+Clients registered before this change lack `offline_access` in their
+registration; remove and re-add the connector so it re-registers.
 
 ## Deployment topology
 

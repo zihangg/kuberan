@@ -94,33 +94,54 @@ function buildQueryString(
 // Paths that should never trigger token refresh
 const NO_REFRESH_PATHS = ["/api/v1/auth/login", "/api/v1/auth/register", "/api/v1/auth/refresh"];
 
-let refreshPromise: Promise<boolean> | null = null;
+// Outcome of a refresh attempt. "rejected" means the server refused the
+// refresh token (the session is really over); "failed" means the attempt
+// could not complete (offline, server error) and the session may still be
+// valid, so tokens must be kept.
+type RefreshResult = "ok" | "rejected" | "failed";
 
-async function attemptTokenRefresh(): Promise<boolean> {
-  // Deduplicate concurrent refresh attempts
+// Cross-tab lock name. Tabs share tokens through localStorage, so without it
+// two tabs can refresh with the same token at once and race each other.
+const REFRESH_LOCK = "kuberan-token-refresh";
+
+let refreshPromise: Promise<RefreshResult> | null = null;
+
+async function refreshTokens(startingToken: string | null): Promise<RefreshResult> {
+  const refreshToken = getRefreshToken();
+  if (!refreshToken) return "rejected";
+  // Another tab refreshed while we waited for the lock: use its tokens.
+  if (refreshToken !== startingToken) return "ok";
+
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/v1/auth/refresh`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    });
+
+    // 4xx means the server refused this token; 5xx, timeouts and rate
+    // limits are transient.
+    if (res.status >= 500 || res.status === 408 || res.status === 429) return "failed";
+    if (!res.ok) return "rejected";
+
+    const data = await res.json();
+    setAccessToken(data.access_token);
+    setRefreshToken(data.refresh_token);
+    return "ok";
+  } catch {
+    return "failed";
+  }
+}
+
+async function attemptTokenRefresh(): Promise<RefreshResult> {
+  // Deduplicate concurrent refresh attempts within this tab
   if (refreshPromise) return refreshPromise;
 
-  refreshPromise = (async () => {
-    const refreshToken = getRefreshToken();
-    if (!refreshToken) return false;
-
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/v1/auth/refresh`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ refresh_token: refreshToken }),
-      });
-
-      if (!res.ok) return false;
-
-      const data = await res.json();
-      setAccessToken(data.access_token);
-      setRefreshToken(data.refresh_token);
-      return true;
-    } catch {
-      return false;
-    }
-  })();
+  const startingToken = getRefreshToken();
+  refreshPromise =
+    typeof navigator !== "undefined" && navigator.locks
+      ? navigator.locks.request(REFRESH_LOCK, () => refreshTokens(startingToken))
+      : refreshTokens(startingToken);
 
   try {
     return await refreshPromise;
@@ -165,7 +186,7 @@ async function request<T>(
   // attempt a refresh before sending the request to avoid a wasted 401 round-trip.
   if (token && isTokenExpired(token) && !NO_REFRESH_PATHS.includes(path)) {
     const refreshed = await attemptTokenRefresh();
-    if (refreshed) {
+    if (refreshed === "ok") {
       token = getAccessToken();
     }
     // If refresh failed, proceed anyway — the 401 handler below will handle cleanup.
@@ -184,13 +205,17 @@ async function request<T>(
   // Attempt token refresh on 401 (unless this is already an auth request)
   if (res.status === 401 && !NO_REFRESH_PATHS.includes(path)) {
     const refreshed = await attemptTokenRefresh();
-    if (refreshed) {
+    if (refreshed === "ok") {
       headers["Authorization"] = `Bearer ${getAccessToken()}`;
       res = await fetch(url, {
         method,
         headers,
         body: encodedBody,
       });
+    } else if (refreshed === "failed") {
+      // Keep the session: the refresh token may still be valid once the
+      // network or server recovers.
+      throw new ApiClientError("NETWORK_ERROR", "Could not reach the server", 0);
     } else {
       clearTokens();
       clearAuthCookie(); // Prevent middleware redirect loop on expired sessions
@@ -274,6 +299,25 @@ export const apiClient = {
   },
 };
 
+/**
+ * Revoke this device's refresh session on the server. Best effort: logout
+ * proceeds locally even if the request fails.
+ */
+async function revokeSession(): Promise<void> {
+  const refreshToken = getRefreshToken();
+  if (!refreshToken) return;
+  try {
+    await fetch(`${API_BASE_URL}/api/v1/auth/logout`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refresh_token: refreshToken }),
+      keepalive: true,
+    });
+  } catch {
+    // Ignore: the session expires on its own.
+  }
+}
+
 // Re-export token utilities for use by auth provider
 export const tokenStore = {
   getAccessToken,
@@ -281,4 +325,5 @@ export const tokenStore = {
   getRefreshToken,
   setRefreshToken,
   clearTokens,
+  revokeSession,
 };

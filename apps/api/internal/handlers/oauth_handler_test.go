@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"net/http"
+	"slices"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -426,6 +427,49 @@ func TestOAuthHandler_AcceptConsent(t *testing.T) {
 			t.Fatalf("expected 400, got %d", rec.Code)
 		}
 		assertErrorCode(t, parseJSON(t, rec), apperrors.ErrInvalidInput.Code)
+	})
+}
+
+func TestOAuthHandler_ConsentGrantsOfflineAccess(t *testing.T) {
+	grantFor := func(t *testing.T, clientScope string, requested []string) []string {
+		t.Helper()
+		admin := &mockHydraAdmin{
+			getConsentFn: func(_ context.Context, challenge string) (*hydra.ConsentRequest, error) {
+				return &hydra.ConsentRequest{
+					Challenge:      challenge,
+					Client:         hydra.OAuth2Client{ClientID: "cid", Scope: clientScope},
+					RequestedScope: requested,
+				}, nil
+			},
+		}
+		handler := NewOAuthHandler(admin, &mockUserService{}, &mockTrustedClientService{}, &mockAuditService{}, testScopes, testResourceURL)
+		rec := doRequest(setupOAuthRouter(handler), "POST", "/oauth/consent/accept",
+			`{"consent_challenge":"cc1","remember_client":false}`)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		return admin.lastAcceptConsent.GrantScope
+	}
+
+	t.Run("adds offline_access for a client registered with it", func(t *testing.T) {
+		got := grantFor(t, "read:accounts openid offline offline_access", []string{"read:accounts"})
+		if !slices.Equal(got, []string{"read:accounts", "offline_access"}) {
+			t.Errorf("granted %v, want [read:accounts offline_access]", got)
+		}
+	})
+
+	t.Run("does not duplicate a requested offline scope", func(t *testing.T) {
+		got := grantFor(t, "read:accounts offline offline_access", []string{"read:accounts", "offline"})
+		if !slices.Equal(got, []string{"read:accounts", "offline"}) {
+			t.Errorf("granted %v, want [read:accounts offline]", got)
+		}
+	})
+
+	t.Run("skips clients not registered for offline_access", func(t *testing.T) {
+		got := grantFor(t, "read:accounts", []string{"read:accounts"})
+		if !slices.Equal(got, []string{"read:accounts"}) {
+			t.Errorf("granted %v, want [read:accounts]", got)
+		}
 	})
 }
 

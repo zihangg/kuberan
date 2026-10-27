@@ -12,7 +12,6 @@ type User struct {
 	IsActive            bool          `gorm:"default:true" json:"is_active"`
 	HideBalances        bool          `gorm:"default:false" json:"hide_balances"`
 	DefaultAccountID    *string       `gorm:"type:uuid" json:"default_account_id"`
-	RefreshTokenHash    string        `gorm:"size:64" json:"-"`
 	FailedLoginAttempts int           `gorm:"default:0" json:"-"`
 	LockedUntil         *time.Time    `json:"-"`
 	LastLoginAt         *time.Time    `json:"last_login_at,omitempty"`

@@ -16,9 +16,10 @@ import type {
   RegisterRequest,
   ProfileResponse,
 } from "@/types/api";
-import { apiClient } from "@/lib/api-client";
+import { apiClient, ApiClientError } from "@/lib/api-client";
 import {
   clearTokens,
+  revokeSession,
   setAccessToken,
   setRefreshToken,
   getAccessToken,
@@ -55,13 +56,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const hideBalances = user?.hide_balances ?? false;
   const defaultAccountId = user?.default_account_id ?? null;
 
-  // Fetch user profile using stored tokens
+  // Fetch user profile using stored tokens. Returns null only when the
+  // session is really over; transient failures (offline, server restarting)
+  // are retried and then rethrown so the stored session is kept.
   const fetchProfile = useCallback(async (): Promise<User | null> => {
-    try {
-      const res = await apiClient.get<ProfileResponse>("/api/v1/profile");
-      return res.user;
-    } catch {
-      return null;
+    for (let attempt = 0; ; attempt++) {
+      try {
+        const res = await apiClient.get<ProfileResponse>("/api/v1/profile");
+        return res.user;
+      } catch (err) {
+        const transient =
+          !(err instanceof ApiClientError) || err.status === 0 || err.status >= 500;
+        if (!transient) return null;
+        if (attempt >= 2) throw err;
+        await new Promise((resolve) => setTimeout(resolve, 1000 * 2 ** attempt));
+      }
     }
   }, []);
 
@@ -74,13 +83,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      const profile = await fetchProfile();
-      if (profile) {
-        setUser(profile);
-        setAuthCookie();
-      } else {
-        clearTokens();
-        clearAuthCookie();
+      try {
+        const profile = await fetchProfile();
+        if (profile) {
+          setUser(profile);
+          setAuthCookie();
+        } else {
+          clearTokens();
+          clearAuthCookie();
+        }
+      } catch {
+        // Server unreachable: keep the tokens so a reload can restore the
+        // session instead of forcing a fresh login.
+        toast.error("Could not reach the server");
       }
       setIsLoading(false);
     }
@@ -138,6 +153,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const logout = useCallback(() => {
+    void revokeSession();
     clearTokens();
     clearAuthCookie();
     setUser(null);

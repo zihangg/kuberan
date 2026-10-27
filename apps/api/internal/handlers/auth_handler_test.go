@@ -12,6 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	apperrors "kuberan/internal/errors"
+	"kuberan/internal/middleware"
 	"kuberan/internal/models"
 	"kuberan/internal/services"
 	"kuberan/internal/validator"
@@ -25,8 +26,9 @@ type mockUserService struct {
 	getUserByIDFn           func(id string) (*models.User, error)
 	verifyPasswordFn        func(user *models.User, password string) bool
 	attemptLoginFn          func(email, password string) (*models.User, error)
-	storeRefreshTokenHashFn func(userID string, tokenHash string) error
-	getRefreshTokenHashFn   func(userID string) (string, error)
+	createRefreshSessionFn  func(userID, tokenHash, userAgent, ipAddress string, expiresAt time.Time) error
+	rotateRefreshSessionFn  func(userID, oldHash, newHash string, expiresAt time.Time) error
+	revokeRefreshSessionFn  func(userID, tokenHash string) error
 	updateProfileSettingsFn func(userID string, update services.ProfileSettingsUpdate) error
 }
 
@@ -65,18 +67,25 @@ func (m *mockUserService) AttemptLogin(email, password string) (*models.User, er
 	return &models.User{}, nil
 }
 
-func (m *mockUserService) StoreRefreshTokenHash(userID, tokenHash string) error {
-	if m.storeRefreshTokenHashFn != nil {
-		return m.storeRefreshTokenHashFn(userID, tokenHash)
+func (m *mockUserService) CreateRefreshSession(userID, tokenHash, userAgent, ipAddress string, expiresAt time.Time) error {
+	if m.createRefreshSessionFn != nil {
+		return m.createRefreshSessionFn(userID, tokenHash, userAgent, ipAddress, expiresAt)
 	}
 	return nil
 }
 
-func (m *mockUserService) GetRefreshTokenHash(userID string) (string, error) {
-	if m.getRefreshTokenHashFn != nil {
-		return m.getRefreshTokenHashFn(userID)
+func (m *mockUserService) RotateRefreshSession(userID, oldHash, newHash string, expiresAt time.Time) error {
+	if m.rotateRefreshSessionFn != nil {
+		return m.rotateRefreshSessionFn(userID, oldHash, newHash, expiresAt)
 	}
-	return "", nil
+	return nil
+}
+
+func (m *mockUserService) RevokeRefreshSession(userID, tokenHash string) error {
+	if m.revokeRefreshSessionFn != nil {
+		return m.revokeRefreshSessionFn(userID, tokenHash)
+	}
+	return nil
 }
 
 func (m *mockUserService) UpdateProfileSettings(userID string, update services.ProfileSettingsUpdate) error {
@@ -101,6 +110,8 @@ func setupAuthRouter(handler *AuthHandler) *gin.Engine {
 	r := gin.New()
 	r.POST("/auth/register", handler.Register)
 	r.POST("/auth/login", handler.Login)
+	r.POST("/auth/refresh", handler.RefreshToken)
+	r.POST("/auth/logout", handler.Logout)
 	r.GET("/profile", injectUserID("test-user-1"), handler.GetProfile)
 	r.PATCH("/profile", injectUserID("test-user-1"), handler.UpdateProfileSettings)
 	return r
@@ -228,13 +239,13 @@ func TestAuthHandler_Register(t *testing.T) {
 		assertErrorCode(t, parseJSON(t, rec), "DUPLICATE_EMAIL")
 	})
 
-	t.Run("stores refresh token hash", func(t *testing.T) {
+	t.Run("creates a refresh session", func(t *testing.T) {
 		var storedHash string
 		userSvc := &mockUserService{
 			createUserFn: func(email, _, _, _ string) (*models.User, error) {
 				return &models.User{Base: models.Base{ID: "42"}, Email: email}, nil
 			},
-			storeRefreshTokenHashFn: func(_ string, hash string) error {
+			createRefreshSessionFn: func(_, hash, _, _ string, _ time.Time) error {
 				storedHash = hash
 				return nil
 			},
@@ -260,7 +271,7 @@ func TestAuthHandler_Register(t *testing.T) {
 			createUserFn: func(email, _, _, _ string) (*models.User, error) {
 				return &models.User{Base: models.Base{ID: "1"}, Email: email}, nil
 			},
-			storeRefreshTokenHashFn: func(_ string, _ string) error {
+			createRefreshSessionFn: func(_, _, _, _ string, _ time.Time) error {
 				return fmt.Errorf("db connection lost")
 			},
 		}
@@ -341,6 +352,130 @@ func TestAuthHandler_Login(t *testing.T) {
 
 		if rec.Code != http.StatusBadRequest {
 			t.Fatalf("expected 400, got %d", rec.Code)
+		}
+	})
+}
+
+func TestAuthHandler_RefreshToken(t *testing.T) {
+	user := &models.User{Base: models.Base{ID: "u1"}, Email: "a@example.com", IsActive: true}
+	refreshToken, err := middleware.GenerateRefreshToken(user)
+	if err != nil {
+		t.Fatalf("GenerateRefreshToken: %v", err)
+	}
+	body := fmt.Sprintf(`{"refresh_token":%q}`, refreshToken)
+
+	t.Run("rotates the presented token within its session", func(t *testing.T) {
+		var gotOld, gotNew string
+		userSvc := &mockUserService{
+			getUserByIDFn: func(_ string) (*models.User, error) { return user, nil },
+			rotateRefreshSessionFn: func(userID, oldHash, newHash string, _ time.Time) error {
+				if userID != "u1" {
+					t.Errorf("rotated session for user %q, want u1", userID)
+				}
+				gotOld, gotNew = oldHash, newHash
+				return nil
+			},
+		}
+		r := setupAuthRouter(NewAuthHandler(userSvc, &mockAuditService{}))
+
+		rec := doRequest(r, "POST", "/auth/refresh", body)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		result := parseJSON(t, rec)
+		newToken, _ := result["refresh_token"].(string)
+		if gotOld != middleware.HashToken(refreshToken) {
+			t.Error("old hash does not match the presented refresh token")
+		}
+		if newToken == "" || gotNew != middleware.HashToken(newToken) {
+			t.Error("new hash does not match the returned refresh token")
+		}
+	})
+
+	t.Run("returns 401 when no session matches", func(t *testing.T) {
+		userSvc := &mockUserService{
+			getUserByIDFn: func(_ string) (*models.User, error) { return user, nil },
+			rotateRefreshSessionFn: func(_, _, _ string, _ time.Time) error {
+				return apperrors.ErrUnauthorized
+			},
+		}
+		r := setupAuthRouter(NewAuthHandler(userSvc, &mockAuditService{}))
+
+		rec := doRequest(r, "POST", "/auth/refresh", body)
+
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("expected 401, got %d", rec.Code)
+		}
+	})
+
+	t.Run("returns 401 for an access token", func(t *testing.T) {
+		accessToken, _ := middleware.GenerateAccessToken(user)
+		r := setupAuthRouter(NewAuthHandler(&mockUserService{}, &mockAuditService{}))
+
+		rec := doRequest(r, "POST", "/auth/refresh", fmt.Sprintf(`{"refresh_token":%q}`, accessToken))
+
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("expected 401, got %d", rec.Code)
+		}
+	})
+
+	t.Run("returns 401 for an inactive user", func(t *testing.T) {
+		userSvc := &mockUserService{
+			getUserByIDFn: func(_ string) (*models.User, error) {
+				return &models.User{Base: models.Base{ID: "u1"}, IsActive: false}, nil
+			},
+		}
+		r := setupAuthRouter(NewAuthHandler(userSvc, &mockAuditService{}))
+
+		rec := doRequest(r, "POST", "/auth/refresh", body)
+
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("expected 401, got %d", rec.Code)
+		}
+	})
+}
+
+func TestAuthHandler_Logout(t *testing.T) {
+	user := &models.User{Base: models.Base{ID: "u1"}, Email: "a@example.com"}
+	refreshToken, err := middleware.GenerateRefreshToken(user)
+	if err != nil {
+		t.Fatalf("GenerateRefreshToken: %v", err)
+	}
+
+	t.Run("revokes the session for the token", func(t *testing.T) {
+		var revoked string
+		userSvc := &mockUserService{
+			revokeRefreshSessionFn: func(_, hash string) error {
+				revoked = hash
+				return nil
+			},
+		}
+		r := setupAuthRouter(NewAuthHandler(userSvc, &mockAuditService{}))
+
+		rec := doRequest(r, "POST", "/auth/logout", fmt.Sprintf(`{"refresh_token":%q}`, refreshToken))
+
+		if rec.Code != http.StatusNoContent {
+			t.Fatalf("expected 204, got %d", rec.Code)
+		}
+		if revoked != middleware.HashToken(refreshToken) {
+			t.Error("revoked hash does not match the presented refresh token")
+		}
+	})
+
+	t.Run("succeeds without revoking for an invalid token", func(t *testing.T) {
+		userSvc := &mockUserService{
+			revokeRefreshSessionFn: func(_, _ string) error {
+				t.Error("revoke should not be called for an invalid token")
+				return nil
+			},
+		}
+		r := setupAuthRouter(NewAuthHandler(userSvc, &mockAuditService{}))
+
+		rec := doRequest(r, "POST", "/auth/logout", `{"refresh_token":"garbage"}`)
+
+		if rec.Code != http.StatusNoContent {
+			t.Fatalf("expected 204, got %d", rec.Code)
 		}
 	})
 }

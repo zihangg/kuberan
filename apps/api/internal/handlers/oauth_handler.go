@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -304,10 +305,26 @@ func (h *OAuthHandler) RejectConsent(c *gin.Context) {
 // granted audience for a consent challenge.
 func (h *OAuthHandler) acceptConsent(c *gin.Context, consent *hydra.ConsentRequest, remember bool) (string, error) {
 	return h.hydra.AcceptConsent(c.Request.Context(), consent.Challenge, hydra.AcceptConsentParams{
-		GrantScope:    h.grantableScopes(consent.RequestedScope),
+		GrantScope:    withOfflineAccess(h.grantableScopes(consent.RequestedScope), consent.Client),
 		GrantAudience: h.grantableAudience(consent.RequestedAccessTokenAudience),
 		Remember:      remember,
 	})
+}
+
+// withOfflineAccess adds offline_access to granted when the client is
+// registered for it, so Hydra issues a refresh token even if the client did not
+// ask for one. Many MCP clients request only the RS's scopes_supported and would
+// otherwise be forced to re-authorize every 15 minutes when the access token
+// expires. It is only added for clients registered with offline_access: Hydra
+// rejects refreshing a grant whose scopes exceed the client's registered set.
+func withOfflineAccess(granted []string, client hydra.OAuth2Client) []string {
+	if slices.Contains(granted, "offline_access") || slices.Contains(granted, "offline") {
+		return granted
+	}
+	if !slices.Contains(strings.Fields(client.Scope), "offline_access") {
+		return granted
+	}
+	return append(granted, "offline_access")
 }
 
 // grantableAudience returns the requested audiences with the MCP resource URL

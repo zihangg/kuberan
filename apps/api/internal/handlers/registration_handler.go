@@ -3,6 +3,7 @@ package handlers
 import (
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -95,6 +96,13 @@ func (h *RegistrationHandler) Register(c *gin.Context) {
 	scope := capScopes(strings.Fields(req.Scope), h.allowedScopes)
 	if len(scope) == 0 {
 		scope = h.defaultRegistrableScopes()
+	} else {
+		// Clients that register with an explicit scope usually copy the RS's
+		// scopes_supported (read:* only) and omit offline_access. Without it
+		// registered, Hydra can never issue them a refresh token (and refuses to
+		// refresh one granted at consent), so the connection dies with the
+		// 15-minute access token. Always register the protocol scopes.
+		scope = appendMissing(scope, refreshProtocolScopes...)
 	}
 
 	// Force the hardened policy regardless of what the client asked for.
@@ -139,8 +147,22 @@ func (h *RegistrationHandler) Register(c *gin.Context) {
 func (h *RegistrationHandler) defaultRegistrableScopes() []string {
 	out := make([]string, 0, len(h.allowedScopes)+3)
 	out = append(out, h.allowedScopes...)
-	out = append(out, "openid", "offline", "offline_access")
+	out = append(out, refreshProtocolScopes...)
 	return out
+}
+
+// refreshProtocolScopes are the OIDC/refresh protocol scopes every DCR client
+// is registered with, in registration order.
+var refreshProtocolScopes = []string{"openid", "offline", "offline_access"}
+
+// appendMissing appends each of add that is not already in scopes.
+func appendMissing(scopes []string, add ...string) []string {
+	for _, a := range add {
+		if !slices.Contains(scopes, a) {
+			scopes = append(scopes, a)
+		}
+	}
+	return scopes
 }
 
 // isValidRedirectURI reports whether s is an acceptable OAuth redirect URI: an

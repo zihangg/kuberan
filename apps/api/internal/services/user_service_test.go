@@ -1,6 +1,7 @@
 package services
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -285,23 +286,106 @@ func TestAttemptLogin(t *testing.T) {
 	})
 }
 
-func TestStoreAndGetRefreshTokenHash(t *testing.T) {
-	db := testutil.SetupTestDB(t)
-	defer testutil.TeardownTestDB(t, db)
-	svc := NewUserService(db)
+func TestRefreshSessions(t *testing.T) {
+	const (
+		hashA  = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+		hashA2 = "a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2"
+		hashA3 = "a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3"
+		hashB  = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+		hashB2 = "b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2"
+	)
+	expires := func() time.Time { return time.Now().Add(time.Hour) }
 
-	user := testutil.CreateTestUser(t, db)
-
-	hash := "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
-	err := svc.StoreRefreshTokenHash(user.ID, hash)
-	testutil.AssertNoError(t, err)
-
-	got, err := svc.GetRefreshTokenHash(user.ID)
-	testutil.AssertNoError(t, err)
-
-	if got != hash {
-		t.Errorf("expected hash %s, got %s", hash, got)
+	setup := func(t *testing.T) (UserServicer, *models.User, func()) {
+		db := testutil.SetupTestDB(t)
+		return NewUserService(db), testutil.CreateTestUser(t, db), func() { testutil.TeardownTestDB(t, db) }
 	}
+
+	t.Run("logging in on another device keeps the first signed in", func(t *testing.T) {
+		svc, user, done := setup(t)
+		defer done()
+
+		testutil.AssertNoError(t, svc.CreateRefreshSession(user.ID, hashA, "phone", "1.1.1.1", expires()))
+		testutil.AssertNoError(t, svc.CreateRefreshSession(user.ID, hashB, "laptop", "2.2.2.2", expires()))
+
+		testutil.AssertNoError(t, svc.RotateRefreshSession(user.ID, hashA, hashA2, expires()))
+		testutil.AssertNoError(t, svc.RotateRefreshSession(user.ID, hashB, hashB2, expires()))
+	})
+
+	t.Run("rotated-out token is accepted within the grace period", func(t *testing.T) {
+		svc, user, done := setup(t)
+		defer done()
+
+		testutil.AssertNoError(t, svc.CreateRefreshSession(user.ID, hashA, "", "", expires()))
+		testutil.AssertNoError(t, svc.RotateRefreshSession(user.ID, hashA, hashA2, expires()))
+		// A second tab presents the original token right after the first rotated it.
+		testutil.AssertNoError(t, svc.RotateRefreshSession(user.ID, hashA, hashA3, expires()))
+		// The session continues from the latest token.
+		testutil.AssertNoError(t, svc.RotateRefreshSession(user.ID, hashA3, hashA2+"x", expires()))
+	})
+
+	t.Run("rotated-out token is rejected after the grace period", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		svc := NewUserService(db)
+		user := testutil.CreateTestUser(t, db)
+
+		testutil.AssertNoError(t, svc.CreateRefreshSession(user.ID, hashA, "", "", expires()))
+		testutil.AssertNoError(t, svc.RotateRefreshSession(user.ID, hashA, hashA2, expires()))
+		past := time.Now().Add(-refreshRotationGrace - time.Second)
+		db.Model(&models.RefreshSession{}).Where("user_id = ?", user.ID).Update("rotated_at", past)
+
+		testutil.AssertAppError(t, svc.RotateRefreshSession(user.ID, hashA, hashA3, expires()), "UNAUTHORIZED")
+		testutil.AssertNoError(t, svc.RotateRefreshSession(user.ID, hashA2, hashA3, expires()))
+	})
+
+	t.Run("rejects unknown, expired, and other users' tokens", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		svc := NewUserService(db)
+		user := testutil.CreateTestUser(t, db)
+		other := testutil.CreateTestUser(t, db)
+
+		testutil.AssertNoError(t, svc.CreateRefreshSession(user.ID, hashA, "", "", expires()))
+		testutil.AssertNoError(t, svc.CreateRefreshSession(user.ID, hashB, "", "", time.Now().Add(-time.Minute)))
+
+		testutil.AssertAppError(t, svc.RotateRefreshSession(user.ID, hashA3, hashA2, expires()), "UNAUTHORIZED")
+		testutil.AssertAppError(t, svc.RotateRefreshSession(user.ID, hashB, hashB2, expires()), "UNAUTHORIZED")
+		testutil.AssertAppError(t, svc.RotateRefreshSession(other.ID, hashA, hashA2, expires()), "UNAUTHORIZED")
+	})
+
+	t.Run("revoke ends only that device's session", func(t *testing.T) {
+		svc, user, done := setup(t)
+		defer done()
+
+		testutil.AssertNoError(t, svc.CreateRefreshSession(user.ID, hashA, "", "", expires()))
+		testutil.AssertNoError(t, svc.CreateRefreshSession(user.ID, hashB, "", "", expires()))
+		testutil.AssertNoError(t, svc.RevokeRefreshSession(user.ID, hashA))
+
+		testutil.AssertAppError(t, svc.RotateRefreshSession(user.ID, hashA, hashA2, expires()), "UNAUTHORIZED")
+		testutil.AssertNoError(t, svc.RotateRefreshSession(user.ID, hashB, hashB2, expires()))
+	})
+
+	t.Run("prunes expired sessions and caps sessions per user", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		svc := NewUserService(db)
+		user := testutil.CreateTestUser(t, db)
+
+		testutil.AssertNoError(t, svc.CreateRefreshSession(user.ID, hashB, "", "", time.Now().Add(-time.Minute)))
+		for i := 0; i < maxRefreshSessionsPerUser+5; i++ {
+			testutil.AssertNoError(t, svc.CreateRefreshSession(user.ID, fmt.Sprintf("%064d", i), "", "", expires()))
+		}
+
+		var count int64
+		db.Model(&models.RefreshSession{}).Where("user_id = ?", user.ID).Count(&count)
+		if count != maxRefreshSessionsPerUser {
+			t.Errorf("expected %d sessions, got %d", maxRefreshSessionsPerUser, count)
+		}
+		// The newest session survives the cap.
+		last := fmt.Sprintf("%064d", maxRefreshSessionsPerUser+4)
+		testutil.AssertNoError(t, svc.RotateRefreshSession(user.ID, last, hashA, expires()))
+	})
 }
 
 func TestCreateUser_password_is_hashed(t *testing.T) {

@@ -64,8 +64,9 @@ func TestRegistrationHandler_Register(t *testing.T) {
 		if len(got.ResponseTypes) != 1 || got.ResponseTypes[0] != "code" {
 			t.Errorf("response types not forced to code: %v", got.ResponseTypes)
 		}
-		// read:secrets is not registered and must be dropped; offline_access survives.
-		if got.Scope != "read:accounts offline_access" {
+		// read:secrets is not registered and must be dropped; offline_access
+		// survives and the remaining protocol scopes are always registered.
+		if got.Scope != "read:accounts offline_access openid offline" {
 			t.Errorf("scope not capped correctly: %q", got.Scope)
 		}
 	})
@@ -192,6 +193,25 @@ func TestRegistrationHandler_Register(t *testing.T) {
 			t.Fatalf("expected %d, got %d", apperrors.ErrInternalServer.StatusCode, rec.Code)
 		}
 	})
+}
+
+func TestRegistrationHandler_RegistersOfflineAccess(t *testing.T) {
+	admin := &mockHydraAdmin{}
+	handler := NewRegistrationHandler(admin, &recordingAuditService{}, testScopes)
+	r := setupRegistrationRouter(handler)
+
+	// A client that copies scopes_supported (read:* only) must still be able
+	// to receive and use refresh tokens.
+	rec := doRequest(r, "POST", "/oauth/register",
+		`{"client_name":"Hermes","redirect_uris":["https://hermes.example/cb"],"scope":"read:accounts read:transactions"}`)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
+	}
+	want := "read:accounts read:transactions openid offline offline_access"
+	if got := admin.lastCreateClient.Scope; got != want {
+		t.Errorf("scope = %q, want %q", got, want)
+	}
 }
 
 func TestIsValidRedirectURI(t *testing.T) {
