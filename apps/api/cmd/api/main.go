@@ -96,7 +96,7 @@ func run() error {
 	fdService := services.NewFixedDepositService(db, categoryService)
 	auditService := services.NewAuditService(db)
 	telegramService := services.NewTelegramService(db)
-	trustedClientService := services.NewTrustedClientService(db)
+	oauthGrantService := services.NewOAuthGrantService(db)
 
 	// Receipt attachments (plan 017): blob store + service. The store is only
 	// reachable through the ownership-checked API; MinIO stays private. When no
@@ -124,7 +124,7 @@ func run() error {
 
 	// Initialize handlers
 	authHandler := handlers.NewAuthHandler(userService, auditService)
-	oauthHandler := handlers.NewOAuthHandler(hydraAdmin, userService, trustedClientService, auditService, appConfig.OAuthScopes, appConfig.MCPResourceURL)
+	oauthHandler := handlers.NewOAuthHandler(hydraAdmin, userService, oauthGrantService, auditService, appConfig.OAuthScopes, appConfig.MCPResourceURL)
 	registrationHandler := handlers.NewRegistrationHandler(hydraAdmin, auditService, appConfig.OAuthScopes)
 	accountHandler := handlers.NewAccountHandler(accountService, auditService)
 	categoryHandler := handlers.NewCategoryHandler(categoryService, auditService)

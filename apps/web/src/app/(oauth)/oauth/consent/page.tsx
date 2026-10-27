@@ -8,6 +8,7 @@ import type {
   OAuthConsentDetails,
   OAuthRedirectResponse,
 } from "@/types/api";
+import { isProtocolScope, isWriteScope, scopeLabel } from "@/lib/oauth-scopes";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -17,23 +18,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-
-// Human-readable labels for the granular read:* scopes Hydra may request.
-const SCOPE_LABELS: Record<string, string> = {
-  "read:accounts": "View your accounts",
-  "read:transactions": "View your transactions",
-  "read:budgets": "View your budgets",
-  "read:categories": "View your categories",
-  "read:investments": "View your investments",
-  "read:portfolio": "View your portfolio",
-  "read:snapshots": "View your net-worth history",
-  openid: "Verify your identity",
-  offline_access: "Maintain access when you're away",
-};
-
-function scopeLabel(scope: string): string {
-  return SCOPE_LABELS[scope] ?? scope;
-}
 
 // Show the host of the client's redirect target — the anti-phishing signal.
 function redirectHost(redirectUris?: string[]): string | null {
@@ -46,6 +30,43 @@ function redirectHost(redirectUris?: string[]): string | null {
   }
 }
 
+// Read scopes start ticked; write scopes only when the user approved them for
+// this client before (plan 022: write access is always an explicit opt-in).
+function initialSelection(details: OAuthConsentDetails): Set<string> {
+  const previous = new Set(details.previously_approved ?? []);
+  return new Set(
+    (details.requested_scopes ?? []).filter(
+      (scope) =>
+        !isProtocolScope(scope) && (!isWriteScope(scope) || previous.has(scope))
+    )
+  );
+}
+
+function ScopeCheckbox({
+  scope,
+  checked,
+  disabled,
+  onChange,
+}: {
+  scope: string;
+  checked: boolean;
+  disabled: boolean;
+  onChange: (scope: string, checked: boolean) => void;
+}) {
+  return (
+    <label className="flex items-center gap-2 text-sm">
+      <input
+        type="checkbox"
+        className="border-input size-4 rounded"
+        checked={checked}
+        onChange={(e) => onChange(scope, e.target.checked)}
+        disabled={disabled}
+      />
+      <span className="text-muted-foreground">{scopeLabel(scope)}</span>
+    </label>
+  );
+}
+
 function OAuthConsent() {
   const searchParams = useSearchParams();
   const consentChallenge = searchParams.get("consent_challenge") ?? "";
@@ -54,6 +75,7 @@ function OAuthConsent() {
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [rememberClient, setRememberClient] = useState(true);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
@@ -77,6 +99,7 @@ function OAuthConsent() {
           return;
         }
         setDetails(res);
+        setSelected(initialSelection(res));
       } catch (err) {
         if (cancelled) return;
         setError(
@@ -101,6 +124,7 @@ function OAuthConsent() {
       const body: OAuthConsentAcceptRequest = {
         consent_challenge: consentChallenge,
         remember_client: rememberClient,
+        granted_scopes: Array.from(selected),
       };
       const res = await apiClient.post<OAuthRedirectResponse>(
         "/api/v1/oauth/consent/accept",
@@ -115,6 +139,15 @@ function OAuthConsent() {
       );
       setIsSubmitting(false);
     }
+  }
+
+  function toggleScope(scope: string, checked: boolean) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(scope);
+      else next.delete(scope);
+      return next;
+    });
   }
 
   async function handleDeny() {
@@ -165,6 +198,10 @@ function OAuthConsent() {
   const clientName = details?.client?.client_name || details?.client?.client_id || "An application";
   const host = redirectHost(details?.redirect_uris);
   const scopes = details?.requested_scopes ?? [];
+  const readScopes = scopes.filter((s) => !isProtocolScope(s) && !isWriteScope(s));
+  const writeScopes = scopes.filter(isWriteScope);
+  const protocolScopes = scopes.filter(isProtocolScope);
+  const grantsWrite = writeScopes.some((s) => selected.has(s));
 
   return (
     <Card>
@@ -189,14 +226,43 @@ function OAuthConsent() {
         )}
         <div className="flex flex-col gap-2">
           <p className="text-sm font-medium">This will allow it to:</p>
-          <ul className="flex flex-col gap-1">
-            {scopes.map((scope) => (
-              <li key={scope} className="text-muted-foreground text-sm">
-                • {scopeLabel(scope)}
-              </li>
-            ))}
-          </ul>
+          {readScopes.map((scope) => (
+            <ScopeCheckbox
+              key={scope}
+              scope={scope}
+              checked={selected.has(scope)}
+              disabled={isSubmitting}
+              onChange={toggleScope}
+            />
+          ))}
+          {protocolScopes.length > 0 && (
+            <ul className="flex flex-col gap-1">
+              {Array.from(new Set(protocolScopes.map(scopeLabel))).map((label) => (
+                <li key={label} className="text-muted-foreground text-sm">
+                  • {label}
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
+        {writeScopes.length > 0 && (
+          <div className="flex flex-col gap-2 rounded-md border border-amber-500/40 p-3">
+            <p className="text-sm font-medium">Allow changes</p>
+            <p className="text-muted-foreground text-xs">
+              Off unless you tick them. {clientName} will be able to change your
+              financial records. You can disconnect it in Settings at any time.
+            </p>
+            {writeScopes.map((scope) => (
+              <ScopeCheckbox
+                key={scope}
+                scope={scope}
+                checked={selected.has(scope)}
+                disabled={isSubmitting}
+                onChange={toggleScope}
+              />
+            ))}
+          </div>
+        )}
         <label className="flex items-center gap-2 text-sm">
           <input
             type="checkbox"
@@ -215,7 +281,11 @@ function OAuthConsent() {
           onClick={handleAccept}
           disabled={isSubmitting}
         >
-          {isSubmitting ? "Authorizing..." : "Authorize"}
+          {isSubmitting
+            ? "Authorizing..."
+            : grantsWrite
+              ? "Authorize, including changes"
+              : "Authorize"}
         </Button>
         <Button
           type="button"

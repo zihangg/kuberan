@@ -2410,9 +2410,80 @@ const docTemplate = `{
                 }
             }
         },
+        "/oauth/clients": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "List the OAuth clients the user has granted access to, with their scopes",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "oauth"
+                ],
+                "summary": "List connected apps",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ConnectedAppsResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/oauth/clients/{client_id}": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Revoke an OAuth client's access and stop it from auto-connecting",
+                "tags": [
+                    "oauth"
+                ],
+                "summary": "Disconnect an app",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "OAuth client ID",
+                        "name": "client_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Disconnected"
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Connected app not found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/oauth/consent": {
             "get": {
-                "description": "Auto-accept trusted clients, or return details for unknown clients",
+                "description": "Auto-accept remembered clients for reviewed scopes, or return details for the consent page",
                 "produces": [
                     "application/json"
                 ],
@@ -2454,7 +2525,7 @@ const docTemplate = `{
         },
         "/oauth/consent/accept": {
             "post": {
-                "description": "Grant the requested read:* scopes and optionally remember the client",
+                "description": "Grant the selected scopes and optionally remember the client",
                 "consumes": [
                     "application/json"
                 ],
@@ -2467,7 +2538,7 @@ const docTemplate = `{
                 "summary": "Accept an OAuth consent challenge",
                 "parameters": [
                     {
-                        "description": "Consent challenge and remember flag",
+                        "description": "Consent challenge, selected scopes and remember flag",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -5745,6 +5816,43 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_handlers.ConnectedAppResponse": {
+            "type": "object",
+            "properties": {
+                "auto_accept": {
+                    "type": "boolean"
+                },
+                "client_id": {
+                    "type": "string"
+                },
+                "client_name": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "last_used_at": {
+                    "type": "string"
+                },
+                "scopes": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "internal_handlers.ConnectedAppsResponse": {
+            "type": "object",
+            "properties": {
+                "clients": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_handlers.ConnectedAppResponse"
+                    }
+                }
+            }
+        },
         "internal_handlers.CounterpartiesResponse": {
             "type": "object",
             "properties": {
@@ -6834,6 +6942,12 @@ const docTemplate = `{
             "properties": {
                 "consent_challenge": {
                     "type": "string"
+                },
+                "granted_scopes": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 },
                 "remember_client": {
                     "type": "boolean"

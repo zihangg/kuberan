@@ -178,3 +178,13 @@ var (
 	// ErrInvalidReceivableKind is returned when a receivable kind is not supported.
 	ErrInvalidReceivableKind = &AppError{Code: "INVALID_RECEIVABLE_KIND", Message: "Invalid receivable kind", StatusCode: http.StatusBadRequest}
 )
+
+// OAuth client grant errors (plan 022).
+var (
+	// ErrOAuthClientNotFound is returned when the user has no active grant for an OAuth client.
+	ErrOAuthClientNotFound = &AppError{Code: "OAUTH_CLIENT_NOT_FOUND", Message: "Connected app not found", StatusCode: http.StatusNotFound}
+
+	// ErrOAuthScopeNotGranted is returned when an OAuth client's grant does not include a required scope,
+	// has been revoked, or belongs to an inactive user.
+	ErrOAuthScopeNotGranted = &AppError{Code: "OAUTH_SCOPE_NOT_GRANTED", Message: "This app is not allowed to perform this action", StatusCode: http.StatusForbidden}
+)

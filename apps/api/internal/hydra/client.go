@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	stderrors "errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -26,6 +27,10 @@ type AdminClient interface {
 
 	GetClient(ctx context.Context, clientID string) (*OAuth2Client, error)
 	CreateClient(ctx context.Context, in OAuth2ClientCreate) (*OAuth2Client, error)
+
+	// RevokeConsentSessions revokes every consent subject has given clientID,
+	// along with the access and refresh tokens issued under it.
+	RevokeConsentSessions(ctx context.Context, subject, clientID string) error
 }
 
 // client is the concrete AdminClient backed by net/http.
@@ -143,6 +148,23 @@ func (c *client) CreateClient(ctx context.Context, in OAuth2ClientCreate) (*OAut
 		return nil, err
 	}
 	return &out, nil
+}
+
+// RevokeConsentSessions revokes subject's consent sessions for clientID. Hydra
+// invalidates the refresh tokens issued under them, so the client cannot mint
+// new access tokens; access tokens already issued remain valid until they
+// expire. It is idempotent: a subject with no session for the client succeeds.
+func (c *client) RevokeConsentSessions(ctx context.Context, subject, clientID string) error {
+	if subject == "" || clientID == "" {
+		return apperrors.WithMessage(apperrors.ErrInvalidInput, "subject and client_id are required")
+	}
+	err := c.do(ctx, http.MethodDelete, "/admin/oauth2/auth/sessions/consent",
+		url.Values{"subject": {subject}, "client": {clientID}}, nil, nil)
+	var appErr *apperrors.AppError
+	if stderrors.As(err, &appErr) && appErr.Code == apperrors.ErrNotFound.Code {
+		return nil
+	}
+	return err
 }
 
 // redirect performs a request whose response is a Hydra redirect envelope.

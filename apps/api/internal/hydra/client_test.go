@@ -211,3 +211,45 @@ func TestRejectConsent(t *testing.T) {
 		t.Errorf("body = %+v", rs.lastBody)
 	}
 }
+
+func TestRevokeConsentSessions(t *testing.T) {
+	rs := newRecordingServer(t, http.StatusNoContent, nil)
+	c := NewAdminClient(rs.server.URL)
+
+	if err := c.RevokeConsentSessions(context.Background(), "user-1", "cid"); err != nil {
+		t.Fatalf("RevokeConsentSessions: %v", err)
+	}
+	if rs.lastMethod != http.MethodDelete || rs.lastPath != "/admin/oauth2/auth/sessions/consent" {
+		t.Errorf("unexpected request: %s %s", rs.lastMethod, rs.lastPath)
+	}
+	if rs.lastQuery != "client=cid&subject=user-1" {
+		t.Errorf("unexpected query: %s", rs.lastQuery)
+	}
+}
+
+func TestRevokeConsentSessionsNotFoundIsSuccess(t *testing.T) {
+	rs := newRecordingServer(t, http.StatusNotFound, nil)
+	c := NewAdminClient(rs.server.URL)
+
+	if err := c.RevokeConsentSessions(context.Background(), "user-1", "cid"); err != nil {
+		t.Errorf("expected 404 to be treated as already revoked, got %v", err)
+	}
+}
+
+func TestRevokeConsentSessionsRequiresIDs(t *testing.T) {
+	c := NewAdminClient("http://unused")
+	var appErr *apperrors.AppError
+	err := c.RevokeConsentSessions(context.Background(), "", "cid")
+	if !stderrors.As(err, &appErr) || appErr.Code != apperrors.ErrInvalidInput.Code {
+		t.Errorf("want ErrInvalidInput, got %v", err)
+	}
+}
+
+func TestRevokeConsentSessionsServerError(t *testing.T) {
+	rs := newRecordingServer(t, http.StatusInternalServerError, nil)
+	c := NewAdminClient(rs.server.URL)
+
+	if err := c.RevokeConsentSessions(context.Background(), "user-1", "cid"); err == nil {
+		t.Error("expected a 500 from Hydra to surface as an error")
+	}
+}

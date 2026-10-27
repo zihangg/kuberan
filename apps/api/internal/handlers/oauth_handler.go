@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"net/http"
 	"slices"
 	"strings"
@@ -9,11 +10,12 @@ import (
 
 	apperrors "kuberan/internal/errors"
 	"kuberan/internal/hydra"
+	"kuberan/internal/models"
 	"kuberan/internal/services"
 )
 
 // protocolScopes are the OIDC / refresh-token scopes that always pass through
-// consent in addition to the registered read:* API scopes. Dropping
+// consent in addition to the registered API scopes. Dropping
 // offline_access here would silently break silent refresh (Phase 3).
 var protocolScopes = map[string]bool{
 	"openid":         true,
@@ -24,18 +26,19 @@ var protocolScopes = map[string]bool{
 // OAuthHandler bridges the browser-facing login/consent pages (apps/web) to
 // Hydra's admin API, keeping all admin traffic server-side. It resolves Hydra's
 // login and consent challenges against the existing user store and applies
-// trust-on-first-use consent. See plans/015-mcp-oauth-hydra Phase 1.
+// per-user, per-scope consent grants. See plans/015-mcp-oauth-hydra Phase 1 and
+// plans/022-mcp-write-access.
 type OAuthHandler struct {
 	hydra         hydra.AdminClient
 	userService   services.UserServicer
-	trustedClient services.TrustedClientServicer
+	grants        services.OAuthGrantServicer
 	auditService  services.AuditServicer
-	allowedScopes []string // registered read:* scopes; grants are capped to this set.
+	allowedScopes []string // registered API scopes; grants are capped to this set.
 	resourceURL   string   // MCP resource identifier always stamped into the granted audience.
 }
 
 // NewOAuthHandler creates a new OAuthHandler. scopes is the space-delimited set
-// of registered read:* scopes (config.OAuthScopes) that grants are capped to.
+// of registered API scopes (config.OAuthScopes) that grants are capped to.
 // resourceURL is the MCP resource identifier (config.MCPResourceURL); it is
 // always added to the granted token audience so every token issued through this
 // flow validates against the MCP Resource Server, whose validator requires
@@ -43,7 +46,7 @@ type OAuthHandler struct {
 func NewOAuthHandler(
 	adminClient hydra.AdminClient,
 	userService services.UserServicer,
-	trustedClient services.TrustedClientServicer,
+	grants services.OAuthGrantServicer,
 	auditService services.AuditServicer,
 	scopes string,
 	resourceURL string,
@@ -51,7 +54,7 @@ func NewOAuthHandler(
 	return &OAuthHandler{
 		hydra:         adminClient,
 		userService:   userService,
-		trustedClient: trustedClient,
+		grants:        grants,
 		auditService:  auditService,
 		allowedScopes: strings.Fields(scopes),
 		resourceURL:   resourceURL,
@@ -72,9 +75,14 @@ type oauthLoginRejectRequest struct {
 }
 
 // oauthConsentAcceptRequest is the payload the apps/web consent page submits.
+// GrantedScopes lists the API scopes the user ticked; protocol scopes (openid,
+// offline_access) are not user-selectable. When it is omitted, only the
+// requested read:* scopes are granted, so an outdated page can never grant
+// write access.
 type oauthConsentAcceptRequest struct {
-	ConsentChallenge string `json:"consent_challenge" binding:"required"`
-	RememberClient   bool   `json:"remember_client"`
+	ConsentChallenge string   `json:"consent_challenge" binding:"required"`
+	RememberClient   bool     `json:"remember_client"`
+	GrantedScopes    []string `json:"granted_scopes"`
 }
 
 // oauthConsentRejectRequest is the payload the apps/web consent page submits when
@@ -162,12 +170,14 @@ func (h *OAuthHandler) RejectLogin(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"redirect_to": redirectTo})
 }
 
-// GetConsent fetches a pending consent challenge. Trusted clients are accepted
-// server-side immediately (returning redirect_to); unknown clients return the
-// details the consent page needs to render.
+// GetConsent fetches a pending consent challenge. A client the user asked to
+// remember is accepted server-side immediately (returning redirect_to), but
+// only while every requested scope is one the user has already reviewed, and
+// only with the scopes they approved. Otherwise it returns the details the
+// consent page needs to render, including the previously approved scopes.
 //
 // @Summary     Fetch an OAuth consent challenge
-// @Description Auto-accept trusted clients, or return details for unknown clients
+// @Description Auto-accept remembered clients for reviewed scopes, or return details for the consent page
 // @Tags        oauth
 // @Produce     json
 // @Param       consent_challenge query string true "Consent challenge"
@@ -188,14 +198,16 @@ func (h *OAuthHandler) GetConsent(c *gin.Context) {
 		return
 	}
 
-	trusted, err := h.trustedClient.IsTrusted(consent.Client.ClientID)
+	grant, err := h.activeGrant(consent)
 	if err != nil {
 		respondWithError(c, err)
 		return
 	}
 
-	if trusted {
-		redirectTo, err := h.acceptConsent(c, consent, false)
+	requested := h.grantableScopes(consent.RequestedScope)
+	if grant != nil && grant.AutoAccept && containsAll(grant.Reviewed(), apiScopes(requested)) {
+		granted := intersect(requested, append(grant.Approved(), protocolScopeList(requested)...))
+		redirectTo, err := h.acceptConsent(c, consent, granted, false)
 		if err != nil {
 			respondWithError(c, err)
 			return
@@ -204,28 +216,56 @@ func (h *OAuthHandler) GetConsent(c *gin.Context) {
 		return
 	}
 
-	// Unknown client: hand the consent page what it needs to render the
-	// anti-phishing screen (client name, redirect host, grantable scopes).
+	previouslyApproved := []string{}
+	if grant != nil {
+		previouslyApproved = grant.Approved()
+	}
+
+	// Hand the consent page what it needs to render the anti-phishing screen
+	// (client name, redirect host, grantable scopes) and pre-tick what the
+	// user approved last time.
 	c.JSON(http.StatusOK, gin.H{
 		"client": gin.H{
 			"client_id":   consent.Client.ClientID,
 			"client_name": consent.Client.ClientName,
 		},
-		"requested_scopes": h.grantableScopes(consent.RequestedScope),
-		"redirect_uris":    consent.Client.RedirectURIs,
+		"requested_scopes":    requested,
+		"previously_approved": previouslyApproved,
+		"redirect_uris":       consent.Client.RedirectURIs,
 	})
 }
 
-// AcceptConsent grants a consent challenge. When remember_client is set the
-// client is recorded in trusted_oauth_clients (with an audit entry) so future
-// consents auto-accept.
+// activeGrant returns the subject's non-revoked grant for the consent's client,
+// or nil when there is none.
+func (h *OAuthHandler) activeGrant(consent *hydra.ConsentRequest) (*models.OAuthClientGrant, error) {
+	if consent.Subject == "" {
+		return nil, nil
+	}
+	grant, err := h.grants.Get(consent.Subject, consent.Client.ClientID)
+	var appErr *apperrors.AppError
+	if errors.As(err, &appErr) && appErr.Code == apperrors.ErrOAuthClientNotFound.Code {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if grant.IsRevoked() {
+		return nil, nil
+	}
+	return grant, nil
+}
+
+// AcceptConsent grants a consent challenge with the scopes the user ticked,
+// capped to what the client requested and the registered set, and records the
+// decision as the user's grant for the client. When remember_client is set,
+// future consents for already-reviewed scopes auto-accept.
 //
 // @Summary     Accept an OAuth consent challenge
-// @Description Grant the requested read:* scopes and optionally remember the client
+// @Description Grant the selected scopes and optionally remember the client
 // @Tags        oauth
 // @Accept      json
 // @Produce     json
-// @Param       request body oauthConsentAcceptRequest true "Consent challenge and remember flag"
+// @Param       request body oauthConsentAcceptRequest true "Consent challenge, selected scopes and remember flag"
 // @Success     200 {object} map[string]string "redirect_to"
 // @Failure     400 {object} ErrorResponse "Invalid input"
 // @Failure     404 {object} ErrorResponse "Unknown challenge"
@@ -243,17 +283,37 @@ func (h *OAuthHandler) AcceptConsent(c *gin.Context) {
 		return
 	}
 
-	redirectTo, err := h.acceptConsent(c, consent, req.RememberClient)
+	requested := h.grantableScopes(consent.RequestedScope)
+	var granted []string
+	if req.GrantedScopes == nil {
+		granted = readOnly(requested)
+	} else {
+		granted = intersect(requested, append(req.GrantedScopes, protocolScopeList(requested)...))
+	}
+
+	// Record the grant before Hydra issues anything: if this fails, no token
+	// exists without a matching grant row for the MCP write guard to check.
+	if _, err := h.grants.RecordConsent(services.RecordConsentInput{
+		UserID:     consent.Subject,
+		ClientID:   consent.Client.ClientID,
+		ClientName: consent.Client.ClientName,
+		Approved:   apiScopes(granted),
+		Reviewed:   apiScopes(requested),
+		AutoAccept: req.RememberClient,
+	}); err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	redirectTo, err := h.acceptConsent(c, consent, granted, req.RememberClient)
 	if err != nil {
 		respondWithError(c, err)
 		return
 	}
 
+	h.auditService.Log(consent.Subject, "OAUTH_CONSENT_GRANTED", "oauth_client", consent.Client.ClientID,
+		c.ClientIP(), map[string]interface{}{"client_name": consent.Client.ClientName, "scopes": apiScopes(granted)})
 	if req.RememberClient {
-		if _, err := h.trustedClient.Trust(consent.Client.ClientID, consent.Client.ClientName); err != nil {
-			respondWithError(c, err)
-			return
-		}
 		h.auditService.Log(consent.Subject, "OAUTH_CLIENT_TRUSTED", "oauth_client", consent.Client.ClientID,
 			c.ClientIP(), map[string]interface{}{"client_name": consent.Client.ClientName})
 	}
@@ -301,11 +361,11 @@ func (h *OAuthHandler) RejectConsent(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"redirect_to": redirectTo})
 }
 
-// acceptConsent grants the requested scopes (capped to the allowed set) and the
-// granted audience for a consent challenge.
-func (h *OAuthHandler) acceptConsent(c *gin.Context, consent *hydra.ConsentRequest, remember bool) (string, error) {
+// acceptConsent grants scopes (already capped by the caller) and the granted
+// audience for a consent challenge.
+func (h *OAuthHandler) acceptConsent(c *gin.Context, consent *hydra.ConsentRequest, scopes []string, remember bool) (string, error) {
 	return h.hydra.AcceptConsent(c.Request.Context(), consent.Challenge, hydra.AcceptConsentParams{
-		GrantScope:    withOfflineAccess(h.grantableScopes(consent.RequestedScope), consent.Client),
+		GrantScope:    withOfflineAccess(scopes, consent.Client),
 		GrantAudience: h.grantableAudience(consent.RequestedAccessTokenAudience),
 		Remember:      remember,
 	})
@@ -348,13 +408,13 @@ func (h *OAuthHandler) grantableAudience(requested []string) []string {
 }
 
 // grantableScopes returns the requested scopes intersected with the registered
-// read:* set (plus the OIDC/refresh protocol scopes). This is the defense-in-depth
+// API scope set (plus the OIDC/refresh protocol scopes). This is the defense-in-depth
 // cap: a client can never be granted a scope the RS does not recognise.
 func (h *OAuthHandler) grantableScopes(requested []string) []string {
 	return capScopes(requested, h.allowedScopes)
 }
 
-// capScopes returns requested intersected with the allowed read:* set plus the
+// capScopes returns requested intersected with the allowed API scope set plus the
 // OIDC/refresh protocol scopes. Shared by consent granting and DCR registration
 // so both apply the same defense-in-depth scope ceiling.
 func capScopes(requested, allowed []string) []string {
@@ -369,4 +429,63 @@ func capScopes(requested, allowed []string) []string {
 		}
 	}
 	return out
+}
+
+// writeScopePrefix marks scopes that let a client change the user's data
+// (plan 022). They are never granted without an explicit opt-in.
+const writeScopePrefix = "write:"
+
+// apiScopes returns scopes without the OIDC/refresh protocol scopes.
+func apiScopes(scopes []string) []string {
+	out := make([]string, 0, len(scopes))
+	for _, s := range scopes {
+		if !protocolScopes[s] {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// protocolScopeList returns the OIDC/refresh protocol scopes present in scopes.
+func protocolScopeList(scopes []string) []string {
+	out := make([]string, 0, len(protocolScopes))
+	for _, s := range scopes {
+		if protocolScopes[s] {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// readOnly returns scopes without any write:* scope.
+func readOnly(scopes []string) []string {
+	out := make([]string, 0, len(scopes))
+	for _, s := range scopes {
+		if !strings.HasPrefix(s, writeScopePrefix) {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// intersect returns the members of scopes that are also in allowed, keeping
+// the order of scopes.
+func intersect(scopes, allowed []string) []string {
+	out := make([]string, 0, len(scopes))
+	for _, s := range scopes {
+		if slices.Contains(allowed, s) {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// containsAll reports whether every member of want is in have.
+func containsAll(have, want []string) bool {
+	for _, w := range want {
+		if !slices.Contains(have, w) {
+			return false
+		}
+	}
+	return true
 }

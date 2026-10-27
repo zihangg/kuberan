@@ -3,14 +3,17 @@ package handlers
 import (
 	"context"
 	"net/http"
+	"net/http/httptest"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
 	apperrors "kuberan/internal/errors"
 	"kuberan/internal/hydra"
 	"kuberan/internal/models"
+	"kuberan/internal/services"
 )
 
 // --- mock Hydra admin client ---
@@ -30,6 +33,10 @@ type mockHydraAdmin struct {
 	rejectConsentCalled bool
 	rejectLoginCalled   bool
 	createClientCalled  bool
+	revokeErr           error
+	revokeCalled        bool
+	lastRevokeSubject   string
+	lastRevokeClient    string
 }
 
 func (m *mockHydraAdmin) GetLoginRequest(context.Context, string) (*hydra.LoginRequest, error) {
@@ -99,38 +106,70 @@ func (m *mockHydraAdmin) CreateClient(ctx context.Context, in hydra.OAuth2Client
 	}, nil
 }
 
-// --- mock trusted client service ---
-
-type mockTrustedClientService struct {
-	isTrustedFn func(clientID string) (bool, error)
-	trustFn     func(clientID, name string) (*models.TrustedOAuthClient, error)
-	trustCalled bool
-	trustedID   string
+func (m *mockHydraAdmin) RevokeConsentSessions(_ context.Context, subject, clientID string) error {
+	m.revokeCalled = true
+	m.lastRevokeSubject = subject
+	m.lastRevokeClient = clientID
+	return m.revokeErr
 }
 
-func (m *mockTrustedClientService) IsTrusted(clientID string) (bool, error) {
-	if m.isTrustedFn != nil {
-		return m.isTrustedFn(clientID)
+// --- mock grant service ---
+
+type mockGrantService struct {
+	grant      *models.OAuthClientGrant
+	getErr     error
+	recordErr  error
+	revokeErr  error
+	recorded   *services.RecordConsentInput
+	revokedFor string
+}
+
+func (m *mockGrantService) Get(_, _ string) (*models.OAuthClientGrant, error) {
+	if m.getErr != nil {
+		return nil, m.getErr
 	}
-	return false, nil
-}
-
-func (m *mockTrustedClientService) Trust(clientID, name string) (*models.TrustedOAuthClient, error) {
-	m.trustCalled = true
-	m.trustedID = clientID
-	if m.trustFn != nil {
-		return m.trustFn(clientID, name)
+	if m.grant == nil {
+		return nil, apperrors.ErrOAuthClientNotFound
 	}
-	return &models.TrustedOAuthClient{ClientID: clientID, Name: name}, nil
+	return m.grant, nil
 }
 
-func (m *mockTrustedClientService) ListTrusted() ([]models.TrustedOAuthClient, error) {
-	return nil, nil
+func (m *mockGrantService) RecordConsent(in services.RecordConsentInput) (*models.OAuthClientGrant, error) {
+	m.recorded = &in
+	if m.recordErr != nil {
+		return nil, m.recordErr
+	}
+	return &models.OAuthClientGrant{UserID: in.UserID, ClientID: in.ClientID}, nil
+}
+
+func (m *mockGrantService) List(_ string) ([]models.OAuthClientGrant, error) {
+	if m.grant == nil || m.grant.IsRevoked() {
+		return nil, nil
+	}
+	return []models.OAuthClientGrant{*m.grant}, nil
+}
+
+func (m *mockGrantService) Revoke(_, clientID string) error {
+	m.revokedFor = clientID
+	return m.revokeErr
+}
+
+func (m *mockGrantService) Authorize(_, _, _ string) error { return nil }
+
+// rememberedGrant returns an auto-accepting grant for client "known".
+func rememberedGrant(approved, reviewed string) *models.OAuthClientGrant {
+	return &models.OAuthClientGrant{
+		UserID: "user-7", ClientID: "known", ClientName: "Claude",
+		ApprovedScopes: approved, ReviewedScopes: reviewed, AutoAccept: true,
+	}
 }
 
 // --- test helpers ---
 
 const testScopes = "read:accounts read:transactions read:budgets"
+
+// testScopesWithWrite is the registered scope set when MCP writes are enabled.
+const testScopesWithWrite = testScopes + " write:transactions"
 
 const testResourceURL = "https://mcp.example"
 
@@ -141,6 +180,8 @@ func setupOAuthRouter(handler *OAuthHandler) *gin.Engine {
 	r.GET("/oauth/consent", handler.GetConsent)
 	r.POST("/oauth/consent/accept", handler.AcceptConsent)
 	r.POST("/oauth/consent/reject", handler.RejectConsent)
+	r.GET("/oauth/clients", injectUserID("user-7"), handler.ListConnectedApps)
+	r.DELETE("/oauth/clients/:client_id", injectUserID("user-7"), handler.DisconnectApp)
 	return r
 }
 
@@ -154,7 +195,7 @@ func TestOAuthHandler_Login(t *testing.T) {
 			},
 		}
 		admin := &mockHydraAdmin{}
-		handler := NewOAuthHandler(admin, userSvc, &mockTrustedClientService{}, &mockAuditService{}, testScopes, testResourceURL)
+		handler := NewOAuthHandler(admin, userSvc, &mockGrantService{}, &mockAuditService{}, testScopes, testResourceURL)
 		r := setupOAuthRouter(handler)
 
 		rec := doRequest(r, "POST", "/oauth/login",
@@ -179,7 +220,7 @@ func TestOAuthHandler_Login(t *testing.T) {
 			},
 		}
 		admin := &mockHydraAdmin{}
-		handler := NewOAuthHandler(admin, userSvc, &mockTrustedClientService{}, &mockAuditService{}, testScopes, testResourceURL)
+		handler := NewOAuthHandler(admin, userSvc, &mockGrantService{}, &mockAuditService{}, testScopes, testResourceURL)
 		r := setupOAuthRouter(handler)
 
 		rec := doRequest(r, "POST", "/oauth/login",
@@ -194,7 +235,7 @@ func TestOAuthHandler_Login(t *testing.T) {
 	})
 
 	t.Run("rejects missing login_challenge", func(t *testing.T) {
-		handler := NewOAuthHandler(&mockHydraAdmin{}, &mockUserService{}, &mockTrustedClientService{}, &mockAuditService{}, testScopes, testResourceURL)
+		handler := NewOAuthHandler(&mockHydraAdmin{}, &mockUserService{}, &mockGrantService{}, &mockAuditService{}, testScopes, testResourceURL)
 		r := setupOAuthRouter(handler)
 
 		rec := doRequest(r, "POST", "/oauth/login", `{"email":"a@b.com","password":"secret123"}`)
@@ -211,7 +252,7 @@ func TestOAuthHandler_Login(t *testing.T) {
 func TestOAuthHandler_RejectLogin(t *testing.T) {
 	t.Run("rejects the challenge via Hydra without accepting any login", func(t *testing.T) {
 		admin := &mockHydraAdmin{}
-		handler := NewOAuthHandler(admin, &mockUserService{}, &mockTrustedClientService{}, &mockAuditService{}, testScopes, testResourceURL)
+		handler := NewOAuthHandler(admin, &mockUserService{}, &mockGrantService{}, &mockAuditService{}, testScopes, testResourceURL)
 		r := setupOAuthRouter(handler)
 
 		rec := doRequest(r, "POST", "/oauth/login/reject", `{"login_challenge":"lc1"}`)
@@ -231,7 +272,7 @@ func TestOAuthHandler_RejectLogin(t *testing.T) {
 	})
 
 	t.Run("rejects missing login_challenge", func(t *testing.T) {
-		handler := NewOAuthHandler(&mockHydraAdmin{}, &mockUserService{}, &mockTrustedClientService{}, &mockAuditService{}, testScopes, testResourceURL)
+		handler := NewOAuthHandler(&mockHydraAdmin{}, &mockUserService{}, &mockGrantService{}, &mockAuditService{}, testScopes, testResourceURL)
 		r := setupOAuthRouter(handler)
 
 		rec := doRequest(r, "POST", "/oauth/login/reject", `{}`)
@@ -245,19 +286,26 @@ func TestOAuthHandler_RejectLogin(t *testing.T) {
 
 // --- GetConsent ---
 
+// consentFor returns a Hydra mock serving one consent request for user-7 and
+// client "known" with the given requested scopes.
+func consentFor(requested ...string) *mockHydraAdmin {
+	return &mockHydraAdmin{
+		getConsentFn: func(_ context.Context, challenge string) (*hydra.ConsentRequest, error) {
+			return &hydra.ConsentRequest{
+				Challenge:      challenge,
+				Subject:        "user-7",
+				Client:         hydra.OAuth2Client{ClientID: "known", ClientName: "Claude"},
+				RequestedScope: requested,
+			}, nil
+		},
+	}
+}
+
 func TestOAuthHandler_GetConsent(t *testing.T) {
-	t.Run("auto-accepts a trusted client and returns redirect_to", func(t *testing.T) {
-		admin := &mockHydraAdmin{
-			getConsentFn: func(_ context.Context, challenge string) (*hydra.ConsentRequest, error) {
-				return &hydra.ConsentRequest{
-					Challenge:      challenge,
-					Client:         hydra.OAuth2Client{ClientID: "known", ClientName: "Claude"},
-					RequestedScope: []string{"read:accounts", "offline_access"},
-				}, nil
-			},
-		}
-		trusted := &mockTrustedClientService{isTrustedFn: func(string) (bool, error) { return true, nil }}
-		handler := NewOAuthHandler(admin, &mockUserService{}, trusted, &mockAuditService{}, testScopes, testResourceURL)
+	t.Run("auto-accepts a remembered client for reviewed scopes", func(t *testing.T) {
+		admin := consentFor("read:accounts", "offline_access")
+		grants := &mockGrantService{grant: rememberedGrant("read:accounts", "read:accounts")}
+		handler := NewOAuthHandler(admin, &mockUserService{}, grants, &mockAuditService{}, testScopes, testResourceURL)
 		r := setupOAuthRouter(handler)
 
 		rec := doRequest(r, "GET", "/oauth/consent?consent_challenge=cc1", "")
@@ -267,14 +315,12 @@ func TestOAuthHandler_GetConsent(t *testing.T) {
 		}
 		result := parseJSON(t, rec)
 		if result["redirect_to"] != "https://hydra/redirect/consent" {
-			t.Errorf("expected redirect_to for trusted client, got: %v", result)
+			t.Errorf("expected redirect_to for remembered client, got: %v", result)
 		}
 		if !admin.acceptConsentCalled {
-			t.Error("expected AcceptConsent to be called for a trusted client")
+			t.Error("expected AcceptConsent to be called for a remembered client")
 		}
-		// Only registered + protocol scopes survive the cap.
-		got := admin.lastAcceptConsent.GrantScope
-		if len(got) != 2 || got[0] != "read:accounts" || got[1] != "offline_access" {
+		if got := admin.lastAcceptConsent.GrantScope; !slices.Equal(got, []string{"read:accounts", "offline_access"}) {
 			t.Errorf("unexpected granted scopes: %v", got)
 		}
 		// The MCP resource URL must always be stamped into the audience so the
@@ -285,19 +331,87 @@ func TestOAuthHandler_GetConsent(t *testing.T) {
 		}
 	})
 
+	t.Run("auto-accept grants only the approved subset of reviewed scopes", func(t *testing.T) {
+		admin := consentFor("read:accounts", "write:transactions")
+		grants := &mockGrantService{grant: rememberedGrant("read:accounts", "read:accounts write:transactions")}
+		handler := NewOAuthHandler(admin, &mockUserService{}, grants, &mockAuditService{}, testScopesWithWrite, testResourceURL)
+
+		rec := doRequest(setupOAuthRouter(handler), "GET", "/oauth/consent?consent_challenge=cc1", "")
+
+		if rec.Code != http.StatusOK || !admin.acceptConsentCalled {
+			t.Fatalf("expected auto-accept, got %d: %s", rec.Code, rec.Body.String())
+		}
+		if got := admin.lastAcceptConsent.GrantScope; !slices.Equal(got, []string{"read:accounts"}) {
+			t.Errorf("a declined write scope must not be granted on auto-accept, got %v", got)
+		}
+	})
+
+	t.Run("shows the consent screen when a remembered client requests a new scope", func(t *testing.T) {
+		admin := consentFor("read:accounts", "write:transactions")
+		grants := &mockGrantService{grant: rememberedGrant("read:accounts", "read:accounts")}
+		handler := NewOAuthHandler(admin, &mockUserService{}, grants, &mockAuditService{}, testScopesWithWrite, testResourceURL)
+
+		rec := doRequest(setupOAuthRouter(handler), "GET", "/oauth/consent?consent_challenge=cc1", "")
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		if admin.acceptConsentCalled {
+			t.Fatal("a scope the user never reviewed must not be auto-accepted")
+		}
+		result := parseJSON(t, rec)
+		if !slices.Equal(toStrings(result["requested_scopes"]), []string{"read:accounts", "write:transactions"}) {
+			t.Errorf("unexpected requested_scopes: %v", result["requested_scopes"])
+		}
+		if !slices.Equal(toStrings(result["previously_approved"]), []string{"read:accounts"}) {
+			t.Errorf("unexpected previously_approved: %v", result["previously_approved"])
+		}
+	})
+
+	t.Run("does not auto-accept a client the user did not ask to remember", func(t *testing.T) {
+		admin := consentFor("read:accounts")
+		grant := rememberedGrant("read:accounts", "read:accounts")
+		grant.AutoAccept = false
+		handler := NewOAuthHandler(admin, &mockUserService{}, &mockGrantService{grant: grant}, &mockAuditService{}, testScopes, testResourceURL)
+
+		doRequest(setupOAuthRouter(handler), "GET", "/oauth/consent?consent_challenge=cc1", "")
+
+		if admin.acceptConsentCalled {
+			t.Error("AcceptConsent must not be called without remember")
+		}
+	})
+
+	t.Run("does not auto-accept a revoked grant", func(t *testing.T) {
+		admin := consentFor("read:accounts")
+		grant := rememberedGrant("read:accounts", "read:accounts")
+		revokedAt := time.Now()
+		grant.RevokedAt = &revokedAt
+		handler := NewOAuthHandler(admin, &mockUserService{}, &mockGrantService{grant: grant}, &mockAuditService{}, testScopes, testResourceURL)
+
+		rec := doRequest(setupOAuthRouter(handler), "GET", "/oauth/consent?consent_challenge=cc1", "")
+
+		if admin.acceptConsentCalled {
+			t.Error("a revoked grant must not auto-accept")
+		}
+		if got := toStrings(parseJSON(t, rec)["previously_approved"]); len(got) != 0 {
+			t.Errorf("a revoked grant must not pre-tick scopes, got %v", got)
+		}
+	})
+
 	t.Run("preserves a requested audience while keeping the resource URL unique", func(t *testing.T) {
 		admin := &mockHydraAdmin{
 			getConsentFn: func(_ context.Context, challenge string) (*hydra.ConsentRequest, error) {
 				return &hydra.ConsentRequest{
 					Challenge:                    challenge,
+					Subject:                      "user-7",
 					Client:                       hydra.OAuth2Client{ClientID: "known", ClientName: "Claude"},
 					RequestedScope:               []string{"read:accounts"},
 					RequestedAccessTokenAudience: []string{"https://other.example", testResourceURL},
 				}, nil
 			},
 		}
-		trusted := &mockTrustedClientService{isTrustedFn: func(string) (bool, error) { return true, nil }}
-		handler := NewOAuthHandler(admin, &mockUserService{}, trusted, &mockAuditService{}, testScopes, testResourceURL)
+		grants := &mockGrantService{grant: rememberedGrant("read:accounts", "read:accounts")}
+		handler := NewOAuthHandler(admin, &mockUserService{}, grants, &mockAuditService{}, testScopes, testResourceURL)
 		r := setupOAuthRouter(handler)
 
 		rec := doRequest(r, "GET", "/oauth/consent?consent_challenge=cc1", "")
@@ -316,6 +430,7 @@ func TestOAuthHandler_GetConsent(t *testing.T) {
 			getConsentFn: func(_ context.Context, challenge string) (*hydra.ConsentRequest, error) {
 				return &hydra.ConsentRequest{
 					Challenge: challenge,
+					Subject:   "user-7",
 					Client: hydra.OAuth2Client{
 						ClientID:     "unknown",
 						ClientName:   "Mystery",
@@ -325,8 +440,7 @@ func TestOAuthHandler_GetConsent(t *testing.T) {
 				}, nil
 			},
 		}
-		trusted := &mockTrustedClientService{isTrustedFn: func(string) (bool, error) { return false, nil }}
-		handler := NewOAuthHandler(admin, &mockUserService{}, trusted, &mockAuditService{}, testScopes, testResourceURL)
+		handler := NewOAuthHandler(admin, &mockUserService{}, &mockGrantService{}, &mockAuditService{}, testScopes, testResourceURL)
 		r := setupOAuthRouter(handler)
 
 		rec := doRequest(r, "GET", "/oauth/consent?consent_challenge=cc1", "")
@@ -341,14 +455,24 @@ func TestOAuthHandler_GetConsent(t *testing.T) {
 		if result["redirect_to"] != nil {
 			t.Error("unknown client must not return redirect_to")
 		}
-		scopes, ok := result["requested_scopes"].([]interface{})
-		if !ok || len(scopes) != 1 || scopes[0] != "read:accounts" {
+		if !slices.Equal(toStrings(result["requested_scopes"]), []string{"read:accounts"}) {
 			t.Errorf("expected only grantable scopes in payload, got: %v", result["requested_scopes"])
 		}
 	})
 
+	t.Run("propagates grant lookup failures", func(t *testing.T) {
+		grants := &mockGrantService{getErr: apperrors.ErrInternalServer}
+		handler := NewOAuthHandler(consentFor("read:accounts"), &mockUserService{}, grants, &mockAuditService{}, testScopes, testResourceURL)
+
+		rec := doRequest(setupOAuthRouter(handler), "GET", "/oauth/consent?consent_challenge=cc1", "")
+
+		if rec.Code != http.StatusInternalServerError {
+			t.Fatalf("expected 500, got %d", rec.Code)
+		}
+	})
+
 	t.Run("rejects missing consent_challenge", func(t *testing.T) {
-		handler := NewOAuthHandler(&mockHydraAdmin{}, &mockUserService{}, &mockTrustedClientService{}, &mockAuditService{}, testScopes, testResourceURL)
+		handler := NewOAuthHandler(&mockHydraAdmin{}, &mockUserService{}, &mockGrantService{}, &mockAuditService{}, testScopes, testResourceURL)
 		r := setupOAuthRouter(handler)
 
 		rec := doRequest(r, "GET", "/oauth/consent", "")
@@ -360,65 +484,130 @@ func TestOAuthHandler_GetConsent(t *testing.T) {
 	})
 }
 
+// toStrings converts a decoded JSON array into a string slice.
+func toStrings(v interface{}) []string {
+	raw, _ := v.([]interface{})
+	out := make([]string, 0, len(raw))
+	for _, item := range raw {
+		if s, ok := item.(string); ok {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
 // --- AcceptConsent ---
 
 func TestOAuthHandler_AcceptConsent(t *testing.T) {
-	t.Run("grants consent and remembers the client when asked", func(t *testing.T) {
-		admin := &mockHydraAdmin{
-			getConsentFn: func(_ context.Context, challenge string) (*hydra.ConsentRequest, error) {
-				return &hydra.ConsentRequest{
-					Challenge:      challenge,
-					Subject:        "user-7",
-					Client:         hydra.OAuth2Client{ClientID: "cid-9", ClientName: "Claude"},
-					RequestedScope: []string{"read:accounts", "read:transactions"},
-				}, nil
-			},
-		}
-		trusted := &mockTrustedClientService{}
-		handler := NewOAuthHandler(admin, &mockUserService{}, trusted, &mockAuditService{}, testScopes, testResourceURL)
-		r := setupOAuthRouter(handler)
+	accept := func(t *testing.T, scopes string, requested []string, body string) (*mockHydraAdmin, *mockGrantService, *httptest.ResponseRecorder) {
+		t.Helper()
+		admin := consentFor(requested...)
+		grants := &mockGrantService{}
+		handler := NewOAuthHandler(admin, &mockUserService{}, grants, &mockAuditService{}, scopes, testResourceURL)
+		rec := doRequest(setupOAuthRouter(handler), "POST", "/oauth/consent/accept", body)
+		return admin, grants, rec
+	}
 
-		rec := doRequest(r, "POST", "/oauth/consent/accept",
-			`{"consent_challenge":"cc1","remember_client":true}`)
+	t.Run("grants consent and records a remembered grant", func(t *testing.T) {
+		admin, grants, rec := accept(t, testScopes, []string{"read:accounts", "read:transactions"},
+			`{"consent_challenge":"cc1","remember_client":true,"granted_scopes":["read:accounts","read:transactions"]}`)
 
 		if rec.Code != http.StatusOK {
 			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 		}
-		if !trusted.trustCalled || trusted.trustedID != "cid-9" {
-			t.Errorf("expected client cid-9 to be trusted, got called=%v id=%q", trusted.trustCalled, trusted.trustedID)
+		if grants.recorded == nil || grants.recorded.UserID != "user-7" || grants.recorded.ClientID != "known" {
+			t.Fatalf("expected a grant for user-7/known, got %+v", grants.recorded)
+		}
+		if !grants.recorded.AutoAccept {
+			t.Error("expected remember_client to set auto-accept")
 		}
 		if !admin.lastAcceptConsent.Remember {
 			t.Error("expected Hydra consent remember flag to be set")
 		}
 	})
 
-	t.Run("grants consent without remembering when flag is false", func(t *testing.T) {
-		admin := &mockHydraAdmin{
-			getConsentFn: func(_ context.Context, challenge string) (*hydra.ConsentRequest, error) {
-				return &hydra.ConsentRequest{
-					Challenge:      challenge,
-					Client:         hydra.OAuth2Client{ClientID: "cid-9"},
-					RequestedScope: []string{"read:accounts"},
-				}, nil
-			},
-		}
-		trusted := &mockTrustedClientService{}
-		handler := NewOAuthHandler(admin, &mockUserService{}, trusted, &mockAuditService{}, testScopes, testResourceURL)
-		r := setupOAuthRouter(handler)
-
-		rec := doRequest(r, "POST", "/oauth/consent/accept",
-			`{"consent_challenge":"cc1","remember_client":false}`)
+	t.Run("records a grant without auto-accept when remember is false", func(t *testing.T) {
+		_, grants, rec := accept(t, testScopes, []string{"read:accounts"},
+			`{"consent_challenge":"cc1","remember_client":false,"granted_scopes":["read:accounts"]}`)
 
 		if rec.Code != http.StatusOK {
 			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 		}
-		if trusted.trustCalled {
-			t.Error("client must not be trusted when remember_client is false")
+		if grants.recorded == nil || grants.recorded.AutoAccept {
+			t.Errorf("expected a non-auto-accept grant, got %+v", grants.recorded)
+		}
+	})
+
+	t.Run("grants only the ticked scopes and records what was reviewed", func(t *testing.T) {
+		admin, grants, rec := accept(t, testScopesWithWrite,
+			[]string{"read:accounts", "read:transactions", "write:transactions", "offline_access"},
+			`{"consent_challenge":"cc1","granted_scopes":["read:accounts"]}`)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		if got := admin.lastAcceptConsent.GrantScope; !slices.Equal(got, []string{"read:accounts", "offline_access"}) {
+			t.Errorf("granted %v, want [read:accounts offline_access]", got)
+		}
+		if !slices.Equal(grants.recorded.Approved, []string{"read:accounts"}) {
+			t.Errorf("unexpected approved: %v", grants.recorded.Approved)
+		}
+		if !slices.Equal(grants.recorded.Reviewed, []string{"read:accounts", "read:transactions", "write:transactions"}) {
+			t.Errorf("unexpected reviewed: %v", grants.recorded.Reviewed)
+		}
+	})
+
+	t.Run("grants a write scope only when ticked", func(t *testing.T) {
+		admin, _, rec := accept(t, testScopesWithWrite, []string{"read:accounts", "write:transactions"},
+			`{"consent_challenge":"cc1","granted_scopes":["read:accounts","write:transactions"]}`)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		if got := admin.lastAcceptConsent.GrantScope; !slices.Equal(got, []string{"read:accounts", "write:transactions"}) {
+			t.Errorf("granted %v", got)
+		}
+	})
+
+	t.Run("omitted granted_scopes grants only read scopes", func(t *testing.T) {
+		admin, _, rec := accept(t, testScopesWithWrite, []string{"read:accounts", "write:transactions"},
+			`{"consent_challenge":"cc1"}`)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		if got := admin.lastAcceptConsent.GrantScope; !slices.Equal(got, []string{"read:accounts"}) {
+			t.Errorf("an outdated page must never grant write scopes, got %v", got)
+		}
+	})
+
+	t.Run("ignores ticked scopes the client did not request or that are not registered", func(t *testing.T) {
+		admin, _, _ := accept(t, testScopes, []string{"read:accounts", "write:transactions"},
+			`{"consent_challenge":"cc1","granted_scopes":["read:accounts","read:budgets","write:transactions"]}`)
+
+		if got := admin.lastAcceptConsent.GrantScope; !slices.Equal(got, []string{"read:accounts"}) {
+			t.Errorf("granted %v, want [read:accounts]", got)
+		}
+	})
+
+	t.Run("does not accept in Hydra when the grant cannot be recorded", func(t *testing.T) {
+		admin := consentFor("read:accounts")
+		grants := &mockGrantService{recordErr: apperrors.ErrInternalServer}
+		handler := NewOAuthHandler(admin, &mockUserService{}, grants, &mockAuditService{}, testScopes, testResourceURL)
+
+		rec := doRequest(setupOAuthRouter(handler), "POST", "/oauth/consent/accept",
+			`{"consent_challenge":"cc1","granted_scopes":["read:accounts"]}`)
+
+		if rec.Code != http.StatusInternalServerError {
+			t.Fatalf("expected 500, got %d", rec.Code)
+		}
+		if admin.acceptConsentCalled {
+			t.Error("Hydra must not issue tokens without a recorded grant")
 		}
 	})
 
 	t.Run("rejects missing consent_challenge", func(t *testing.T) {
-		handler := NewOAuthHandler(&mockHydraAdmin{}, &mockUserService{}, &mockTrustedClientService{}, &mockAuditService{}, testScopes, testResourceURL)
+		handler := NewOAuthHandler(&mockHydraAdmin{}, &mockUserService{}, &mockGrantService{}, &mockAuditService{}, testScopes, testResourceURL)
 		r := setupOAuthRouter(handler)
 
 		rec := doRequest(r, "POST", "/oauth/consent/accept", `{"remember_client":true}`)
@@ -442,7 +631,7 @@ func TestOAuthHandler_ConsentGrantsOfflineAccess(t *testing.T) {
 				}, nil
 			},
 		}
-		handler := NewOAuthHandler(admin, &mockUserService{}, &mockTrustedClientService{}, &mockAuditService{}, testScopes, testResourceURL)
+		handler := NewOAuthHandler(admin, &mockUserService{}, &mockGrantService{}, &mockAuditService{}, testScopes, testResourceURL)
 		rec := doRequest(setupOAuthRouter(handler), "POST", "/oauth/consent/accept",
 			`{"consent_challenge":"cc1","remember_client":false}`)
 		if rec.Code != http.StatusOK {
@@ -487,8 +676,8 @@ func TestOAuthHandler_RejectConsent(t *testing.T) {
 				}, nil
 			},
 		}
-		trusted := &mockTrustedClientService{}
-		handler := NewOAuthHandler(admin, &mockUserService{}, trusted, &mockAuditService{}, testScopes, testResourceURL)
+		grants := &mockGrantService{}
+		handler := NewOAuthHandler(admin, &mockUserService{}, grants, &mockAuditService{}, testScopes, testResourceURL)
 		r := setupOAuthRouter(handler)
 
 		rec := doRequest(r, "POST", "/oauth/consent/reject", `{"consent_challenge":"cc1"}`)
@@ -505,13 +694,13 @@ func TestOAuthHandler_RejectConsent(t *testing.T) {
 		if admin.acceptConsentCalled {
 			t.Error("AcceptConsent must not be called when denying")
 		}
-		if trusted.trustCalled {
-			t.Error("client must never be trusted when denying consent")
+		if grants.recorded != nil {
+			t.Error("no grant may be recorded when denying consent")
 		}
 	})
 
 	t.Run("rejects missing consent_challenge", func(t *testing.T) {
-		handler := NewOAuthHandler(&mockHydraAdmin{}, &mockUserService{}, &mockTrustedClientService{}, &mockAuditService{}, testScopes, testResourceURL)
+		handler := NewOAuthHandler(&mockHydraAdmin{}, &mockUserService{}, &mockGrantService{}, &mockAuditService{}, testScopes, testResourceURL)
 		r := setupOAuthRouter(handler)
 
 		rec := doRequest(r, "POST", "/oauth/consent/reject", `{}`)
@@ -520,5 +709,108 @@ func TestOAuthHandler_RejectConsent(t *testing.T) {
 			t.Fatalf("expected 400, got %d", rec.Code)
 		}
 		assertErrorCode(t, parseJSON(t, rec), apperrors.ErrInvalidInput.Code)
+	})
+}
+
+// --- Connected apps ---
+
+func TestOAuthHandler_ListConnectedApps(t *testing.T) {
+	t.Run("lists the user's grants with their approved scopes", func(t *testing.T) {
+		grants := &mockGrantService{grant: rememberedGrant("read:accounts write:transactions", "read:accounts write:transactions")}
+		handler := NewOAuthHandler(&mockHydraAdmin{}, &mockUserService{}, grants, &mockAuditService{}, testScopes, testResourceURL)
+
+		rec := doRequest(setupOAuthRouter(handler), "GET", "/oauth/clients", "")
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		clients, _ := parseJSON(t, rec)["clients"].([]interface{})
+		if len(clients) != 1 {
+			t.Fatalf("expected 1 client, got %v", clients)
+		}
+		first, _ := clients[0].(map[string]interface{})
+		if first["client_id"] != "known" || first["client_name"] != "Claude" {
+			t.Errorf("unexpected client: %v", first)
+		}
+		if !slices.Equal(toStrings(first["scopes"]), []string{"read:accounts", "write:transactions"}) {
+			t.Errorf("unexpected scopes: %v", first["scopes"])
+		}
+	})
+
+	t.Run("returns an empty list, not null", func(t *testing.T) {
+		handler := NewOAuthHandler(&mockHydraAdmin{}, &mockUserService{}, &mockGrantService{}, &mockAuditService{}, testScopes, testResourceURL)
+
+		rec := doRequest(setupOAuthRouter(handler), "GET", "/oauth/clients", "")
+
+		if body := rec.Body.String(); body != `{"clients":[]}` {
+			t.Errorf("unexpected body: %s", body)
+		}
+	})
+}
+
+func TestOAuthHandler_DisconnectApp(t *testing.T) {
+	t.Run("revokes in Hydra, then the local grant, and audits", func(t *testing.T) {
+		admin := &mockHydraAdmin{}
+		grants := &mockGrantService{grant: rememberedGrant("read:accounts", "read:accounts")}
+		audit := &recordingAuditService{}
+		handler := NewOAuthHandler(admin, &mockUserService{}, grants, audit, testScopes, testResourceURL)
+
+		rec := doRequest(setupOAuthRouter(handler), "DELETE", "/oauth/clients/known", "")
+
+		if rec.Code != http.StatusNoContent {
+			t.Fatalf("expected 204, got %d: %s", rec.Code, rec.Body.String())
+		}
+		if !admin.revokeCalled || admin.lastRevokeSubject != "user-7" || admin.lastRevokeClient != "known" {
+			t.Errorf("expected Hydra revoke for user-7/known, got %v %q %q", admin.revokeCalled, admin.lastRevokeSubject, admin.lastRevokeClient)
+		}
+		if grants.revokedFor != "known" {
+			t.Errorf("expected the local grant to be revoked, got %q", grants.revokedFor)
+		}
+		if audit.action != "OAUTH_CLIENT_REVOKED" || audit.resID != "known" {
+			t.Errorf("unexpected audit: %+v", audit)
+		}
+	})
+
+	t.Run("leaves the grant untouched when Hydra fails", func(t *testing.T) {
+		admin := &mockHydraAdmin{revokeErr: apperrors.ErrInternalServer}
+		grants := &mockGrantService{grant: rememberedGrant("read:accounts", "read:accounts")}
+		handler := NewOAuthHandler(admin, &mockUserService{}, grants, &mockAuditService{}, testScopes, testResourceURL)
+
+		rec := doRequest(setupOAuthRouter(handler), "DELETE", "/oauth/clients/known", "")
+
+		if rec.Code != http.StatusInternalServerError {
+			t.Fatalf("expected 500, got %d", rec.Code)
+		}
+		if grants.revokedFor != "" {
+			t.Error("the local grant must stay active so the user can retry")
+		}
+	})
+
+	t.Run("returns 404 for an unknown client", func(t *testing.T) {
+		admin := &mockHydraAdmin{}
+		handler := NewOAuthHandler(admin, &mockUserService{}, &mockGrantService{}, &mockAuditService{}, testScopes, testResourceURL)
+
+		rec := doRequest(setupOAuthRouter(handler), "DELETE", "/oauth/clients/nope", "")
+
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("expected 404, got %d", rec.Code)
+		}
+		assertErrorCode(t, parseJSON(t, rec), apperrors.ErrOAuthClientNotFound.Code)
+		if admin.revokeCalled {
+			t.Error("Hydra must not be called for an unknown client")
+		}
+	})
+
+	t.Run("returns 404 for an already revoked client", func(t *testing.T) {
+		grant := rememberedGrant("read:accounts", "read:accounts")
+		revokedAt := time.Now()
+		grant.RevokedAt = &revokedAt
+		handler := NewOAuthHandler(&mockHydraAdmin{}, &mockUserService{}, &mockGrantService{grant: grant}, &mockAuditService{}, testScopes, testResourceURL)
+
+		rec := doRequest(setupOAuthRouter(handler), "DELETE", "/oauth/clients/known", "")
+
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("expected 404, got %d", rec.Code)
+		}
 	})
 }
