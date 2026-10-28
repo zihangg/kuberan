@@ -222,3 +222,29 @@ the design.
 5. **Rollback.** Set `MCP_WRITE_ENABLED=false` and restart `api` and `mcp`. The
    write tools disappear and `write:*` scopes can no longer be registered or
    granted. Grants keep their recorded write scopes, but no tool accepts them.
+
+---
+
+## 6. One-off data check after deploying plan 022
+
+Before this branch, the transaction service stored any `category_id` without
+checking that the category belonged to the user. List transactions linked to
+another user's category (expect none):
+
+```sql
+SELECT t.id AS transaction_id, t.user_id AS transaction_owner,
+       c.user_id AS category_owner, c.name AS category_name
+FROM transactions t JOIN categories c ON c.id = t.category_id
+WHERE c.user_id <> t.user_id;
+```
+
+If any appear, review them, then uncategorize them (the balance is
+unaffected; the category was never the user's):
+
+```sql
+UPDATE transactions t SET category_id = NULL FROM categories c
+WHERE c.id = t.category_id AND c.user_id <> t.user_id;
+```
+
+Audit events with no signed-in user (e.g. `LOGIN_FAILED`) were dropped before
+migration `000034`; there is nothing to recover.

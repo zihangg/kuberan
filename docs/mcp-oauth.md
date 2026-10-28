@@ -155,6 +155,10 @@ application").
   what the client requested and the registered set. If a request omits
   `granted_scopes`, only `read:*` is granted, so an outdated page can never
   grant write access. The grant row is written before Hydra issues anything.
+  The decision is merged into the client's existing grant: scopes on this
+  screen take the new choice, and scopes approved earlier but not requested
+  this time keep their approval. One `OAUTH_CONSENT_GRANTED` audit event
+  records the scopes and the "remember" choice (`auto_accept`).
 - **Settings > Connected apps** (`GET /api/v1/oauth/clients`,
   `DELETE /api/v1/oauth/clients/:client_id`) lists active grants, plus any
   client Hydra still holds a consent session for without an active grant
@@ -202,7 +206,12 @@ Tools bound every amount a write moves to `MCP_MAX_WRITE_AMOUNT` cents
 a receivable, and the existing amount of a transaction whose type is flipped.
 Creates require a `date` (the user's local date; the server's UTC clock
 can't know it), and dates must be within 10 years back and 7 days ahead.
-Text limits count characters, as the REST API does. Tools check that a
+Text limits (descriptions 500, names 100, icons 50 characters) are defined
+and enforced in the services (`services/text_limits.go`), so REST and MCP
+share them; the MCP tools also check them up front so invalid input never
+counts against the rate limit. Flipping a transaction's type keeps its
+category only if it fits the new type; a category that was deleted is
+cleared, and the reply says so. Tools check that a
 category belongs to the user (the service enforces this too) and matches the
 transaction type. Amounts are in dollars, like the read tools' filters. All
 tools carry MCP annotations (`readOnlyHint`, `destructiveHint`) so clients can

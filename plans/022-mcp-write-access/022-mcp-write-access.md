@@ -32,6 +32,14 @@
   - Long client names are truncated.
   - Consent recording is a single upsert.
   - The web app sends anti-framing headers.
+- **Follow-ups**, also done:
+  - `AppError` has a code-based `Is`, so `errors.Is` is used everywhere.
+  - `OAUTH_CLIENT_TRUSTED` folded into `OAUTH_CONSENT_GRANTED` (`auto_accept`).
+  - Text limits moved into the services.
+  - The MCP server depends on a narrow `GrantAuthorizer`.
+  - A type flip clears a deleted category.
+  - A new consent merges with the client's earlier choices.
+  - The runbook (section 6) has the cross-user category check.
 - **Verified** with unit, handler and integration tests (SQLite), and a local smoke run
   against Postgres 16 with the real `api` and `mcp` binaries and a stub JWKS/admin server
   standing in for Hydra. The real-Claude E2E in Phase 5 is still to be done on a
@@ -167,7 +175,7 @@ apps and a disconnect button.
      `autoAccept = remember_client`. If `granted_scopes` is missing, grant only the requested
      `read:*` scopes, so an old page can never grant write access.
    - Record a grant on every accept, not just when "remember" is ticked. D5 needs a row to check.
-   - Audit `OAUTH_CONSENT_GRANTED` with the granted scopes, and keep `OAUTH_CLIENT_TRUSTED` when
+   - Audit `OAUTH_CONSENT_GRANTED` with the granted scopes (superseded: one event now also records `auto_accept`; `OAUTH_CLIENT_TRUSTED` is gone), and keep `OAUTH_CLIENT_TRUSTED` when
      `remember` is set.
 
 4. **Hydra admin client** (`internal/hydra/`): add
