@@ -17,6 +17,21 @@
   helpers and rate limiter in `internal/mcp/write.go`. The connected-apps endpoints are
   methods on `OAuthHandler` (`internal/handlers/oauth_clients_handler.go`). The settings UI
   is a new "Connected apps" tab.
+- **After review** (five reviewers on the finished branch), all findings were fixed:
+  - Every write tool now runs through one wrapper, `addWriteTool`: grant check, then
+    argument validation, then the rate limit (charged only for valid writes, by records
+    changed), then the write and its audit rows.
+  - The ceiling now also covers implicit amounts: a full write-off, and the existing
+    amount of a transaction whose type is flipped.
+  - Creates require the user's local `date`. Dates must be within 10 years back.
+  - Text limits count characters, as REST does.
+  - Disconnect also revokes Hydra-only (pre-grant) connections, and Connected apps
+    lists them.
+  - `OAUTH_SCOPES` can't add `write:*` while the flag is off.
+  - Audit IPs trust `CF-Connecting-IP` only from `MCP_TRUSTED_PROXY_CIDRS`.
+  - Long client names are truncated.
+  - Consent recording is a single upsert.
+  - The web app sends anti-framing headers.
 - **Verified** with unit, handler and integration tests (SQLite), and a local smoke run
   against Postgres 16 with the real `api` and `mcp` binaries and a stub JWKS/admin server
   standing in for Hydra. The real-Claude E2E in Phase 5 is still to be done on a

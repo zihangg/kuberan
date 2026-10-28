@@ -402,11 +402,12 @@ CORS_ORIGIN=*                    # default
 HYDRA_ISSUER_URL=http://localhost:4444   # default
 HYDRA_ADMIN_URL=http://localhost:4445    # default
 MCP_RESOURCE_URL=http://localhost:8081   # default; must match the aud in Hydra tokens
-OAUTH_SCOPES=<optional override of the default read:* scope set>
+OAUTH_SCOPES=<optional override of the default read:* scope set; write:* entries are ignored unless MCP_WRITE_ENABLED>
 MCP_WRITE_ENABLED=false          # opt-in MCP write tools + write:* scopes; set on both api and mcp
 MCP_MAX_WRITE_AMOUNT=1000000     # per-change ceiling in cents for MCP writes
 MCP_WRITE_RATE_PER_MINUTE=30     # MCP writes per (user, client)
 MCP_WRITE_RATE_PER_DAY=500
+MCP_TRUSTED_PROXY_CIDRS=         # CIDRs whose CF-Connecting-IP the mcp server trusts for audit IPs (prod: tunnel network)
 HYDRA_PINNED_CLIENT_ID=<optional pinned OAuth client>
 ```
 

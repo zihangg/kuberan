@@ -193,6 +193,14 @@ the design.
    `trusted_oauth_clients` with `oauth_client_grants`, so existing trust rows are
    dropped: the next connect shows the consent screen once. Re-run the section 1
    fast checks. `scopes_supported` must still list only `read:*`.
+   - Existing connectors keep their Hydra session and read access, with no
+     grant row. Settings > Connected apps lists them as "connected before
+     per-app permissions", and Disconnect revokes them. Disconnect each one
+     (or, for every user, `curl -X DELETE "http://hydra:4445/admin/oauth2/auth/sessions/consent?subject=<user-id>&all=true"`
+     from inside the Docker network) so every live connection has a grant.
+   - Set `MCP_TRUSTED_PROXY_CIDRS` to the Docker network the tunnel connects
+     from (the same range as `HYDRA_TLS_TERMINATION_CIDR`), so audit rows
+     record the real client IP.
 2. **Turn writes on.** Set `MCP_WRITE_ENABLED=true` in `.env.prod`. Both the
    `api` and `mcp` services read it, so restart both. Check that
    `scopes_supported` now also lists `write:transactions write:categories

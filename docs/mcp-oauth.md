@@ -156,13 +156,18 @@ application").
   `granted_scopes`, only `read:*` is granted, so an outdated page can never
   grant write access. The grant row is written before Hydra issues anything.
 - **Settings > Connected apps** (`GET /api/v1/oauth/clients`,
-  `DELETE /api/v1/oauth/clients/:client_id`) lists active grants and
-  disconnects a client. Disconnecting calls Hydra's
+  `DELETE /api/v1/oauth/clients/:client_id`) lists active grants, plus any
+  client Hydra still holds a consent session for without an active grant
+  (shown as "connected before per-app permissions": typically a connector
+  set up before migration `000033`, which can read but never write). If Hydra
+  can't be reached the list falls back to grants only.
+- **Disconnect** calls Hydra's
   `DELETE /admin/oauth2/auth/sessions/consent?subject=&client=` (revokes the
-  consent and its refresh tokens), then marks the grant revoked and audits
-  `OAUTH_CLIENT_REVOKED`. If Hydra fails, nothing changes and the user can
-  retry. An access JWT already issued keeps working for reads until it
-  expires (15 minutes max) but is refused for writes at once (below).
+  consent and its refresh tokens) even when there is no grant row, then marks
+  any grant revoked and audits `OAUTH_CLIENT_REVOKED`. If Hydra fails, nothing
+  changes and the user can retry. An access JWT already issued keeps working
+  for reads until it expires (15 minutes max) but is refused for writes at
+  once (below).
 
 ## Write access (plan 022)
 
@@ -177,23 +182,39 @@ and registers the write tools:
 | `write:budgets` | `create_budget`, `update_budget` |
 
 Nothing deletes records, and investments, accounts and fixed deposits stay
-read-only. Every write goes through `authorizeWrite` (`internal/mcp/write.go`):
+read-only. Every write tool is registered through `addWriteTool`
+(`internal/mcp/write.go`), which runs the same steps for all of them:
 
 1. the token carries the scope (`requireScope`);
 2. the user's grant for the token's `client_id` is active, includes the scope,
    and the user is active: one indexed query per write, which is what makes
    disconnecting and deactivation take effect immediately for writes;
-3. a per-(user, client) rate limit (`MCP_WRITE_RATE_PER_MINUTE`, default 30;
-   `MCP_WRITE_RATE_PER_DAY`, default 500), held in memory.
+3. the tool validates its arguments (no side effects);
+4. a per-(user, client) rate limit (`MCP_WRITE_RATE_PER_MINUTE`, default 30;
+   `MCP_WRITE_RATE_PER_DAY`, default 500), held in memory and charged only for
+   valid writes, by the number of records changed (a batch's skipped items
+   don't count);
+5. the write, then its audit rows, tagged with `via: "mcp"`, `client_id` and
+   the tool name (updates record before and after values).
 
-Tools also bound amounts (positive, at most `MCP_MAX_WRITE_AMOUNT` cents,
-default $10,000), dates (at most 7 days ahead) and description length, check
-that a category belongs to the user and matches the transaction type, and
-audit each write as `MCP_<ACTION>` with `via: "mcp"`, `client_id` and the
-tool name (updates record before and after values). Amounts are in dollars,
-like the read tools' filters. All tools carry MCP annotations
-(`readOnlyHint`, `destructiveHint`) so clients can ask the user before a
-write, and every write tool's description tells the model to confirm first.
+Tools bound every amount a write moves to `MCP_MAX_WRITE_AMOUNT` cents
+(default $10,000), including ones not passed explicitly: a full write-off of
+a receivable, and the existing amount of a transaction whose type is flipped.
+Creates require a `date` (the user's local date; the server's UTC clock
+can't know it), and dates must be within 10 years back and 7 days ahead.
+Text limits count characters, as the REST API does. Tools check that a
+category belongs to the user (the service enforces this too) and matches the
+transaction type. Amounts are in dollars, like the read tools' filters. All
+tools carry MCP annotations (`readOnlyHint`, `destructiveHint`) so clients can
+ask the user before a write, and every write tool's description tells the
+model to confirm first.
+
+`MCP_WRITE_ENABLED` alone decides whether write scopes exist: when it is off,
+any `write:*` listed in an `OAUTH_SCOPES` override is stripped.
+
+The audit IP is the TCP peer, or Cloudflare's `CF-Connecting-IP` only when the
+peer is in `MCP_TRUSTED_PROXY_CIDRS` (the tunnel's Docker network); otherwise
+anyone reaching the MCP port directly could forge it.
 
 After enabling writes, remove and re-add the connector: existing DCR clients
 were registered with `read:*` only, and Hydra refuses to authorize scopes
