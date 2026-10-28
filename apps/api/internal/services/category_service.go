@@ -34,6 +34,9 @@ func (s *categoryService) CreateCategory(
 	if name == "" {
 		return nil, apperrors.WithMessage(apperrors.ErrInvalidInput, "category name is required")
 	}
+	if err := validateCategoryText(name, description, icon); err != nil {
+		return nil, err
+	}
 
 	// Check if a category with the same name already exists for this user
 	var count int64
@@ -136,6 +139,10 @@ func (s *categoryService) UpdateCategory(
 	color string,
 	parentID *string,
 ) (*models.Category, error) {
+	if err := validateCategoryText(name, description, icon); err != nil {
+		return nil, err
+	}
+
 	// Get the category
 	category, err := s.GetCategoryByID(userID, categoryID)
 	if err != nil {

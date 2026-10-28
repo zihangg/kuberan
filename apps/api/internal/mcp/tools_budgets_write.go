@@ -6,6 +6,7 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 
 	"kuberan/internal/models"
+	"kuberan/internal/services"
 )
 
 // budgetsWriteScope gates the budget write tools.
@@ -58,7 +59,7 @@ func (s *Server) prepareCreateBudget(c caller, args map[string]interface{}) (*wr
 	if res != nil {
 		return nil, res
 	}
-	if res := checkLength("name", name, maxNameLen); res != nil {
+	if res := checkLength("name", name, services.MaxNameLen); res != nil {
 		return nil, res
 	}
 	amount, res := s.requiredAmount(args)
@@ -89,7 +90,7 @@ func (s *Server) prepareUpdateBudget(c caller, args map[string]interface{}) (*wr
 		return nil, res
 	}
 	name := stringArg(args, "name")
-	if res := checkLength("name", name, maxNameLen); res != nil {
+	if res := checkLength("name", name, services.MaxNameLen); res != nil {
 		return nil, res
 	}
 	amount, amountGiven, res := s.amountArg(args)

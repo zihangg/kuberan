@@ -865,9 +865,51 @@ func TestTextLimitsCountCharacters(t *testing.T) {
 	e := setupWriteEnv(t, scope)
 	// 100 multi-byte characters is 300 bytes: within the REST limit of 100.
 	wantOK(t, e.call(t, e.ctx(scope), "create_category", map[string]any{
-		"name": strings.Repeat("₹", maxNameLen), "type": "expense",
+		"name": strings.Repeat("₹", services.MaxNameLen), "type": "expense",
 	}))
 	wantError(t, e.call(t, e.ctx(scope), "create_category", map[string]any{
-		"name": strings.Repeat("₹", maxNameLen+1), "type": "expense",
+		"name": strings.Repeat("₹", services.MaxNameLen+1), "type": "expense",
 	}), "at most 100 characters")
+}
+
+func TestUpdateTransactionTypeFlipWithOldCategory(t *testing.T) {
+	const scope = "write:transactions"
+
+	t.Run("a deleted category is cleared", func(t *testing.T) {
+		e := setupWriteEnv(t, scope)
+		acct := testutil.CreateTestCashAccountWithBalance(t, e.db, e.user.ID, 10_000)
+		cat := testutil.CreateTestCategory(t, e.db, e.user.ID, models.CategoryTypeExpense)
+		txn, err := e.s.services.Transactions.CreateTransaction(e.user.ID, acct.ID, &cat.ID,
+			models.TransactionTypeExpense, 500, "Refund", time.Now())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := e.db.Delete(&models.Category{}, "id = ?", cat.ID).Error; err != nil {
+			t.Fatal(err)
+		}
+
+		text := wantOK(t, e.call(t, e.ctx(scope), "update_transaction", map[string]any{
+			"transaction_id": txn.ID, "type": "income",
+		}))
+		if !strings.Contains(text, "now uncategorized") {
+			t.Errorf("the reply must say the category was cleared: %s", text)
+		}
+		var got models.Transaction
+		e.db.First(&got, "id = ?", txn.ID)
+		if got.Type != models.TransactionTypeIncome || got.CategoryID != nil {
+			t.Errorf("expected an uncategorized income, got type %s category %v", got.Type, got.CategoryID)
+		}
+	})
+
+	t.Run("a live category of the wrong type is refused with a hint", func(t *testing.T) {
+		e := setupWriteEnv(t, scope)
+		acct := testutil.CreateTestCashAccount(t, e.db, e.user.ID)
+		cat := testutil.CreateTestCategory(t, e.db, e.user.ID, models.CategoryTypeExpense)
+		txn, _ := e.s.services.Transactions.CreateTransaction(e.user.ID, acct.ID, &cat.ID,
+			models.TransactionTypeExpense, 500, "x", time.Now())
+
+		wantError(t, e.call(t, e.ctx(scope), "update_transaction", map[string]any{
+			"transaction_id": txn.ID, "type": "income",
+		}), "also pass category_id with a matching category, or 'none'")
+	})
 }

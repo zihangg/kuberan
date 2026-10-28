@@ -248,13 +248,13 @@ func TestOAuthConsentTOFU(t *testing.T) {
 		if !grant.AutoAccept || grant.ApprovedScopes != "read:accounts" || grant.ReviewedScopes != "read:accounts" {
 			t.Fatalf("unexpected grant: %+v", grant)
 		}
-		// Grant and trust audit entries were written.
-		for _, action := range []string{"OAUTH_CONSENT_GRANTED", "OAUTH_CLIENT_TRUSTED"} {
-			var audits int64
-			app.DB.Model(&models.AuditLog{}).Where("action = ?", action).Count(&audits)
-			if audits != 1 {
-				t.Fatalf("expected 1 %s audit, got %d", action, audits)
-			}
+		// One consent audit entry records the decision, including "remember".
+		var entry models.AuditLog
+		if err := app.DB.Where("action = ?", "OAUTH_CONSENT_GRANTED").First(&entry).Error; err != nil {
+			t.Fatalf("expected an OAUTH_CONSENT_GRANTED audit: %v", err)
+		}
+		if !strings.Contains(entry.Changes, `"auto_accept":true`) {
+			t.Fatalf("expected auto_accept in the audit, got %s", entry.Changes)
 		}
 	})
 

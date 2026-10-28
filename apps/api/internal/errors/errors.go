@@ -20,6 +20,14 @@ func (e *AppError) Error() string { return e.Message }
 // Unwrap returns the internal error for use with errors.Is/As.
 func (e *AppError) Unwrap() error { return e.Internal }
 
+// Is reports whether target is an AppError with the same code, so
+// errors.Is(err, ErrNotFound) also matches the copies Wrap and WithMessage
+// make of a sentinel (they carry its code but are distinct pointers).
+func (e *AppError) Is(target error) bool {
+	t, ok := target.(*AppError)
+	return ok && e.Code == t.Code
+}
+
 // Wrap creates a new AppError with the same code/message/status but wraps an internal error.
 func Wrap(sentinel *AppError, internal error) *AppError {
 	return &AppError{

@@ -29,6 +29,10 @@ func (s *budgetService) CreateBudget(
 	amount int64,
 	period models.BudgetPeriod,
 ) (*models.Budget, error) {
+	if err := CheckTextLength("name", name, MaxNameLen); err != nil {
+		return nil, err
+	}
+
 	// Verify category exists and belongs to user
 	var category models.Category
 	if err := s.db.Where("id = ? AND user_id = ?", categoryID, userID).First(&category).Error; err != nil {
@@ -121,6 +125,10 @@ func (s *budgetService) UpdateBudget(
 	period *models.BudgetPeriod,
 	isActive *bool,
 ) (*models.Budget, error) {
+	if err := CheckTextLength("name", name, MaxNameLen); err != nil {
+		return nil, err
+	}
+
 	budget, err := s.GetBudgetByID(userID, budgetID)
 	if err != nil {
 		return nil, err

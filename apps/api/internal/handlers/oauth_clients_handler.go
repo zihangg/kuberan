@@ -146,8 +146,7 @@ func (h *OAuthHandler) DisconnectApp(c *gin.Context) {
 	}
 
 	grant, err := h.grants.Get(userID, clientID)
-	var appErr *apperrors.AppError
-	if errors.As(err, &appErr) && appErr.Code == apperrors.ErrOAuthClientNotFound.Code {
+	if errors.Is(err, apperrors.ErrOAuthClientNotFound) {
 		grant, err = nil, nil
 	}
 	if err != nil {

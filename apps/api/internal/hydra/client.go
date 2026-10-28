@@ -182,8 +182,7 @@ func (c *client) RevokeConsentSessions(ctx context.Context, subject, clientID st
 	}
 	err := c.do(ctx, http.MethodDelete, "/admin/oauth2/auth/sessions/consent",
 		url.Values{"subject": {subject}, "client": {clientID}}, nil, nil)
-	var appErr *apperrors.AppError
-	if stderrors.As(err, &appErr) && appErr.Code == apperrors.ErrNotFound.Code {
+	if stderrors.Is(err, apperrors.ErrNotFound) {
 		return nil
 	}
 	return err

@@ -237,9 +237,12 @@ func hasControlChars(s, allowed string) bool {
 	}) >= 0
 }
 
-// validateDescription rejects control characters other than newline and tab in
-// a transaction description (INVALID_INPUT).
+// validateDescription rejects a transaction description that is too long or
+// contains control characters other than newline and tab (INVALID_INPUT).
 func validateDescription(description string) error {
+	if err := CheckTextLength("description", description, MaxDescriptionLen); err != nil {
+		return err
+	}
 	if hasControlChars(description, "\n\t") {
 		return apperrors.WithMessage(apperrors.ErrInvalidInput, "description must not contain control characters")
 	}

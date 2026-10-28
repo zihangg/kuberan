@@ -882,3 +882,78 @@ func TestOAuthHandler_DisconnectApp(t *testing.T) {
 		}
 	})
 }
+
+func TestOAuthHandler_AcceptConsentMergesEarlierChoices(t *testing.T) {
+	accept := func(t *testing.T, grant *models.OAuthClientGrant, requested []string, ticked string) *mockGrantService {
+		t.Helper()
+		grants := &mockGrantService{grant: grant}
+		handler := NewOAuthHandler(consentFor(requested...), &mockUserService{}, grants, &mockAuditService{}, testScopesWithWrite, testResourceURL)
+		rec := doRequest(setupOAuthRouter(handler), "POST", "/oauth/consent/accept",
+			`{"consent_challenge":"cc1","granted_scopes":`+ticked+`}`)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		return grants
+	}
+
+	t.Run("keeps approvals for scopes not requested this time", func(t *testing.T) {
+		prev := rememberedGrant("read:accounts write:transactions", "read:accounts write:transactions")
+		grants := accept(t, prev, []string{"read:budgets"}, `["read:budgets"]`)
+
+		if !slices.Equal(grants.recorded.Approved, []string{"read:budgets", "read:accounts", "write:transactions"}) {
+			t.Errorf("approved = %v", grants.recorded.Approved)
+		}
+		if !slices.Equal(grants.recorded.Reviewed, []string{"read:budgets", "read:accounts", "write:transactions"}) {
+			t.Errorf("reviewed = %v", grants.recorded.Reviewed)
+		}
+	})
+
+	t.Run("unticking a shown scope removes it", func(t *testing.T) {
+		prev := rememberedGrant("read:accounts write:transactions", "read:accounts write:transactions")
+		grants := accept(t, prev, []string{"read:accounts", "write:transactions"}, `["read:accounts"]`)
+
+		if !slices.Equal(grants.recorded.Approved, []string{"read:accounts"}) {
+			t.Errorf("approved = %v, want write:transactions dropped", grants.recorded.Approved)
+		}
+	})
+
+	t.Run("a revoked grant is not merged", func(t *testing.T) {
+		prev := rememberedGrant("read:accounts write:transactions", "read:accounts write:transactions")
+		revokedAt := time.Now()
+		prev.RevokedAt = &revokedAt
+		grants := accept(t, prev, []string{"read:budgets"}, `["read:budgets"]`)
+
+		if !slices.Equal(grants.recorded.Approved, []string{"read:budgets"}) {
+			t.Errorf("approved = %v, want only this screen's choice", grants.recorded.Approved)
+		}
+	})
+}
+
+func TestOAuthHandler_AcceptConsentAuditsOneEvent(t *testing.T) {
+	audit := &countingAuditService{}
+	handler := NewOAuthHandler(consentFor("read:accounts"), &mockUserService{}, &mockGrantService{}, audit, testScopes, testResourceURL)
+
+	rec := doRequest(setupOAuthRouter(handler), "POST", "/oauth/consent/accept",
+		`{"consent_challenge":"cc1","remember_client":true,"granted_scopes":["read:accounts"]}`)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if len(audit.actions) != 1 || audit.actions[0] != "OAUTH_CONSENT_GRANTED" {
+		t.Fatalf("expected one OAUTH_CONSENT_GRANTED event, got %v", audit.actions)
+	}
+	if audit.changes[0]["auto_accept"] != true {
+		t.Errorf("the event must record auto_accept, got %v", audit.changes[0])
+	}
+}
+
+// countingAuditService records every audit call.
+type countingAuditService struct {
+	actions []string
+	changes []map[string]interface{}
+}
+
+func (m *countingAuditService) Log(_, action, _, _, _ string, changes map[string]interface{}) {
+	m.actions = append(m.actions, action)
+	m.changes = append(m.changes, changes)
+}

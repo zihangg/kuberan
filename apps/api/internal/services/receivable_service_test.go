@@ -503,7 +503,9 @@ func TestSettle_Details(t *testing.T) {
 	t.Run("description is truncated to 500 characters", func(t *testing.T) {
 		e := newRecEnv(t)
 		in := e.in(6000, ShareModeEqual, models.ReceivableKindSplit, rcpEqual("Alex", "Sam")...)
-		in.Description = strings.Repeat("é", 600)
+		// The longest allowed expense description still overflows once the
+		// "Repayment from Alex: " prefix is added.
+		in.Description = strings.Repeat("é", MaxDescriptionLen)
 		x := e.mustCreate(in)
 		_, s := e.mustSettle(x.Receivables[0].ID, 500)
 		var rt models.Transaction

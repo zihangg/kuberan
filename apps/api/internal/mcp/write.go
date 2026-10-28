@@ -8,12 +8,12 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"unicode/utf8"
 
 	"github.com/mark3labs/mcp-go/mcp"
 
 	apperrors "kuberan/internal/errors"
 	"kuberan/internal/logger"
+	"kuberan/internal/services"
 )
 
 // WriteConfig controls the MCP write tools (plan 022).
@@ -131,8 +131,7 @@ func (s *Server) authorizeWrite(ctx context.Context, scope string) (caller, *mcp
 	}
 
 	if err := s.services.Grants.Authorize(userID, c.ClientID, scope); err != nil {
-		var appErr *apperrors.AppError
-		if errors.As(err, &appErr) && appErr.Code == apperrors.ErrOAuthScopeNotGranted.Code {
+		if errors.Is(err, apperrors.ErrOAuthScopeNotGranted) {
 			return caller{}, mcp.NewToolResultError(fmt.Sprintf(
 				"forbidden: this connection is not allowed to make changes (%s). "+
 					"Reconnect and allow changes, or check Settings > Connected apps in Kuberan.", scope))
@@ -247,18 +246,13 @@ func optionalString(args map[string]interface{}, name string) *string {
 	return &v
 }
 
-// Text limits mirror the REST API's binding:"max=N" tags, which count
-// characters, not bytes.
-const (
-	maxDescriptionLen = 500
-	maxNameLen        = 100
-	maxIconLen        = 50
-)
-
-// checkLength rejects a value longer than maxLen characters.
-func checkLength(name, v string, maxLen int) *mcp.CallToolResult {
-	if utf8.RuneCountInString(v) > maxLen {
-		return mcp.NewToolResultError(fmt.Sprintf("%s must be at most %d characters", name, maxLen))
+// checkLength rejects a value longer than limit characters, using the
+// services' rule (services.CheckTextLength) so MCP and REST cannot drift. It
+// runs before the write so invalid input never counts against the rate limit;
+// the service enforces the same limit again.
+func checkLength(field, v string, limit int) *mcp.CallToolResult {
+	if err := services.CheckTextLength(field, v, limit); err != nil {
+		return mcp.NewToolResultError(serviceErrorMessage(err))
 	}
 	return nil
 }
@@ -266,7 +260,7 @@ func checkLength(name, v string, maxLen int) *mcp.CallToolResult {
 // descriptionArg returns the optional description argument ("" when absent).
 func descriptionArg(args map[string]interface{}) (string, *mcp.CallToolResult) {
 	v := stringArg(args, "description")
-	return v, checkLength("description", v, maxDescriptionLen)
+	return v, checkLength("description", v, services.MaxDescriptionLen)
 }
 
 // optionalDescriptionArg returns the description argument when supplied (even
@@ -276,7 +270,7 @@ func optionalDescriptionArg(args map[string]interface{}) (*string, *mcp.CallTool
 	if v == nil {
 		return nil, nil
 	}
-	return v, checkLength("description", *v, maxDescriptionLen)
+	return v, checkLength("description", *v, services.MaxDescriptionLen)
 }
 
 // checkCeiling rejects an amount (in cents) above the per-change limit. It

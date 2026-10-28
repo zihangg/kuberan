@@ -236,6 +236,35 @@ func (h *OAuthHandler) GetConsent(c *gin.Context) {
 	})
 }
 
+// mergedDecision combines this consent screen's decision with the client's
+// existing grant. Scopes shown on this screen take the user's new choice;
+// scopes approved earlier but not requested this time keep their approval, so
+// a client that asks for fewer scopes in one flow doesn't silently lose
+// permissions the user gave it before. A revoked grant is not merged.
+func (h *OAuthHandler) mergedDecision(consent *hydra.ConsentRequest, ticked, shown []string) (approved, reviewed []string, err error) {
+	prev, err := h.activeGrant(consent)
+	if err != nil {
+		return nil, nil, err
+	}
+	if prev == nil {
+		return ticked, shown, nil
+	}
+	approved = mergeScopes(slices.Clone(ticked), withoutScopes(prev.Approved(), shown))
+	reviewed = mergeScopes(slices.Clone(shown), prev.Reviewed())
+	return approved, reviewed, nil
+}
+
+// withoutScopes returns scopes minus the members of remove.
+func withoutScopes(scopes, remove []string) []string {
+	out := make([]string, 0, len(scopes))
+	for _, s := range scopes {
+		if !slices.Contains(remove, s) {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
 // activeGrant returns the subject's non-revoked grant for the consent's client,
 // or nil when there is none.
 func (h *OAuthHandler) activeGrant(consent *hydra.ConsentRequest) (*models.OAuthClientGrant, error) {
@@ -243,8 +272,7 @@ func (h *OAuthHandler) activeGrant(consent *hydra.ConsentRequest) (*models.OAuth
 		return nil, nil
 	}
 	grant, err := h.grants.Get(consent.Subject, consent.Client.ClientID)
-	var appErr *apperrors.AppError
-	if errors.As(err, &appErr) && appErr.Code == apperrors.ErrOAuthClientNotFound.Code {
+	if errors.Is(err, apperrors.ErrOAuthClientNotFound) {
 		return nil, nil
 	}
 	if err != nil {
@@ -292,14 +320,20 @@ func (h *OAuthHandler) AcceptConsent(c *gin.Context) {
 		granted = intersect(requested, append(req.GrantedScopes, protocolScopeList(requested)...))
 	}
 
+	approved, reviewed, err := h.mergedDecision(consent, apiScopes(granted), apiScopes(requested))
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
 	// Record the grant before Hydra issues anything: if this fails, no token
 	// exists without a matching grant row for the MCP write guard to check.
 	if _, err := h.grants.RecordConsent(services.RecordConsentInput{
 		UserID:     consent.Subject,
 		ClientID:   consent.Client.ClientID,
 		ClientName: consent.Client.ClientName,
-		Approved:   apiScopes(granted),
-		Reviewed:   apiScopes(requested),
+		Approved:   approved,
+		Reviewed:   reviewed,
 		AutoAccept: req.RememberClient,
 	}); err != nil {
 		respondWithError(c, err)
@@ -312,12 +346,15 @@ func (h *OAuthHandler) AcceptConsent(c *gin.Context) {
 		return
 	}
 
+	// One event per decision; auto_accept records the "remember this
+	// application" choice (formerly a separate OAUTH_CLIENT_TRUSTED event).
 	h.auditService.Log(consent.Subject, "OAUTH_CONSENT_GRANTED", "oauth_client", consent.Client.ClientID,
-		c.ClientIP(), map[string]interface{}{"client_name": consent.Client.ClientName, "scopes": apiScopes(granted)})
-	if req.RememberClient {
-		h.auditService.Log(consent.Subject, "OAUTH_CLIENT_TRUSTED", "oauth_client", consent.Client.ClientID,
-			c.ClientIP(), map[string]interface{}{"client_name": consent.Client.ClientName})
-	}
+		c.ClientIP(), map[string]interface{}{
+			"client_name": consent.Client.ClientName,
+			"scopes":      apiScopes(granted),
+			"approved":    approved,
+			"auto_accept": req.RememberClient,
+		})
 
 	c.JSON(http.StatusOK, gin.H{"redirect_to": redirectTo})
 }

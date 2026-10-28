@@ -1,12 +1,14 @@
 package mcp
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/mark3labs/mcp-go/mcp"
 
+	apperrors "kuberan/internal/errors"
 	"kuberan/internal/models"
 	"kuberan/internal/services"
 )
@@ -222,6 +224,7 @@ func (s *Server) prepareUpdateTransaction(c caller, args map[string]interface{})
 	changes := map[string]interface{}{}
 	effectiveType := before.Type
 	effectiveAmount := before.Amount
+	note := ""
 
 	if v := stringArg(args, "type"); v != "" {
 		t, res := parseTxnType(v)
@@ -275,9 +278,22 @@ func (s *Server) prepareUpdateTransaction(c caller, args map[string]interface{})
 		updates.CategoryID = &newCategory
 		changes["category_id"] = change(before.CategoryID, newCategory)
 	} else if updates.Type != nil && before.CategoryID != nil {
-		// Changing the type keeps the old category; make sure it still fits.
-		if res := s.checkCategory(c.UserID, *before.CategoryID, effectiveType); res != nil {
-			return nil, res
+		// Changing the type keeps the old category, so it must still fit. A
+		// category the user has since deleted can't be checked or kept: clear it.
+		_, err := s.services.Categories.GetCategoryByID(c.UserID, *before.CategoryID)
+		switch {
+		case errors.Is(err, apperrors.ErrCategoryNotFound):
+			var none *string
+			updates.CategoryID = &none
+			changes["category_id"] = change(before.CategoryID, none)
+			note = "  Its category had been deleted, so it is now uncategorized.\n"
+		case err != nil:
+			return nil, serviceError("find category", err)
+		default:
+			if res := s.checkCategory(c.UserID, *before.CategoryID, effectiveType); res != nil {
+				return nil, mcp.NewToolResultError(toolText(res) +
+					"; also pass category_id with a matching category, or 'none'")
+			}
 		}
 	}
 	if len(changes) == 0 {
@@ -294,6 +310,7 @@ func (s *Server) prepareUpdateTransaction(c caller, args map[string]interface{})
 		sb.WriteString(fmt.Sprintf("Updated transaction: %s  %s  %s  %s\n",
 			txn.Date.Format("2006-01-02"), txn.Type, formatCents(txn.Amount), txn.Description))
 		sb.WriteString(fmt.Sprintf("  ID: %s\n", txn.ID))
+		sb.WriteString(note)
 		sb.WriteString(s.balanceLine(c.UserID, txn.AccountID))
 		return sb.String(), []auditEntry{{
 			Action: "MCP_UPDATE_TRANSACTION", ResourceType: "transaction", ResourceID: txn.ID, Changes: changes,
@@ -363,4 +380,14 @@ func (s *Server) prepareCategorizeTransactions(c caller, args map[string]interfa
 		}
 		return sb.String(), audits, nil
 	}}, nil
+}
+
+// toolText returns the text of a tool result.
+func toolText(res *mcp.CallToolResult) string {
+	for _, c := range res.Content {
+		if tc, ok := c.(mcp.TextContent); ok {
+			return tc.Text
+		}
+	}
+	return ""
 }

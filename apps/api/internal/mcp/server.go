@@ -31,7 +31,15 @@ type Services struct {
 	Snapshots    services.PortfolioSnapshotServicer
 	Receivables  services.ReceivableServicer
 	Audit        services.AuditServicer
-	Grants       services.OAuthGrantServicer
+	Grants       GrantAuthorizer
+}
+
+// GrantAuthorizer is the one part of services.OAuthGrantServicer the MCP
+// server needs: the per-write check that the user still grants the calling
+// client a scope. Authorize also records the grant's last use (shown as
+// "Last change" under Settings > Connected apps).
+type GrantAuthorizer interface {
+	Authorize(userID, clientID, scope string) error
 }
 
 type userIDKey struct{}

@@ -6,6 +6,7 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 
 	"kuberan/internal/models"
+	"kuberan/internal/services"
 	"kuberan/internal/validator"
 )
 
@@ -65,10 +66,10 @@ func parseCategoryFields(args map[string]interface{}) (categoryFields, *mcp.Call
 		Icon:  stringArg(args, "icon"),
 		Color: stringArg(args, "color"),
 	}
-	if res := checkLength("name", f.Name, maxNameLen); res != nil {
+	if res := checkLength("name", f.Name, services.MaxNameLen); res != nil {
 		return f, res
 	}
-	if res := checkLength("icon", f.Icon, maxIconLen); res != nil {
+	if res := checkLength("icon", f.Icon, services.MaxIconLen); res != nil {
 		return f, res
 	}
 	if f.Color != "" && !validator.IsHexColor(f.Color) {
