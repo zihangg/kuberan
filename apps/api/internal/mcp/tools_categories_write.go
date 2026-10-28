@@ -1,7 +1,6 @@
 package mcp
 
 import (
-	"context"
 	"fmt"
 
 	"github.com/mark3labs/mcp-go/mcp"
@@ -13,14 +12,8 @@ import (
 // categoriesWriteScope gates the category write tools.
 const categoriesWriteScope = "write:categories"
 
-// maxCategoryNameLen and maxCategoryIconLen match the REST API's bindings.
-const (
-	maxCategoryNameLen = 100
-	maxCategoryIconLen = 50
-)
-
 func (s *Server) registerCategoryWriteTools() {
-	s.mcp.AddTool(
+	s.addWriteTool(
 		writeTool("create_category",
 			"Create an income or expense category. Check list_categories first to avoid duplicates.",
 			false,
@@ -31,10 +24,10 @@ func (s *Server) registerCategoryWriteTools() {
 			mcp.WithString("icon", mcp.Description("Icon name (max 50 characters)")),
 			mcp.WithString("color", mcp.Description("Color as #RGB or #RRGGBB")),
 		),
-		s.handleCreateCategory,
+		categoriesWriteScope, s.prepareCreateCategory,
 	)
 
-	s.mcp.AddTool(
+	s.addWriteTool(
 		writeTool("update_category",
 			"Rename or edit a category. Only the fields given change.",
 			true,
@@ -45,8 +38,18 @@ func (s *Server) registerCategoryWriteTools() {
 			mcp.WithString("icon", mcp.Description("New icon name (max 50 characters)")),
 			mcp.WithString("color", mcp.Description("New color as #RGB or #RRGGBB")),
 		),
-		s.handleUpdateCategory,
+		categoriesWriteScope, s.prepareUpdateCategory,
 	)
+}
+
+// parseCategoryType validates a category type argument.
+func parseCategoryType(v string) (models.CategoryType, *mcp.CallToolResult) {
+	switch t := models.CategoryType(v); t {
+	case models.CategoryTypeIncome, models.CategoryTypeExpense:
+		return t, nil
+	default:
+		return "", mcp.NewToolResultError("type must be 'income' or 'expense'")
+	}
 }
 
 // categoryFields holds the optional category arguments shared by create and
@@ -62,11 +65,11 @@ func parseCategoryFields(args map[string]interface{}) (categoryFields, *mcp.Call
 		Icon:  stringArg(args, "icon"),
 		Color: stringArg(args, "color"),
 	}
-	if len(f.Name) > maxCategoryNameLen {
-		return f, mcp.NewToolResultError(fmt.Sprintf("name must be at most %d characters", maxCategoryNameLen))
+	if res := checkLength("name", f.Name, maxNameLen); res != nil {
+		return f, res
 	}
-	if len(f.Icon) > maxCategoryIconLen {
-		return f, mcp.NewToolResultError(fmt.Sprintf("icon must be at most %d characters", maxCategoryIconLen))
+	if res := checkLength("icon", f.Icon, maxIconLen); res != nil {
+		return f, res
 	}
 	if f.Color != "" && !validator.IsHexColor(f.Color) {
 		return f, mcp.NewToolResultError("color must be #RGB or #RRGGBB")
@@ -82,82 +85,71 @@ func parseCategoryFields(args map[string]interface{}) (categoryFields, *mcp.Call
 	return f, nil
 }
 
-func (s *Server) handleCreateCategory(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	c, denied := s.authorizeWrite(ctx, categoriesWriteScope, 1)
-	if denied != nil {
-		return denied, nil
-	}
-	args := req.GetArguments()
-
+func (s *Server) prepareCreateCategory(c caller, args map[string]interface{}) (*writeOp, *mcp.CallToolResult) {
 	f, res := parseCategoryFields(args)
 	if res != nil {
-		return res, nil
+		return nil, res
 	}
 	if f.Name == "" {
-		return mcp.NewToolResultError("name is required"), nil
+		return nil, mcp.NewToolResultError("name is required")
 	}
-	catType := models.CategoryType(stringArg(args, "type"))
-	if catType != models.CategoryTypeIncome && catType != models.CategoryTypeExpense {
-		return mcp.NewToolResultError("type must be 'income' or 'expense'"), nil
+	catType, res := parseCategoryType(stringArg(args, "type"))
+	if res != nil {
+		return nil, res
 	}
 
-	category, err := s.services.Categories.CreateCategory(c.UserID, f.Name, catType, f.Description, f.Icon, f.Color, f.ParentID)
-	if err != nil {
-		return serviceError("create category", err), nil
-	}
-	s.audit(c, "create_category", "MCP_CREATE_CATEGORY", "category", category.ID, map[string]interface{}{
-		"name": category.Name, "type": category.Type,
-	})
-
-	return mcp.NewToolResultText(fmt.Sprintf("Created %s category %q\n  ID: %s\n",
-		category.Type, category.Name, category.ID)), nil
+	return &writeOp{Cost: 1, Run: func() (string, []auditEntry, *mcp.CallToolResult) {
+		category, err := s.services.Categories.CreateCategory(c.UserID, f.Name, catType, f.Description, f.Icon, f.Color, f.ParentID)
+		if err != nil {
+			return "", nil, serviceError("create category", err)
+		}
+		return fmt.Sprintf("Created %s category %q\n  ID: %s\n", category.Type, category.Name, category.ID),
+			[]auditEntry{{
+				Action: "MCP_CREATE_CATEGORY", ResourceType: "category", ResourceID: category.ID,
+				Changes: map[string]interface{}{"name": category.Name, "type": category.Type},
+			}}, nil
+	}}, nil
 }
 
-func (s *Server) handleUpdateCategory(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	c, denied := s.authorizeWrite(ctx, categoriesWriteScope, 1)
-	if denied != nil {
-		return denied, nil
-	}
-	args := req.GetArguments()
-
+func (s *Server) prepareUpdateCategory(c caller, args map[string]interface{}) (*writeOp, *mcp.CallToolResult) {
 	categoryID, res := requiredString(args, "category_id")
 	if res != nil {
-		return res, nil
+		return nil, res
 	}
 	f, res := parseCategoryFields(args)
 	if res != nil {
-		return res, nil
+		return nil, res
 	}
 	if f.Name == "" && f.Description == "" && f.Icon == "" && f.Color == "" && f.ParentID == nil {
-		return mcp.NewToolResultError("nothing to update: give at least one of name, description, parent_id, icon, color"), nil
+		return nil, mcp.NewToolResultError("nothing to update: give at least one of name, description, parent_id, icon, color")
 	}
 	before, err := s.services.Categories.GetCategoryByID(c.UserID, categoryID)
 	if err != nil {
-		return serviceError("find category", err), nil
+		return nil, serviceError("find category", err)
 	}
 
-	category, err := s.services.Categories.UpdateCategory(c.UserID, categoryID, f.Name, f.Description, f.Icon, f.Color, f.ParentID)
-	if err != nil {
-		return serviceError("update category", err), nil
-	}
-	changes := map[string]interface{}{}
-	if f.Name != "" {
-		changes["name"] = map[string]interface{}{"from": before.Name, "to": category.Name}
-	}
-	if f.Description != "" {
-		changes["description"] = map[string]interface{}{"from": before.Description, "to": category.Description}
-	}
-	if f.Icon != "" {
-		changes["icon"] = map[string]interface{}{"from": before.Icon, "to": category.Icon}
-	}
-	if f.Color != "" {
-		changes["color"] = map[string]interface{}{"from": before.Color, "to": category.Color}
-	}
-	if f.ParentID != nil {
-		changes["parent_id"] = map[string]interface{}{"from": before.ParentID, "to": *f.ParentID}
-	}
-	s.audit(c, "update_category", "MCP_UPDATE_CATEGORY", "category", category.ID, changes)
-
-	return mcp.NewToolResultText(fmt.Sprintf("Updated %s category %q\n  ID: %s\n",
-		category.Type, category.Name, category.ID)), nil
+	return &writeOp{Cost: 1, Run: func() (string, []auditEntry, *mcp.CallToolResult) {
+		category, err := s.services.Categories.UpdateCategory(c.UserID, categoryID, f.Name, f.Description, f.Icon, f.Color, f.ParentID)
+		if err != nil {
+			return "", nil, serviceError("update category", err)
+		}
+		changes := map[string]interface{}{}
+		if f.Name != "" {
+			changes["name"] = change(before.Name, category.Name)
+		}
+		if f.Description != "" {
+			changes["description"] = change(before.Description, category.Description)
+		}
+		if f.Icon != "" {
+			changes["icon"] = change(before.Icon, category.Icon)
+		}
+		if f.Color != "" {
+			changes["color"] = change(before.Color, category.Color)
+		}
+		if f.ParentID != nil {
+			changes["parent_id"] = change(before.ParentID, *f.ParentID)
+		}
+		return fmt.Sprintf("Updated %s category %q\n  ID: %s\n", category.Type, category.Name, category.ID),
+			[]auditEntry{{Action: "MCP_UPDATE_CATEGORY", ResourceType: "category", ResourceID: category.ID, Changes: changes}}, nil
+	}}, nil
 }

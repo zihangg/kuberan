@@ -2471,12 +2471,6 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
-                    },
-                    "404": {
-                        "description": "Connected app not found",
-                        "schema": {
-                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
-                        }
                     }
                 }
             }
@@ -5833,6 +5827,9 @@ const docTemplate = `{
                 },
                 "last_used_at": {
                     "type": "string"
+                },
+                "legacy": {
+                    "type": "boolean"
                 },
                 "scopes": {
                     "type": "array",

@@ -48,6 +48,8 @@ type Server struct {
 	mcp      *server.MCPServer
 	write    WriteConfig
 	limiter  *rateLimiter
+	// writeScopes maps each registered write tool to the scope it requires.
+	writeScopes map[string]string
 }
 
 // getUserID extracts the authenticated user ID from the context.
@@ -88,9 +90,9 @@ func requireScope(ctx context.Context, accepted ...string) *mcpgo.CallToolResult
 // (Kuberan user ID), granted scope set and OAuth client ID in the context,
 // along with the caller's IP for audit logging. On any failure it returns the
 // context without a user; tools then reject the call via getUserID.
-func makeAuthFromRequest(v TokenValidator) server.HTTPContextFunc {
+func makeAuthFromRequest(v TokenValidator, trustedProxies []*net.IPNet) server.HTTPContextFunc {
 	return func(ctx context.Context, r *http.Request) context.Context {
-		ctx = context.WithValue(ctx, clientIPKey{}, requestIP(r))
+		ctx = context.WithValue(ctx, clientIPKey{}, requestIP(r, trustedProxies))
 
 		authHeader := r.Header.Get("Authorization")
 		if authHeader == "" {
@@ -116,16 +118,39 @@ func makeAuthFromRequest(v TokenValidator) server.HTTPContextFunc {
 	}
 }
 
-// requestIP returns the caller's IP: Cloudflare's CF-Connecting-IP when the
-// request came through the tunnel, otherwise the TCP peer address.
-func requestIP(r *http.Request) string {
-	if ip := strings.TrimSpace(r.Header.Get("CF-Connecting-IP")); ip != "" {
-		return ip
-	}
+// requestIP returns the caller's IP for audit logging: the TCP peer address,
+// or Cloudflare's CF-Connecting-IP when the peer is a trusted proxy (the
+// tunnel). Anyone else could set that header to forge the audited IP.
+func requestIP(r *http.Request, trustedProxies []*net.IPNet) string {
+	peer := r.RemoteAddr
 	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
-		return host
+		peer = host
 	}
-	return r.RemoteAddr
+	forwarded := strings.TrimSpace(r.Header.Get("CF-Connecting-IP"))
+	if forwarded == "" || net.ParseIP(forwarded) == nil {
+		return peer
+	}
+	if ip := net.ParseIP(peer); ip != nil {
+		for _, n := range trustedProxies {
+			if n.Contains(ip) {
+				return forwarded
+			}
+		}
+	}
+	return peer
+}
+
+// ParseTrustedProxies parses CIDRs (config.MCPTrustedProxyCIDRs) for requestIP.
+func ParseTrustedProxies(cidrs []string) ([]*net.IPNet, error) {
+	out := make([]*net.IPNet, 0, len(cidrs))
+	for _, c := range cidrs {
+		_, n, err := net.ParseCIDR(c)
+		if err != nil {
+			return nil, fmt.Errorf("invalid trusted proxy CIDR %q: %w", c, err)
+		}
+		out = append(out, n)
+	}
+	return out, nil
 }
 
 // errUnauthorized returns an MCP tool error for unauthenticated requests.
@@ -173,8 +198,9 @@ func newServer(svc Services, write WriteConfig) *Server {
 			"1.0.0",
 			server.WithToolCapabilities(true),
 		),
-		write:   write,
-		limiter: newRateLimiter(write.RatePerMinute, write.RatePerDay, time.Now),
+		write:       write,
+		limiter:     newRateLimiter(write.RatePerMinute, write.RatePerDay, time.Now),
+		writeScopes: map[string]string{},
 	}
 
 	s.registerAccountTools()
@@ -195,12 +221,13 @@ func newServer(svc Services, write WriteConfig) *Server {
 // oauth carries the Resource Server discovery settings advertised at the
 // RFC 9728 well-known endpoint and in WWW-Authenticate challenges. validator
 // verifies incoming Bearer access tokens against Hydra's JWKS. write controls
-// the write tools and their limits.
-func Run(svc Services, addr string, oauth OAuthConfig, validator TokenValidator, write WriteConfig) error {
+// the write tools and their limits. trustedProxies are the networks whose
+// CF-Connecting-IP header is believed for audit logging.
+func Run(svc Services, addr string, oauth OAuthConfig, validator TokenValidator, write WriteConfig, trustedProxies []*net.IPNet) error {
 	s := newServer(svc, write)
 
 	mcpHandler := server.NewStreamableHTTPServer(s.mcp,
-		server.WithHTTPContextFunc(makeAuthFromRequest(validator)),
+		server.WithHTTPContextFunc(makeAuthFromRequest(validator, trustedProxies)),
 	)
 
 	// Wrap the MCP handler in our own mux so we can expose an unauthenticated

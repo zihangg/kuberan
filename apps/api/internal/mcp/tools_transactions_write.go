@@ -1,7 +1,6 @@
 package mcp
 
 import (
-	"context"
 	"fmt"
 	"strings"
 	"time"
@@ -24,7 +23,7 @@ const maxCategorizeBatch = 25
 const clearCategory = "none"
 
 func (s *Server) registerTransactionWriteTools() {
-	s.mcp.AddTool(
+	s.addWriteTool(
 		writeTool("create_transaction",
 			"Record an income or expense transaction in one of the user's accounts and update its balance. "+
 				"Get account and category IDs from list_accounts and list_categories. If no category is given, "+
@@ -33,14 +32,14 @@ func (s *Server) registerTransactionWriteTools() {
 			mcp.WithString("account_id", mcp.Required(), mcp.Description("Account ID")),
 			mcp.WithString("type", mcp.Required(), mcp.Enum("income", "expense"), mcp.Description("'income' or 'expense'")),
 			mcp.WithNumber("amount", mcp.Required(), mcp.Description("Amount in dollars, positive (e.g. 12.50)")),
+			mcp.WithString("date", mcp.Required(), mcp.Description(dateArgDescription)),
 			mcp.WithString("category_id", mcp.Description("Category ID; must match the transaction type")),
 			mcp.WithString("description", mcp.Description("Description, e.g. the merchant (max 500 characters)")),
-			mcp.WithString("date", mcp.Description("Date (YYYY-MM-DD, default today)")),
 		),
-		s.handleCreateTransaction,
+		transactionsWriteScope, s.prepareCreateTransaction,
 	)
 
-	s.mcp.AddTool(
+	s.addWriteTool(
 		writeTool("create_transfer",
 			"Move money between two of the user's accounts (for example paying a credit card from a cash account). "+
 				"Transfers are not income or spending.",
@@ -48,13 +47,13 @@ func (s *Server) registerTransactionWriteTools() {
 			mcp.WithString("from_account_id", mcp.Required(), mcp.Description("Account the money leaves")),
 			mcp.WithString("to_account_id", mcp.Required(), mcp.Description("Account the money arrives in")),
 			mcp.WithNumber("amount", mcp.Required(), mcp.Description("Amount in dollars, positive")),
+			mcp.WithString("date", mcp.Required(), mcp.Description(dateArgDescription)),
 			mcp.WithString("description", mcp.Description("Description (max 500 characters)")),
-			mcp.WithString("date", mcp.Description("Date (YYYY-MM-DD, default today)")),
 		),
-		s.handleCreateTransfer,
+		transactionsWriteScope, s.prepareCreateTransfer,
 	)
 
-	s.mcp.AddTool(
+	s.addWriteTool(
 		writeTool("update_transaction",
 			"Edit an income or expense transaction. Only the fields given change; the account balance is adjusted. "+
 				"Transfers, investment transactions and repayments cannot be edited here.",
@@ -64,12 +63,12 @@ func (s *Server) registerTransactionWriteTools() {
 			mcp.WithNumber("amount", mcp.Description("New amount in dollars, positive")),
 			mcp.WithString("category_id", mcp.Description("New category ID, or 'none' to remove the category")),
 			mcp.WithString("description", mcp.Description("New description (max 500 characters)")),
-			mcp.WithString("date", mcp.Description("New date (YYYY-MM-DD)")),
+			mcp.WithString("date", mcp.Description("New date, in the user's own time zone (YYYY-MM-DD)")),
 		),
-		s.handleUpdateTransaction,
+		transactionsWriteScope, s.prepareUpdateTransaction,
 	)
 
-	s.mcp.AddTool(
+	s.addWriteTool(
 		writeTool("categorize_transactions",
 			fmt.Sprintf("Set the category of up to %d income or expense transactions at once. "+
 				"Each transaction's type must match the category type; ones that do not are skipped and reported.", maxCategorizeBatch),
@@ -78,7 +77,7 @@ func (s *Server) registerTransactionWriteTools() {
 				mcp.MinItems(1), mcp.MaxItems(maxCategorizeBatch), mcp.Description("Transaction IDs")),
 			mcp.WithString("category_id", mcp.Required(), mcp.Description("Category ID to assign")),
 		),
-		s.handleCategorizeTransactions,
+		transactionsWriteScope, s.prepareCategorizeTransactions,
 	)
 }
 
@@ -119,262 +118,249 @@ func (s *Server) balanceLine(userID, accountID string) string {
 	return fmt.Sprintf("  %s balance is now %s\n", account.Name, formatCents(account.Balance))
 }
 
-func (s *Server) handleCreateTransaction(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	c, denied := s.authorizeWrite(ctx, transactionsWriteScope, 1)
-	if denied != nil {
-		return denied, nil
-	}
-	args := req.GetArguments()
-
+func (s *Server) prepareCreateTransaction(c caller, args map[string]interface{}) (*writeOp, *mcp.CallToolResult) {
 	accountID, res := requiredString(args, "account_id")
 	if res != nil {
-		return res, nil
+		return nil, res
 	}
 	txType, res := parseTxnType(stringArg(args, "type"))
 	if res != nil {
-		return res, nil
+		return nil, res
 	}
 	amount, res := s.requiredAmount(args)
 	if res != nil {
-		return res, nil
+		return nil, res
+	}
+	date, res := requiredDate(args, time.Now())
+	if res != nil {
+		return nil, res
 	}
 	description, res := descriptionArg(args)
 	if res != nil {
-		return res, nil
-	}
-	date, _, res := dateArg(args, time.Now())
-	if res != nil {
-		return res, nil
+		return nil, res
 	}
 	var categoryID *string
 	if v := stringArg(args, "category_id"); v != "" {
 		if res := s.checkCategory(c.UserID, v, txType); res != nil {
-			return res, nil
+			return nil, res
 		}
 		categoryID = &v
 	}
 
-	txn, err := s.services.Transactions.CreateTransaction(c.UserID, accountID, categoryID, txType, amount, description, date)
-	if err != nil {
-		return serviceError("create transaction", err), nil
-	}
-	s.audit(c, "create_transaction", "MCP_CREATE_TRANSACTION", "transaction", txn.ID, map[string]interface{}{
-		"type": txType, "amount": amount, "account_id": accountID,
-	})
+	return &writeOp{Cost: 1, Run: func() (string, []auditEntry, *mcp.CallToolResult) {
+		txn, err := s.services.Transactions.CreateTransaction(c.UserID, accountID, categoryID, txType, amount, description, date)
+		if err != nil {
+			return "", nil, serviceError("create transaction", err)
+		}
 
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Created %s of %s on %s: %s\n",
-		txn.Type, formatCents(txn.Amount), txn.Date.Format("2006-01-02"), txn.Description))
-	sb.WriteString(fmt.Sprintf("  ID: %s\n", txn.ID))
-	if txn.CategoryID != nil {
-		sb.WriteString(fmt.Sprintf("  Category ID: %s\n", *txn.CategoryID))
-	}
-	sb.WriteString(s.balanceLine(c.UserID, accountID))
-	return mcp.NewToolResultText(sb.String()), nil
+		var sb strings.Builder
+		sb.WriteString(fmt.Sprintf("Created %s of %s on %s: %s\n",
+			txn.Type, formatCents(txn.Amount), txn.Date.Format("2006-01-02"), txn.Description))
+		sb.WriteString(fmt.Sprintf("  ID: %s\n", txn.ID))
+		if txn.CategoryID != nil {
+			sb.WriteString(fmt.Sprintf("  Category ID: %s\n", *txn.CategoryID))
+		}
+		sb.WriteString(s.balanceLine(c.UserID, accountID))
+		return sb.String(), []auditEntry{{
+			Action: "MCP_CREATE_TRANSACTION", ResourceType: "transaction", ResourceID: txn.ID,
+			Changes: map[string]interface{}{"type": txType, "amount": amount, "account_id": accountID},
+		}}, nil
+	}}, nil
 }
 
-func (s *Server) handleCreateTransfer(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	c, denied := s.authorizeWrite(ctx, transactionsWriteScope, 1)
-	if denied != nil {
-		return denied, nil
-	}
-	args := req.GetArguments()
-
+func (s *Server) prepareCreateTransfer(c caller, args map[string]interface{}) (*writeOp, *mcp.CallToolResult) {
 	fromID, res := requiredString(args, "from_account_id")
 	if res != nil {
-		return res, nil
+		return nil, res
 	}
 	toID, res := requiredString(args, "to_account_id")
 	if res != nil {
-		return res, nil
+		return nil, res
 	}
 	amount, res := s.requiredAmount(args)
 	if res != nil {
-		return res, nil
+		return nil, res
+	}
+	date, res := requiredDate(args, time.Now())
+	if res != nil {
+		return nil, res
 	}
 	description, res := descriptionArg(args)
 	if res != nil {
-		return res, nil
-	}
-	date, _, res := dateArg(args, time.Now())
-	if res != nil {
-		return res, nil
+		return nil, res
 	}
 
-	txn, err := s.services.Transactions.CreateTransfer(c.UserID, fromID, toID, amount, description, date)
-	if err != nil {
-		return serviceError("create transfer", err), nil
-	}
-	s.audit(c, "create_transfer", "MCP_CREATE_TRANSFER", "transaction", txn.ID, map[string]interface{}{
-		"amount": amount, "from_account_id": fromID, "to_account_id": toID,
-	})
+	return &writeOp{Cost: 1, Run: func() (string, []auditEntry, *mcp.CallToolResult) {
+		txn, err := s.services.Transactions.CreateTransfer(c.UserID, fromID, toID, amount, description, date)
+		if err != nil {
+			return "", nil, serviceError("create transfer", err)
+		}
 
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Transferred %s on %s\n", formatCents(txn.Amount), txn.Date.Format("2006-01-02")))
-	sb.WriteString(fmt.Sprintf("  ID: %s\n", txn.ID))
-	sb.WriteString(s.balanceLine(c.UserID, fromID))
-	sb.WriteString(s.balanceLine(c.UserID, toID))
-	return mcp.NewToolResultText(sb.String()), nil
+		var sb strings.Builder
+		sb.WriteString(fmt.Sprintf("Transferred %s on %s\n", formatCents(txn.Amount), txn.Date.Format("2006-01-02")))
+		sb.WriteString(fmt.Sprintf("  ID: %s\n", txn.ID))
+		sb.WriteString(s.balanceLine(c.UserID, fromID))
+		sb.WriteString(s.balanceLine(c.UserID, toID))
+		return sb.String(), []auditEntry{{
+			Action: "MCP_CREATE_TRANSFER", ResourceType: "transaction", ResourceID: txn.ID,
+			Changes: map[string]interface{}{"amount": amount, "from_account_id": fromID, "to_account_id": toID},
+		}}, nil
+	}}, nil
 }
 
-func (s *Server) handleUpdateTransaction(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	c, denied := s.authorizeWrite(ctx, transactionsWriteScope, 1)
-	if denied != nil {
-		return denied, nil
-	}
-	args := req.GetArguments()
-
+func (s *Server) prepareUpdateTransaction(c caller, args map[string]interface{}) (*writeOp, *mcp.CallToolResult) {
 	txnID, res := requiredString(args, "transaction_id")
 	if res != nil {
-		return res, nil
+		return nil, res
 	}
 	before, err := s.services.Transactions.GetTransactionByID(c.UserID, txnID)
 	if err != nil {
-		return serviceError("find transaction", err), nil
+		return nil, serviceError("find transaction", err)
 	}
 
 	updates := services.TransactionUpdateFields{}
 	changes := map[string]interface{}{}
 	effectiveType := before.Type
+	effectiveAmount := before.Amount
 
 	if v := stringArg(args, "type"); v != "" {
 		t, res := parseTxnType(v)
 		if res != nil {
-			return res, nil
+			return nil, res
 		}
 		updates.Type = &t
 		effectiveType = t
-		changes["type"] = map[string]interface{}{"from": before.Type, "to": t}
+		changes["type"] = change(before.Type, t)
 	}
 	if amount, present, res := s.amountArg(args); res != nil {
-		return res, nil
+		return nil, res
 	} else if present {
 		updates.Amount = &amount
-		changes["amount"] = map[string]interface{}{"from": before.Amount, "to": amount}
+		effectiveAmount = amount
+		changes["amount"] = change(before.Amount, amount)
 	}
-	if v := optionalString(args, "description"); v != nil {
-		if len(*v) > maxDescriptionLen {
-			return mcp.NewToolResultError(fmt.Sprintf("description must be at most %d characters", maxDescriptionLen)), nil
+	if updates.Type != nil && *updates.Type != before.Type {
+		// Flipping the type reverses the old amount and applies the new one, so
+		// the transaction's amount moves the balance twice over. Both sides must
+		// be within the per-change limit, not just an amount passed explicitly.
+		if res := s.checkCeiling("the existing amount", before.Amount); res != nil {
+			return nil, res
 		}
-		updates.Description = v
-		changes["description"] = map[string]interface{}{"from": before.Description, "to": *v}
+		if res := s.checkCeiling("the amount", effectiveAmount); res != nil {
+			return nil, res
+		}
+	}
+	description, res := optionalDescriptionArg(args)
+	if res != nil {
+		return nil, res
+	}
+	if description != nil {
+		updates.Description = description
+		changes["description"] = change(before.Description, *description)
 	}
 	if date, present, res := dateArg(args, time.Now()); res != nil {
-		return res, nil
+		return nil, res
 	} else if present {
 		updates.Date = &date
-		changes["date"] = map[string]interface{}{"from": before.Date, "to": date}
+		changes["date"] = change(before.Date, date)
 	}
 	if v := stringArg(args, "category_id"); v != "" {
 		var newCategory *string
 		if !strings.EqualFold(v, clearCategory) {
 			if res := s.checkCategory(c.UserID, v, effectiveType); res != nil {
-				return res, nil
+				return nil, res
 			}
 			newCategory = &v
 		}
 		updates.CategoryID = &newCategory
-		changes["category_id"] = map[string]interface{}{"from": before.CategoryID, "to": newCategory}
+		changes["category_id"] = change(before.CategoryID, newCategory)
 	} else if updates.Type != nil && before.CategoryID != nil {
 		// Changing the type keeps the old category; make sure it still fits.
 		if res := s.checkCategory(c.UserID, *before.CategoryID, effectiveType); res != nil {
-			return res, nil
+			return nil, res
 		}
 	}
 	if len(changes) == 0 {
-		return mcp.NewToolResultError("nothing to update: give at least one of type, amount, category_id, description, date"), nil
+		return nil, mcp.NewToolResultError("nothing to update: give at least one of type, amount, category_id, description, date")
 	}
 
-	txn, err := s.services.Transactions.UpdateTransaction(c.UserID, txnID, updates)
-	if err != nil {
-		return serviceError("update transaction", err), nil
-	}
-	s.audit(c, "update_transaction", "MCP_UPDATE_TRANSACTION", "transaction", txn.ID, changes)
+	return &writeOp{Cost: 1, Run: func() (string, []auditEntry, *mcp.CallToolResult) {
+		txn, err := s.services.Transactions.UpdateTransaction(c.UserID, txnID, updates)
+		if err != nil {
+			return "", nil, serviceError("update transaction", err)
+		}
 
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Updated transaction: %s  %s  %s  %s\n",
-		txn.Date.Format("2006-01-02"), txn.Type, formatCents(txn.Amount), txn.Description))
-	sb.WriteString(fmt.Sprintf("  ID: %s\n", txn.ID))
-	sb.WriteString(s.balanceLine(c.UserID, txn.AccountID))
-	return mcp.NewToolResultText(sb.String()), nil
+		var sb strings.Builder
+		sb.WriteString(fmt.Sprintf("Updated transaction: %s  %s  %s  %s\n",
+			txn.Date.Format("2006-01-02"), txn.Type, formatCents(txn.Amount), txn.Description))
+		sb.WriteString(fmt.Sprintf("  ID: %s\n", txn.ID))
+		sb.WriteString(s.balanceLine(c.UserID, txn.AccountID))
+		return sb.String(), []auditEntry{{
+			Action: "MCP_UPDATE_TRANSACTION", ResourceType: "transaction", ResourceID: txn.ID, Changes: changes,
+		}}, nil
+	}}, nil
 }
 
-func (s *Server) handleCategorizeTransactions(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	args := req.GetArguments()
+func (s *Server) prepareCategorizeTransactions(c caller, args map[string]interface{}) (*writeOp, *mcp.CallToolResult) {
 	ids, res := stringListArg(args, "transaction_ids", maxCategorizeBatch)
 	if res != nil {
-		return res, nil
-	}
-
-	c, denied := s.authorizeWrite(ctx, transactionsWriteScope, len(ids))
-	if denied != nil {
-		return denied, nil
+		return nil, res
 	}
 	categoryID, res := requiredString(args, "category_id")
 	if res != nil {
-		return res, nil
+		return nil, res
 	}
 	category, err := s.services.Categories.GetCategoryByID(c.UserID, categoryID)
 	if err != nil {
-		return serviceError("find category", err), nil
+		return nil, serviceError("find category", err)
 	}
 
-	var updated, skipped []string
+	// Decide which transactions can take the category before charging the
+	// rate limit, so skipped ones do not count as writes.
+	type pending struct {
+		id     string
+		before *string
+	}
+	var eligible []pending
+	var skipped []string
 	for _, id := range ids {
-		before, err := s.services.Transactions.GetTransactionByID(c.UserID, id)
+		txn, err := s.services.Transactions.GetTransactionByID(c.UserID, id)
 		if err != nil {
 			skipped = append(skipped, fmt.Sprintf("%s: %s", id, serviceErrorMessage(err)))
 			continue
 		}
-		if string(before.Type) != string(category.Type) {
-			skipped = append(skipped, fmt.Sprintf("%s: %s transaction cannot use %s category", id, before.Type, category.Type))
+		if string(txn.Type) != string(category.Type) {
+			skipped = append(skipped, fmt.Sprintf("%s: %s transaction cannot use %s category", id, txn.Type, category.Type))
 			continue
 		}
-		newCategory := &categoryID
-		if _, err := s.services.Transactions.UpdateTransaction(c.UserID, id,
-			services.TransactionUpdateFields{CategoryID: &newCategory}); err != nil {
-			skipped = append(skipped, fmt.Sprintf("%s: %s", id, serviceErrorMessage(err)))
-			continue
-		}
-		s.audit(c, "categorize_transactions", "MCP_UPDATE_TRANSACTION", "transaction", id, map[string]interface{}{
-			"category_id": map[string]interface{}{"from": before.CategoryID, "to": categoryID},
-		})
-		updated = append(updated, id)
+		eligible = append(eligible, pending{id: id, before: txn.CategoryID})
 	}
 
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Set category %q on %d of %d transactions.\n", category.Name, len(updated), len(ids)))
-	if len(skipped) > 0 {
-		sb.WriteString("Skipped:\n")
-		for _, line := range skipped {
-			sb.WriteString("  " + line + "\n")
+	return &writeOp{Cost: len(eligible), Run: func() (string, []auditEntry, *mcp.CallToolResult) {
+		var audits []auditEntry
+		for _, p := range eligible {
+			newCategory := &categoryID
+			if _, err := s.services.Transactions.UpdateTransaction(c.UserID, p.id,
+				services.TransactionUpdateFields{CategoryID: &newCategory}); err != nil {
+				skipped = append(skipped, fmt.Sprintf("%s: %s", p.id, serviceErrorMessage(err)))
+				continue
+			}
+			// Each transaction is audited as a transaction update; the tool
+			// name in the entry records that it came from a batch.
+			audits = append(audits, auditEntry{
+				Action: "MCP_UPDATE_TRANSACTION", ResourceType: "transaction", ResourceID: p.id,
+				Changes: map[string]interface{}{"category_id": change(p.before, categoryID)},
+			})
 		}
-	}
-	return mcp.NewToolResultText(sb.String()), nil
-}
 
-// stringListArg reads a non-empty array of distinct, non-empty strings of at
-// most maxLen items.
-func stringListArg(args map[string]interface{}, name string, maxLen int) ([]string, *mcp.CallToolResult) {
-	raw, ok := args[name].([]interface{})
-	if !ok || len(raw) == 0 {
-		return nil, mcp.NewToolResultError(name + " must be a non-empty list of IDs")
-	}
-	if len(raw) > maxLen {
-		return nil, mcp.NewToolResultError(fmt.Sprintf("%s can have at most %d items", name, maxLen))
-	}
-	seen := make(map[string]bool, len(raw))
-	out := make([]string, 0, len(raw))
-	for _, item := range raw {
-		v, ok := item.(string)
-		v = strings.TrimSpace(v)
-		if !ok || v == "" {
-			return nil, mcp.NewToolResultError(name + " must contain only non-empty IDs")
+		var sb strings.Builder
+		sb.WriteString(fmt.Sprintf("Set category %q on %d of %d transactions.\n", category.Name, len(audits), len(ids)))
+		if len(skipped) > 0 {
+			sb.WriteString("Skipped:\n")
+			for _, line := range skipped {
+				sb.WriteString("  " + line + "\n")
+			}
 		}
-		if !seen[v] {
-			seen[v] = true
-			out = append(out, v)
-		}
-	}
-	return out, nil
+		return sb.String(), audits, nil
+	}}, nil
 }

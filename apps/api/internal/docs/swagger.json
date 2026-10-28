@@ -2465,12 +2465,6 @@
                         "schema": {
                             "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
-                    },
-                    "404": {
-                        "description": "Connected app not found",
-                        "schema": {
-                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
-                        }
                     }
                 }
             }
@@ -5827,6 +5821,9 @@
                 },
                 "last_used_at": {
                     "type": "string"
+                },
+                "legacy": {
+                    "type": "boolean"
                 },
                 "scopes": {
                     "type": "array",

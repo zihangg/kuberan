@@ -2,8 +2,10 @@ package services
 
 import (
 	"slices"
+	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"kuberan/internal/models"
 	"kuberan/internal/testutil"
@@ -137,5 +139,58 @@ func TestOAuthGrantService(t *testing.T) {
 			t.Fatal(err)
 		}
 		testutil.AssertAppError(t, svc.Authorize(user.ID, "cid", "write:transactions"), "OAUTH_SCOPE_NOT_GRANTED")
+	})
+}
+
+func TestOAuthGrantServiceRecordConsentEdgeCases(t *testing.T) {
+	t.Run("truncates a long client name instead of failing", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		svc := NewOAuthGrantService(db)
+		user := testutil.CreateTestUser(t, db)
+
+		g, err := svc.RecordConsent(RecordConsentInput{UserID: user.ID, ClientID: "cid", ClientName: strings.Repeat("é", 300)})
+		testutil.AssertNoError(t, err)
+		if n := utf8.RuneCountInString(g.ClientName); n != maxClientNameLen {
+			t.Errorf("client name has %d characters, want %d", n, maxClientNameLen)
+		}
+	})
+
+	t.Run("repeated consents update one row", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		svc := NewOAuthGrantService(db)
+		user := testutil.CreateTestUser(t, db)
+
+		for _, scopes := range [][]string{{"read:accounts"}, {"read:accounts", "write:transactions"}, {"read:budgets"}} {
+			_, err := svc.RecordConsent(RecordConsentInput{UserID: user.ID, ClientID: "cid", Approved: scopes, Reviewed: scopes})
+			testutil.AssertNoError(t, err)
+		}
+		var n int64
+		db.Model(&models.OAuthClientGrant{}).Count(&n)
+		if n != 1 {
+			t.Fatalf("expected one grant row, got %d", n)
+		}
+		g, err := svc.Get(user.ID, "cid")
+		testutil.AssertNoError(t, err)
+		if g.ApprovedScopes != "read:budgets" {
+			t.Errorf("the latest decision must win, got %q", g.ApprovedScopes)
+		}
+	})
+
+	t.Run("a failed last-use update does not block the write", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		svc := NewOAuthGrantService(db)
+		user := testutil.CreateTestUser(t, db)
+		_, err := svc.RecordConsent(RecordConsentInput{UserID: user.ID, ClientID: "cid", Approved: []string{"write:transactions"}})
+		testutil.AssertNoError(t, err)
+
+		// Make UPDATEs of this table fail while reads still work.
+		if err := db.Exec(`CREATE TRIGGER block_grant_updates BEFORE UPDATE ON oauth_client_grants
+			BEGIN SELECT RAISE(ABORT, 'blocked'); END`).Error; err != nil {
+			t.Fatal(err)
+		}
+		testutil.AssertNoError(t, svc.Authorize(user.ID, "cid", "write:transactions"))
 	})
 }

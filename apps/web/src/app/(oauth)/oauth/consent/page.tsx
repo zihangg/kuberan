@@ -10,6 +10,8 @@ import type {
 } from "@/types/api";
 import { isProtocolScope, isWriteScope, scopeLabel } from "@/lib/oauth-scopes";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 import {
   Card,
   CardContent,
@@ -42,6 +44,39 @@ function initialSelection(details: OAuthConsentDetails): Set<string> {
   );
 }
 
+function LabeledCheckbox({
+  id,
+  label,
+  checked,
+  disabled,
+  muted = false,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  checked: boolean;
+  disabled: boolean;
+  muted?: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <Checkbox
+        id={id}
+        checked={checked}
+        onCheckedChange={(v) => onChange(v === true)}
+        disabled={disabled}
+      />
+      <Label
+        htmlFor={id}
+        className={muted ? "text-muted-foreground font-normal" : "font-normal"}
+      >
+        {label}
+      </Label>
+    </div>
+  );
+}
+
 function ScopeCheckbox({
   scope,
   checked,
@@ -54,16 +89,14 @@ function ScopeCheckbox({
   onChange: (scope: string, checked: boolean) => void;
 }) {
   return (
-    <label className="flex items-center gap-2 text-sm">
-      <input
-        type="checkbox"
-        className="border-input size-4 shrink-0 rounded"
-        checked={checked}
-        onChange={(e) => onChange(scope, e.target.checked)}
-        disabled={disabled}
-      />
-      <span className="text-muted-foreground">{scopeLabel(scope)}</span>
-    </label>
+    <LabeledCheckbox
+      id={`scope-${scope.replace(/[^a-z0-9]/gi, "-")}`}
+      label={scopeLabel(scope)}
+      checked={checked}
+      disabled={disabled}
+      muted
+      onChange={(v) => onChange(scope, v)}
+    />
   );
 }
 
@@ -202,6 +235,10 @@ function OAuthConsent() {
   const writeScopes = scopes.filter(isWriteScope);
   const protocolScopes = scopes.filter(isProtocolScope);
   const grantsWrite = writeScopes.some((s) => selected.has(s));
+  // An app that asked for permissions but would get none can't do anything;
+  // Deny says that more clearly.
+  const nothingSelected =
+    readScopes.length + writeScopes.length > 0 && selected.size === 0;
 
   return (
     <Card>
@@ -246,7 +283,7 @@ function OAuthConsent() {
           )}
         </div>
         {writeScopes.length > 0 && (
-          <div className="flex flex-col gap-2 rounded-md border border-amber-500/40 p-3">
+          <div className="border-warning/40 flex flex-col gap-2 rounded-md border p-3">
             <p className="text-sm font-medium">Allow changes</p>
             <p className="text-muted-foreground text-xs">
               Off unless you tick them. {clientName} will be able to change your
@@ -263,23 +300,25 @@ function OAuthConsent() {
             ))}
           </div>
         )}
-        <label className="flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            className="border-input size-4 shrink-0 rounded"
-            checked={rememberClient}
-            onChange={(e) => setRememberClient(e.target.checked)}
-            disabled={isSubmitting}
-          />
-          <span>Remember this application (skip this screen next time)</span>
-        </label>
+        <LabeledCheckbox
+          id="remember-client"
+          label="Remember this application (skip this screen next time)"
+          checked={rememberClient}
+          disabled={isSubmitting}
+          onChange={setRememberClient}
+        />
+        {nothingSelected && (
+          <p className="text-muted-foreground text-xs">
+            Tick at least one permission, or choose Deny.
+          </p>
+        )}
       </CardContent>
       <CardFooter className="flex flex-col gap-2 pt-2">
         <Button
           type="button"
           className="w-full"
           onClick={handleAccept}
-          disabled={isSubmitting}
+          disabled={isSubmitting || nothingSelected}
         >
           {isSubmitting
             ? "Authorizing..."

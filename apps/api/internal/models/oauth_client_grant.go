@@ -17,8 +17,8 @@ import (
 // MCP server can refuse writes from tokens issued before the revocation.
 type OAuthClientGrant struct {
 	Base
-	UserID         string     `gorm:"type:uuid;not null;uniqueIndex:idx_oauth_client_grants_user_client" json:"user_id"`
-	ClientID       string     `gorm:"type:varchar(255);not null;uniqueIndex:idx_oauth_client_grants_user_client" json:"client_id"`
+	UserID         string     `gorm:"type:uuid;not null;uniqueIndex:idx_oauth_client_grants_user_client,where:deleted_at IS NULL" json:"user_id"`
+	ClientID       string     `gorm:"type:varchar(255);not null;uniqueIndex:idx_oauth_client_grants_user_client,where:deleted_at IS NULL" json:"client_id"`
 	ClientName     string     `gorm:"type:varchar(255);not null;default:''" json:"client_name"`
 	ApprovedScopes string     `gorm:"type:text;not null;default:''" json:"-"`
 	ReviewedScopes string     `gorm:"type:text;not null;default:''" json:"-"`

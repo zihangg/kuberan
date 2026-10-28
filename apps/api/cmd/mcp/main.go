@@ -62,6 +62,17 @@ func run() error {
 	}
 
 	logger.Get().Infof("Starting MCP server on %s (writes enabled: %t)", addr, cfg.MCPWriteEnabled)
+	if cfg.MCPWriteEnabled {
+		// The api service registers and grants the write:* scopes; if it does
+		// not also have the flag, the consent screen never offers them and
+		// every write is refused.
+		logger.Get().Info("MCP writes enabled: the api service must also run with MCP_WRITE_ENABLED=true")
+	}
+
+	trustedProxies, err := mcpserver.ParseTrustedProxies(cfg.MCPTrustedProxyCIDRs)
+	if err != nil {
+		return fmt.Errorf("MCP_TRUSTED_PROXY_CIDRS: %w", err)
+	}
 
 	// The Resource Server validates Hydra-issued JWT access tokens offline
 	// against the authorization server's published JWKS.
@@ -88,5 +99,5 @@ func run() error {
 		MaxAmount:     cfg.MCPMaxWriteAmount,
 		RatePerMinute: cfg.MCPWriteRatePerMinute,
 		RatePerDay:    cfg.MCPWriteRatePerDay,
-	})
+	}, trustedProxies)
 }

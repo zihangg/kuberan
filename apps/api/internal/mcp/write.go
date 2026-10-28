@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/mark3labs/mcp-go/mcp"
 
@@ -19,7 +20,7 @@ import (
 type WriteConfig struct {
 	// Enabled registers the write tools. When false the server is read-only.
 	Enabled bool
-	// MaxAmount is the per-call ceiling for any amount, in cents.
+	// MaxAmount is the per-change ceiling for any amount, in cents.
 	MaxAmount int64
 	// RatePerMinute and RatePerDay cap writes per (user, client); 0 disables
 	// that window.
@@ -27,8 +28,14 @@ type WriteConfig struct {
 	RatePerDay    int
 }
 
-// maxFutureDays bounds how far ahead a write may date a record.
-const maxFutureDays = 7
+const (
+	// maxFutureDays bounds how far ahead a write may date a record. One extra
+	// day of slack is allowed because dates are the user's local calendar date
+	// while the server compares in UTC.
+	maxFutureDays = 7
+	// maxPastYears bounds how far back a write may date a record.
+	maxPastYears = 10
+)
 
 // writeNotice ends every write tool description. Clients surface tool
 // descriptions to the model; this steers it to confirm with the user and to
@@ -44,15 +51,70 @@ type caller struct {
 	IP       string
 }
 
-// authorizeWrite resolves the caller and enforces, in order: the token scope,
-// the user's consent grant in the database (not revoked, scope approved, user
-// active), and the per-(user, client) rate limit, counting n writes. It returns
-// the caller, or an MCP error result the handler should return directly.
+// auditEntry is one audit_logs row produced by a write.
+type auditEntry struct {
+	Action       string
+	ResourceType string
+	ResourceID   string
+	Changes      map[string]interface{}
+}
+
+// writeOp is a validated write, ready to run.
+type writeOp struct {
+	// Cost is how many writes this counts against the rate limit (the number of
+	// records it will change; 0 when there is nothing to do).
+	Cost int
+	// Run performs the write. It returns the tool's output text, the audit rows
+	// to record, and an error result if the write failed. Audit rows are
+	// recorded even alongside an error result, for partially applied batches.
+	Run func() (text string, audits []auditEntry, res *mcp.CallToolResult)
+}
+
+// prepareFunc validates a write tool's arguments for an authorized caller and
+// returns the write to run, or an error result. It may read the database (to
+// check ownership or capture before-values) but must not change anything.
+type prepareFunc func(c caller, args map[string]interface{}) (*writeOp, *mcp.CallToolResult)
+
+// addWriteTool registers a write tool. Every write tool goes through the same
+// sequence, so none can skip a step:
+//
+//  1. authorizeWrite: the token scope and the user's consent grant;
+//  2. prepare: argument validation, with no side effects;
+//  3. the rate limit, charged only for a valid write, by its cost;
+//  4. the write itself, then its audit rows, tagged with the tool and client.
+func (s *Server) addWriteTool(tool mcp.Tool, scope string, prepare prepareFunc) {
+	s.writeScopes[tool.Name] = scope
+	s.mcp.AddTool(tool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		c, denied := s.authorizeWrite(ctx, scope)
+		if denied != nil {
+			return denied, nil
+		}
+		op, res := prepare(c, req.GetArguments())
+		if res != nil {
+			return res, nil
+		}
+		if res := s.chargeWrites(c, op.Cost); res != nil {
+			return res, nil
+		}
+		text, audits, res := op.Run()
+		for _, a := range audits {
+			s.audit(c, tool.Name, a)
+		}
+		if res != nil {
+			return res, nil
+		}
+		return mcp.NewToolResultText(text), nil
+	})
+}
+
+// authorizeWrite resolves the caller and enforces the token scope and the
+// user's consent grant in the database (not revoked, scope approved, user
+// active). It returns the caller, or an MCP error result to return directly.
 //
 // The grant check is what makes revocation immediate for writes: access
 // tokens are validated offline and stay valid for up to 15 minutes after the
 // user disconnects the client in Settings.
-func (s *Server) authorizeWrite(ctx context.Context, scope string, n int) (caller, *mcp.CallToolResult) {
+func (s *Server) authorizeWrite(ctx context.Context, scope string) (caller, *mcp.CallToolResult) {
 	userID, err := getUserID(ctx)
 	if err != nil {
 		return caller{}, errUnauthorized()
@@ -78,24 +140,42 @@ func (s *Server) authorizeWrite(ctx context.Context, scope string, n int) (calle
 		logger.Get().Errorf("MCP write: grant check failed: %v", err)
 		return caller{}, mcp.NewToolResultError("failed to verify access")
 	}
+	return c, nil
+}
 
-	if ok, retry := s.limiter.allow(userID+"|"+c.ClientID, n); !ok {
-		return caller{}, mcp.NewToolResultError(fmt.Sprintf(
+// chargeWrites counts n writes against the caller's rate limit.
+func (s *Server) chargeWrites(c caller, n int) *mcp.CallToolResult {
+	if n <= 0 {
+		return nil
+	}
+	if s.write.RatePerMinute > 0 && n > s.write.RatePerMinute {
+		return mcp.NewToolResultError(fmt.Sprintf(
+			"this change touches %d records, more than the limit of %d per minute; split it into smaller batches",
+			n, s.write.RatePerMinute))
+	}
+	if ok, retry := s.limiter.allow(c.UserID+"|"+c.ClientID, n); !ok {
+		return mcp.NewToolResultError(fmt.Sprintf(
 			"rate limited: too many changes, try again in %ds", int(math.Ceil(retry.Seconds()))))
 	}
-	return c, nil
+	return nil
 }
 
 // audit records an MCP write in audit_logs, tagged with the OAuth client and
 // tool so every change can be traced to the connection that made it.
-func (s *Server) audit(c caller, tool, action, resourceType, resourceID string, changes map[string]interface{}) {
-	if changes == nil {
-		changes = map[string]interface{}{}
+func (s *Server) audit(c caller, tool string, a auditEntry) {
+	changes := make(map[string]interface{}, len(a.Changes)+3)
+	for k, v := range a.Changes {
+		changes[k] = v
 	}
 	changes["via"] = "mcp"
 	changes["client_id"] = c.ClientID
 	changes["tool"] = tool
-	s.services.Audit.Log(c.UserID, action, resourceType, resourceID, c.IP, changes)
+	s.services.Audit.Log(c.UserID, a.Action, a.ResourceType, a.ResourceID, c.IP, changes)
+}
+
+// change records a field's before and after values in an audit entry.
+func change(from, to interface{}) map[string]interface{} {
+	return map[string]interface{}{"from": from, "to": to}
 }
 
 // serviceErrorMessage returns a client-safe description of a service error.
@@ -167,16 +247,48 @@ func optionalString(args map[string]interface{}, name string) *string {
 	return &v
 }
 
-// maxDescriptionLen matches the REST API's binding:"max=500".
-const maxDescriptionLen = 500
+// Text limits mirror the REST API's binding:"max=N" tags, which count
+// characters, not bytes.
+const (
+	maxDescriptionLen = 500
+	maxNameLen        = 100
+	maxIconLen        = 50
+)
 
-// descriptionArg returns the description argument, bounded like the REST API.
+// checkLength rejects a value longer than maxLen characters.
+func checkLength(name, v string, maxLen int) *mcp.CallToolResult {
+	if utf8.RuneCountInString(v) > maxLen {
+		return mcp.NewToolResultError(fmt.Sprintf("%s must be at most %d characters", name, maxLen))
+	}
+	return nil
+}
+
+// descriptionArg returns the optional description argument ("" when absent).
 func descriptionArg(args map[string]interface{}) (string, *mcp.CallToolResult) {
 	v := stringArg(args, "description")
-	if len(v) > maxDescriptionLen {
-		return "", mcp.NewToolResultError(fmt.Sprintf("description must be at most %d characters", maxDescriptionLen))
+	return v, checkLength("description", v, maxDescriptionLen)
+}
+
+// optionalDescriptionArg returns the description argument when supplied (even
+// empty, which clears it), or nil.
+func optionalDescriptionArg(args map[string]interface{}) (*string, *mcp.CallToolResult) {
+	v := optionalString(args, "description")
+	if v == nil {
+		return nil, nil
 	}
-	return v, nil
+	return v, checkLength("description", *v, maxDescriptionLen)
+}
+
+// checkCeiling rejects an amount (in cents) above the per-change limit. It
+// applies to every amount a write moves, including ones the caller did not
+// pass explicitly (a full write-off, a transaction whose type is flipped).
+func (s *Server) checkCeiling(what string, cents int64) *mcp.CallToolResult {
+	if s.write.MaxAmount > 0 && cents > s.write.MaxAmount {
+		return mcp.NewToolResultError(fmt.Sprintf(
+			"%s of %s exceeds the per-change limit of %s; make this change in the Kuberan app instead",
+			what, formatCents(cents), formatCents(s.write.MaxAmount)))
+	}
+	return nil
 }
 
 // amountArg reads the "amount" argument (dollars) and returns it in cents. It
@@ -195,12 +307,7 @@ func (s *Server) amountArg(args map[string]interface{}) (cents int64, present bo
 	if cents <= 0 {
 		return 0, true, mcp.NewToolResultError("amount must be greater than zero")
 	}
-	if s.write.MaxAmount > 0 && cents > s.write.MaxAmount {
-		return 0, true, mcp.NewToolResultError(fmt.Sprintf(
-			"amount exceeds the per-change limit of %s; record it in the Kuberan app instead",
-			formatCents(s.write.MaxAmount)))
-	}
-	return cents, true, nil
+	return cents, true, s.checkCeiling("amount", cents)
 }
 
 // requiredAmount reads the required "amount" argument (dollars), in cents.
@@ -215,9 +322,13 @@ func (s *Server) requiredAmount(args map[string]interface{}) (int64, *mcp.CallTo
 	return cents, nil
 }
 
+// dateArgDescription tells the model which date to send. The server cannot
+// know the user's time zone, so "today" must come from the client.
+const dateArgDescription = "Date in the user's own time zone (YYYY-MM-DD)"
+
 // dateArg reads the optional "date" argument (YYYY-MM-DD) as UTC midnight, the
-// same instant the web app sends for a date. It rejects dates more than
-// maxFutureDays ahead. present is false when the argument was omitted.
+// same instant the web app stores for a date. It must be within maxPastYears
+// back and maxFutureDays ahead. present is false when the argument was omitted.
 func dateArg(args map[string]interface{}, now time.Time) (t time.Time, present bool, res *mcp.CallToolResult) {
 	v := stringArg(args, "date")
 	if v == "" {
@@ -227,10 +338,54 @@ func dateArg(args map[string]interface{}, now time.Time) (t time.Time, present b
 	if err != nil {
 		return time.Time{}, true, mcp.NewToolResultError("date must be in YYYY-MM-DD format")
 	}
-	if t.After(now.AddDate(0, 0, maxFutureDays)) {
+	today := now.UTC().Truncate(24 * time.Hour)
+	if t.After(today.AddDate(0, 0, maxFutureDays+1)) {
 		return time.Time{}, true, mcp.NewToolResultError(fmt.Sprintf("date cannot be more than %d days in the future", maxFutureDays))
 	}
+	if t.Before(today.AddDate(-maxPastYears, 0, 0)) {
+		return time.Time{}, true, mcp.NewToolResultError(fmt.Sprintf("date cannot be more than %d years in the past", maxPastYears))
+	}
 	return t, true, nil
+}
+
+// requiredDate reads the required "date" argument. Creates require a date
+// because the server's clock is UTC: defaulting to "now" would put an evening
+// expense in a UTC-8 time zone on the next day, possibly in the next month.
+func requiredDate(args map[string]interface{}, now time.Time) (time.Time, *mcp.CallToolResult) {
+	t, present, res := dateArg(args, now)
+	if res != nil {
+		return time.Time{}, res
+	}
+	if !present {
+		return time.Time{}, mcp.NewToolResultError("date is required (the user's local date, YYYY-MM-DD)")
+	}
+	return t, nil
+}
+
+// stringListArg reads a non-empty array of distinct, non-empty strings of at
+// most maxLen items.
+func stringListArg(args map[string]interface{}, name string, maxLen int) ([]string, *mcp.CallToolResult) {
+	raw, ok := args[name].([]interface{})
+	if !ok || len(raw) == 0 {
+		return nil, mcp.NewToolResultError(name + " is required (a non-empty list of IDs)")
+	}
+	if len(raw) > maxLen {
+		return nil, mcp.NewToolResultError(fmt.Sprintf("%s can have at most %d items", name, maxLen))
+	}
+	seen := make(map[string]bool, len(raw))
+	out := make([]string, 0, len(raw))
+	for _, item := range raw {
+		v, ok := item.(string)
+		v = strings.TrimSpace(v)
+		if !ok || v == "" {
+			return nil, mcp.NewToolResultError(name + " must contain only non-empty IDs")
+		}
+		if !seen[v] {
+			seen[v] = true
+			out = append(out, v)
+		}
+	}
+	return out, nil
 }
 
 // rateLimiter is a fixed-window counter per key, with a one-minute and a

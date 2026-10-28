@@ -253,3 +253,26 @@ func TestRevokeConsentSessionsServerError(t *testing.T) {
 		t.Error("expected a 500 from Hydra to surface as an error")
 	}
 }
+
+func TestListConsentSessions(t *testing.T) {
+	rs := newRecordingServer(t, http.StatusOK, []map[string]any{{
+		"consent_request": map[string]any{"client": map[string]any{"client_id": "cid", "client_name": "Claude"}},
+		"grant_scope":     []string{"read:accounts", "offline_access"},
+	}})
+	c := NewAdminClient(rs.server.URL)
+
+	got, err := c.ListConsentSessions(context.Background(), "user-1")
+	if err != nil {
+		t.Fatalf("ListConsentSessions: %v", err)
+	}
+	if rs.lastMethod != http.MethodGet || rs.lastPath != "/admin/oauth2/auth/sessions/consent" ||
+		rs.lastQuery != "page_size=250&subject=user-1" {
+		t.Errorf("unexpected request: %s %s?%s", rs.lastMethod, rs.lastPath, rs.lastQuery)
+	}
+	if len(got) != 1 || got[0].ConsentRequest.Client.ClientID != "cid" || len(got[0].GrantScope) != 2 {
+		t.Errorf("unexpected sessions: %+v", got)
+	}
+	if _, err := c.ListConsentSessions(context.Background(), ""); err == nil {
+		t.Error("an empty subject must be rejected")
+	}
+}

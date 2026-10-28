@@ -19,6 +19,7 @@ const SCOPE_LABELS: Record<string, string> = {
 };
 
 // OIDC / refresh scopes: always granted, never user-selectable.
+// Keep in sync with protocolScopes in apps/api/internal/handlers/oauth_handler.go.
 const PROTOCOL_SCOPES = new Set(["openid", "offline", "offline_access"]);
 
 export function scopeLabel(scope: string): string {
@@ -30,7 +31,8 @@ export function isProtocolScope(scope: string): boolean {
 }
 
 // Write scopes let a client change the user's data and always need an
-// explicit opt-in.
+// explicit opt-in. Keep in sync with writeScopePrefix in
+// apps/api/internal/handlers/oauth_handler.go.
 export function isWriteScope(scope: string): boolean {
   return scope.startsWith("write:");
 }

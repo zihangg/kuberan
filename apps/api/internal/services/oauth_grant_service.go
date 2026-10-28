@@ -6,8 +6,10 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	apperrors "kuberan/internal/errors"
+	"kuberan/internal/logger"
 	"kuberan/internal/models"
 )
 
@@ -42,29 +44,46 @@ func (s *oauthGrantService) Get(userID, clientID string) (*models.OAuthClientGra
 	return &grant, nil
 }
 
-// RecordConsent upserts the grant for (user, client) with the latest decision.
+// maxClientNameLen matches oauth_client_grants.client_name (VARCHAR(255)).
+// Client names come from self-registration, so they are truncated rather
+// than allowed to fail every consent.
+const maxClientNameLen = 255
+
+// RecordConsent upserts the grant for (user, client) with the latest decision,
+// in one statement so two simultaneous first consents cannot collide on the
+// unique index.
 func (s *oauthGrantService) RecordConsent(in RecordConsentInput) (*models.OAuthClientGrant, error) {
 	if in.UserID == "" || in.ClientID == "" {
 		return nil, apperrors.WithMessage(apperrors.ErrInvalidInput, "user_id and client_id are required")
 	}
 
-	grant, err := s.Get(in.UserID, in.ClientID)
-	if err != nil && !errors.Is(err, apperrors.ErrOAuthClientNotFound) {
-		return nil, err
+	name := truncateRunes(in.ClientName, maxClientNameLen)
+	approved := strings.Join(in.Approved, " ")
+	reviewed := strings.Join(in.Reviewed, " ")
+	grant := &models.OAuthClientGrant{
+		UserID:         in.UserID,
+		ClientID:       in.ClientID,
+		ClientName:     name,
+		ApprovedScopes: approved,
+		ReviewedScopes: reviewed,
+		AutoAccept:     in.AutoAccept,
 	}
-	if grant == nil {
-		grant = &models.OAuthClientGrant{UserID: in.UserID, ClientID: in.ClientID}
-	}
-	grant.ClientName = in.ClientName
-	grant.ApprovedScopes = strings.Join(in.Approved, " ")
-	grant.ReviewedScopes = strings.Join(in.Reviewed, " ")
-	grant.AutoAccept = in.AutoAccept
-	grant.RevokedAt = nil
-
-	if err := s.db.Save(grant).Error; err != nil {
+	err := s.db.Clauses(clause.OnConflict{
+		Columns:     []clause.Column{{Name: "user_id"}, {Name: "client_id"}},
+		TargetWhere: clause.Where{Exprs: []clause.Expression{clause.Expr{SQL: "deleted_at IS NULL"}}},
+		DoUpdates: clause.Assignments(map[string]interface{}{
+			"client_name":     name,
+			"approved_scopes": approved,
+			"reviewed_scopes": reviewed,
+			"auto_accept":     in.AutoAccept,
+			"revoked_at":      nil,
+			"updated_at":      s.now(),
+		}),
+	}).Create(grant).Error
+	if err != nil {
 		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
-	return grant, nil
+	return s.Get(in.UserID, in.ClientID)
 }
 
 // List returns the user's active grants, most recently created first.
@@ -128,10 +147,12 @@ func (s *oauthGrantService) Authorize(userID, clientID, scope string) error {
 		return apperrors.ErrOAuthScopeNotGranted
 	}
 
+	// last_used_at is bookkeeping for the Connected apps page: a failure to
+	// record it must not block an authorized write.
 	now := s.now()
 	if grant.LastUsedAt == nil || now.Sub(*grant.LastUsedAt) >= lastUsedInterval {
 		if err := s.db.Model(grant).UpdateColumn("last_used_at", now).Error; err != nil {
-			return apperrors.Wrap(apperrors.ErrInternalServer, err)
+			logger.Get().Warnw("failed to record OAuth grant last use", "error", err, "client_id", clientID)
 		}
 	}
 	return nil

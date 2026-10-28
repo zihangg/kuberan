@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"kuberan/internal/logger"
@@ -65,6 +66,11 @@ type Config struct {
 	MCPMaxWriteAmount     int64 // per-call ceiling in cents
 	MCPWriteRatePerMinute int   // per (user, client)
 	MCPWriteRatePerDay    int   // per (user, client)
+
+	// MCPTrustedProxyCIDRs lists the networks (e.g. the Docker network the
+	// Cloudflare tunnel connects from) whose CF-Connecting-IP header the MCP
+	// server trusts for audit logging. Empty means the header is ignored.
+	MCPTrustedProxyCIDRs []string
 
 	// Storage (receipt attachments). See plans/017-transaction-receipts.
 	StorageEndpoint     string // e.g. http://minio:9000 (internal only)
@@ -133,6 +139,7 @@ func Load() (*Config, error) {
 		MCPMaxWriteAmount:     getEnvInt64("MCP_MAX_WRITE_AMOUNT", 1_000_000),
 		MCPWriteRatePerMinute: int(getEnvInt64("MCP_WRITE_RATE_PER_MINUTE", 30)),
 		MCPWriteRatePerDay:    int(getEnvInt64("MCP_WRITE_RATE_PER_DAY", 500)),
+		MCPTrustedProxyCIDRs:  splitList(os.Getenv("MCP_TRUSTED_PROXY_CIDRS")),
 
 		// Storage (receipt attachments)
 		StorageEndpoint:     os.Getenv("STORAGE_ENDPOINT"),
@@ -144,9 +151,7 @@ func Load() (*Config, error) {
 		MaxAttachmentsPerTx: int(getEnvInt64("MAX_ATTACHMENTS_PER_TX", 10)),
 	}
 
-	if config.MCPWriteEnabled {
-		config.OAuthScopes += " " + DefaultOAuthWriteScopes
-	}
+	config.OAuthScopes = withWriteScopes(config.OAuthScopes, config.MCPWriteEnabled)
 
 	// Parse JWT expiration duration
 	expStr := getEnv("JWT_EXPIRES_IN", "24h")
@@ -257,4 +262,32 @@ func getEnvInt64(key string, defaultValue int64) int64 {
 		return defaultValue
 	}
 	return parsed
+}
+
+// withWriteScopes returns the scope set with write:* scopes present only when
+// MCP writes are enabled: it strips any write:* scope (e.g. one listed in an
+// OAUTH_SCOPES override) when disabled, and adds DefaultOAuthWriteScopes when
+// enabled, so the flag alone decides whether write access can be granted.
+func withWriteScopes(scopes string, writeEnabled bool) string {
+	out := make([]string, 0)
+	for _, s := range strings.Fields(scopes) {
+		if !strings.HasPrefix(s, "write:") {
+			out = append(out, s)
+		}
+	}
+	if writeEnabled {
+		out = append(out, strings.Fields(DefaultOAuthWriteScopes)...)
+	}
+	return strings.Join(out, " ")
+}
+
+// splitList splits a comma-separated environment value, dropping blanks.
+func splitList(v string) []string {
+	var out []string
+	for _, item := range strings.Split(v, ",") {
+		if item = strings.TrimSpace(item); item != "" {
+			out = append(out, item)
+		}
+	}
+	return out
 }

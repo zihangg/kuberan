@@ -2,6 +2,8 @@ package mcp
 
 import (
 	"context"
+	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -9,6 +11,7 @@ import (
 	mcpgo "github.com/mark3labs/mcp-go/mcp"
 	"gorm.io/gorm"
 
+	"kuberan/internal/config"
 	"kuberan/internal/models"
 	"kuberan/internal/services"
 	"kuberan/internal/testutil"
@@ -103,6 +106,11 @@ func (e *writeEnv) txnCount(t *testing.T) int64 {
 	return n
 }
 
+// today is the current UTC date, a valid date for any write.
+func today() string {
+	return time.Now().UTC().Format("2006-01-02")
+}
+
 func wantError(t *testing.T, res *mcpgo.CallToolResult, contains string) {
 	t.Helper()
 	if !res.IsError {
@@ -180,7 +188,7 @@ func TestAuthorizeWrite(t *testing.T) {
 
 	t.Run("allows a granted scope", func(t *testing.T) {
 		e := setupWriteEnv(t, scope)
-		c, denied := e.s.authorizeWrite(e.ctx(scope), scope, 1)
+		c, denied := e.s.authorizeWrite(e.ctx(scope), scope)
 		if denied != nil {
 			t.Fatalf("unexpected denial: %s", resultText(t, denied))
 		}
@@ -191,26 +199,26 @@ func TestAuthorizeWrite(t *testing.T) {
 
 	t.Run("rejects a missing user", func(t *testing.T) {
 		e := setupWriteEnv(t, scope)
-		_, denied := e.s.authorizeWrite(context.Background(), scope, 1)
+		_, denied := e.s.authorizeWrite(context.Background(), scope)
 		wantError(t, denied, "unauthorized")
 	})
 
 	t.Run("rejects a token without the scope", func(t *testing.T) {
 		e := setupWriteEnv(t, scope)
-		_, denied := e.s.authorizeWrite(e.ctx("read:transactions"), scope, 1)
+		_, denied := e.s.authorizeWrite(e.ctx("read:transactions"), scope)
 		wantError(t, denied, "missing required scope")
 	})
 
 	t.Run("rejects a token without client_id", func(t *testing.T) {
 		e := setupWriteEnv(t, scope)
 		ctx := context.WithValue(e.ctx(scope), clientIDKey{}, "")
-		_, denied := e.s.authorizeWrite(ctx, scope, 1)
+		_, denied := e.s.authorizeWrite(ctx, scope)
 		wantError(t, denied, "no client_id")
 	})
 
 	t.Run("rejects when the grant lacks the scope", func(t *testing.T) {
 		e := setupWriteEnv(t, "read:transactions")
-		_, denied := e.s.authorizeWrite(e.ctx(scope), scope, 1)
+		_, denied := e.s.authorizeWrite(e.ctx(scope), scope)
 		wantError(t, denied, "not allowed to make changes")
 	})
 
@@ -219,27 +227,32 @@ func TestAuthorizeWrite(t *testing.T) {
 		if err := e.grants.Revoke(e.user.ID, testClientID); err != nil {
 			t.Fatal(err)
 		}
-		_, denied := e.s.authorizeWrite(e.ctx(scope), scope, 1)
+		_, denied := e.s.authorizeWrite(e.ctx(scope), scope)
 		wantError(t, denied, "not allowed to make changes")
 	})
 
 	t.Run("rejects an inactive user", func(t *testing.T) {
 		e := setupWriteEnv(t, scope)
 		e.db.Model(e.user).Update("is_active", false)
-		_, denied := e.s.authorizeWrite(e.ctx(scope), scope, 1)
+		_, denied := e.s.authorizeWrite(e.ctx(scope), scope)
 		wantError(t, denied, "not allowed to make changes")
 	})
 
 	t.Run("rate limits per user and client", func(t *testing.T) {
 		e := setupWriteEnv(t, scope)
 		e.s.limiter = newRateLimiter(2, 100, time.Now)
+		c, _ := e.s.authorizeWrite(e.ctx(scope), scope)
 		for i := 0; i < 2; i++ {
-			if _, denied := e.s.authorizeWrite(e.ctx(scope), scope, 1); denied != nil {
+			if res := e.s.chargeWrites(c, 1); res != nil {
 				t.Fatalf("write %d unexpectedly denied", i+1)
 			}
 		}
-		_, denied := e.s.authorizeWrite(e.ctx(scope), scope, 1)
-		wantError(t, denied, "rate limited")
+		wantError(t, e.s.chargeWrites(c, 1), "rate limited")
+		other := c
+		other.ClientID = "another-client"
+		if res := e.s.chargeWrites(other, 1); res != nil {
+			t.Error("another client must have its own budget")
+		}
 	})
 }
 
@@ -308,6 +321,7 @@ func TestCreateTransactionTool(t *testing.T) {
 		card := testutil.CreateTestCreditCardAccount(t, e.db, e.user.ID, 5_000)
 
 		wantOK(t, e.call(t, e.ctx(scope), "create_transaction", map[string]any{
+			"date":       today(),
 			"account_id": card.ID, "type": "expense", "amount": 20.0,
 		}))
 		if got := e.balance(t, card.ID); got != 7_000 {
@@ -321,6 +335,7 @@ func TestCreateTransactionTool(t *testing.T) {
 		acct := testutil.CreateTestCashAccountWithBalance(t, e.db, other.ID, 10_000)
 
 		res := e.call(t, e.ctx(scope), "create_transaction", map[string]any{
+			"date":       today(),
 			"account_id": acct.ID, "type": "expense", "amount": 5.0,
 		})
 		wantError(t, res, "failed to create transaction")
@@ -336,6 +351,7 @@ func TestCreateTransactionTool(t *testing.T) {
 		cat := testutil.CreateTestCategory(t, e.db, other.ID, models.CategoryTypeExpense)
 
 		res := e.call(t, e.ctx(scope), "create_transaction", map[string]any{
+			"date":       today(),
 			"account_id": acct.ID, "type": "expense", "amount": 5.0, "category_id": cat.ID,
 		})
 		wantError(t, res, "Category not found")
@@ -350,6 +366,7 @@ func TestCreateTransactionTool(t *testing.T) {
 		cat := testutil.CreateTestCategory(t, e.db, e.user.ID, models.CategoryTypeIncome)
 
 		res := e.call(t, e.ctx(scope), "create_transaction", map[string]any{
+			"date":       today(),
 			"account_id": acct.ID, "type": "expense", "amount": 5.0, "category_id": cat.ID,
 		})
 		wantError(t, res, "cannot be used for an expense transaction")
@@ -369,12 +386,17 @@ func TestCreateTransactionTool(t *testing.T) {
 			{"over the ceiling", map[string]any{"type": "expense", "amount": 10_000.01}, "per-change limit of $10000.00"},
 			{"missing amount", map[string]any{"type": "expense"}, "amount is required"},
 			{"transfer type", map[string]any{"type": "transfer", "amount": 1.0}, "type must be 'income' or 'expense'"},
+			{"missing date", map[string]any{"type": "expense", "amount": 1.0}, "date is required"},
+			{"ancient date", map[string]any{"type": "expense", "amount": 1.0, "date": "1999-01-01"}, "years in the past"},
 			{"bad date", map[string]any{"type": "expense", "amount": 1.0, "date": "15/01/2026"}, "YYYY-MM-DD"},
 			{"far future date", map[string]any{"type": "expense", "amount": 1.0, "date": future}, "days in the future"},
 			{"long description", map[string]any{"type": "expense", "amount": 1.0, "description": strings.Repeat("x", 501)}, "at most 500"},
 		}
 		for _, tc := range cases {
 			tc.args["account_id"] = acct.ID
+			if _, ok := tc.args["date"]; !ok && tc.name != "missing date" {
+				tc.args["date"] = today()
+			}
 			wantError(t, e.call(t, e.ctx(scope), "create_transaction", tc.args), tc.want)
 		}
 		if e.txnCount(t) != 0 {
@@ -389,6 +411,7 @@ func TestCreateTransactionTool(t *testing.T) {
 		e := setupWriteEnv(t, "read:transactions")
 		acct := testutil.CreateTestCashAccount(t, e.db, e.user.ID)
 		res := e.call(t, e.ctx(scope), "create_transaction", map[string]any{
+			"date":       today(),
 			"account_id": acct.ID, "type": "expense", "amount": 1.0,
 		})
 		wantError(t, res, "not allowed to make changes")
@@ -402,6 +425,7 @@ func TestCreateTransferTool(t *testing.T) {
 	to := testutil.CreateTestCashAccountWithBalance(t, e.db, e.user.ID, 0)
 
 	wantOK(t, e.call(t, e.ctx(scope), "create_transfer", map[string]any{
+		"date":            today(),
 		"from_account_id": from.ID, "to_account_id": to.ID, "amount": 25.0,
 	}))
 	if e.balance(t, from.ID) != 7_500 || e.balance(t, to.ID) != 2_500 {
@@ -412,6 +436,7 @@ func TestCreateTransferTool(t *testing.T) {
 	}
 
 	res := e.call(t, e.ctx(scope), "create_transfer", map[string]any{
+		"date":            today(),
 		"from_account_id": from.ID, "to_account_id": from.ID, "amount": 1.0,
 	})
 	wantError(t, res, "Cannot transfer to the same account")
@@ -637,6 +662,7 @@ func TestReceivableWriteTools(t *testing.T) {
 	alex, sam := recs[0], recs[1]
 
 	text := wantOK(t, e.call(t, e.ctx(scope), "record_repayment", map[string]any{
+		"date":          today(),
 		"receivable_id": alex.ID, "account_id": acct.ID, "amount": 20.0,
 	}))
 	if !strings.Contains(text, "status: settled") {
@@ -647,6 +673,7 @@ func TestReceivableWriteTools(t *testing.T) {
 	}
 
 	wantError(t, e.call(t, e.ctx(scope), "record_repayment", map[string]any{
+		"date":          today(),
 		"receivable_id": sam.ID, "account_id": acct.ID, "amount": 50.0,
 	}), "Repayment exceeds the outstanding amount")
 
@@ -659,4 +686,188 @@ func TestReceivableWriteTools(t *testing.T) {
 	if e.auditCount(t, "MCP_RECORD_REPAYMENT") != 1 || e.auditCount(t, "MCP_WRITE_OFF_RECEIVABLE") != 1 {
 		t.Error("expected repayment and write-off audit rows")
 	}
+}
+
+// Every scope a write tool requires must be one the config can grant;
+// otherwise capScopes silently drops it and the tool is forbidden forever.
+func TestWriteToolScopesAreGrantable(t *testing.T) {
+	s := newServer(Services{}, WriteConfig{Enabled: true})
+	grantable := strings.Fields(config.DefaultOAuthWriteScopes)
+	if len(s.writeScopes) == 0 {
+		t.Fatal("no write tools registered")
+	}
+	for tool, scope := range s.writeScopes {
+		if !slices.Contains(grantable, scope) {
+			t.Errorf("%s requires %q, which is not in config.DefaultOAuthWriteScopes", tool, scope)
+		}
+	}
+}
+
+func TestWriteCeilingCoversImplicitAmounts(t *testing.T) {
+	const scope = "write:transactions"
+
+	t.Run("type flip of a transaction above the ceiling is refused", func(t *testing.T) {
+		e := setupWriteEnv(t, scope)
+		acct := testutil.CreateTestCashAccountWithBalance(t, e.db, e.user.ID, 10_000_000)
+		big := testutil.CreateTestTransaction(t, e.db, e.user.ID, acct.ID, models.TransactionTypeExpense, 4_000_000)
+
+		wantError(t, e.call(t, e.ctx(scope), "update_transaction", map[string]any{
+			"transaction_id": big.ID, "type": "income",
+		}), "the existing amount of $40000.00 exceeds the per-change limit")
+
+		var got models.Transaction
+		e.db.First(&got, "id = ?", big.ID)
+		if got.Type != models.TransactionTypeExpense {
+			t.Error("the transaction must be unchanged")
+		}
+	})
+
+	t.Run("type flip within the ceiling is allowed", func(t *testing.T) {
+		e := setupWriteEnv(t, scope)
+		acct := testutil.CreateTestCashAccountWithBalance(t, e.db, e.user.ID, 10_000)
+		small := testutil.CreateTestTransaction(t, e.db, e.user.ID, acct.ID, models.TransactionTypeExpense, 500)
+		wantOK(t, e.call(t, e.ctx(scope), "update_transaction", map[string]any{
+			"transaction_id": small.ID, "type": "income",
+		}))
+	})
+
+	t.Run("a full write-off above the ceiling is refused", func(t *testing.T) {
+		e := setupWriteEnv(t, scope)
+		acct := testutil.CreateTestCashAccountWithBalance(t, e.db, e.user.ID, 10_000_000)
+		rec := createLoan(t, e, acct.ID, 5_000_000)
+
+		wantError(t, e.call(t, e.ctx(scope), "write_off_receivable", map[string]any{
+			"receivable_id": rec.ID,
+		}), "the outstanding amount of $50000.00 exceeds the per-change limit")
+
+		var got models.Receivable
+		e.db.First(&got, "id = ?", rec.ID)
+		if got.WrittenOffAmount != 0 {
+			t.Error("nothing may be written off")
+		}
+	})
+
+	t.Run("a partial write-off within the ceiling records before and after", func(t *testing.T) {
+		e := setupWriteEnv(t, scope)
+		acct := testutil.CreateTestCashAccountWithBalance(t, e.db, e.user.ID, 10_000_000)
+		rec := createLoan(t, e, acct.ID, 5_000_000)
+
+		wantOK(t, e.call(t, e.ctx(scope), "write_off_receivable", map[string]any{
+			"receivable_id": rec.ID, "amount": 100.0,
+		}))
+		var log models.AuditLog
+		e.db.Where("action = ?", "MCP_WRITE_OFF_RECEIVABLE").First(&log)
+		for _, want := range []string{`"written_off_amount":{"from":0,"to":10000}`, `"status":{"from":"pending","to":"partially_paid"}`} {
+			if !strings.Contains(log.Changes, want) {
+				t.Errorf("audit %s missing %s", log.Changes, want)
+			}
+		}
+	})
+}
+
+// createLoan creates a loan receivable of amount cents and returns it.
+func createLoan(t *testing.T, e *writeEnv, accountID string, amount int64) *models.Receivable {
+	t.Helper()
+	expense, err := e.s.services.Receivables.CreateSharedExpense(e.user.ID, services.CreateSharedExpenseInput{
+		AccountID: accountID, Amount: amount, Description: "Loan to Alex",
+		Kind: models.ReceivableKindLoan, Mode: services.ShareModeFull,
+		Counterparties: []services.SharedCounterpartyInput{{Name: "Alex"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rec models.Receivable
+	if err := e.db.Where("transaction_id = ?", expense.ID).First(&rec).Error; err != nil {
+		t.Fatal(err)
+	}
+	return &rec
+}
+
+func TestRateLimitChargesOnlyValidWrites(t *testing.T) {
+	const scope = "write:transactions"
+
+	t.Run("invalid calls do not use the budget", func(t *testing.T) {
+		e := setupWriteEnv(t, scope)
+		e.s.limiter = newRateLimiter(1, 100, time.Now)
+		acct := testutil.CreateTestCashAccount(t, e.db, e.user.ID)
+		for i := 0; i < 3; i++ {
+			wantError(t, e.call(t, e.ctx(scope), "create_transaction", map[string]any{
+				"account_id": acct.ID, "type": "expense", "amount": -1.0, "date": today(),
+			}), "greater than zero")
+		}
+		wantOK(t, e.call(t, e.ctx(scope), "create_transaction", map[string]any{
+			"account_id": acct.ID, "type": "expense", "amount": 1.0, "date": today(),
+		}))
+		wantError(t, e.call(t, e.ctx(scope), "create_transaction", map[string]any{
+			"account_id": acct.ID, "type": "expense", "amount": 1.0, "date": today(),
+		}), "rate limited")
+	})
+
+	t.Run("skipped batch items do not use the budget", func(t *testing.T) {
+		e := setupWriteEnv(t, scope)
+		e.s.limiter = newRateLimiter(1, 100, time.Now)
+		acct := testutil.CreateTestCashAccount(t, e.db, e.user.ID)
+		cat := testutil.CreateTestCategory(t, e.db, e.user.ID, models.CategoryTypeExpense)
+		expense := testutil.CreateTestTransaction(t, e.db, e.user.ID, acct.ID, models.TransactionTypeExpense, 100)
+		income := testutil.CreateTestTransaction(t, e.db, e.user.ID, acct.ID, models.TransactionTypeIncome, 100)
+
+		text := wantOK(t, e.call(t, e.ctx(scope), "categorize_transactions", map[string]any{
+			"transaction_ids": []any{expense.ID, income.ID}, "category_id": cat.ID,
+		}))
+		if !strings.Contains(text, "on 1 of 2") {
+			t.Errorf("unexpected summary: %s", text)
+		}
+	})
+
+	t.Run("a batch larger than the per-minute limit says to split it", func(t *testing.T) {
+		e := setupWriteEnv(t, scope)
+		e.s.write.RatePerMinute = 2
+		acct := testutil.CreateTestCashAccount(t, e.db, e.user.ID)
+		cat := testutil.CreateTestCategory(t, e.db, e.user.ID, models.CategoryTypeExpense)
+		var ids []any
+		for i := 0; i < 3; i++ {
+			ids = append(ids, testutil.CreateTestTransaction(t, e.db, e.user.ID, acct.ID, models.TransactionTypeExpense, 100).ID)
+		}
+		wantError(t, e.call(t, e.ctx(scope), "categorize_transactions", map[string]any{
+			"transaction_ids": ids, "category_id": cat.ID,
+		}), "split it into smaller batches")
+	})
+}
+
+func TestUpdateAuditsRecordBeforeAndAfter(t *testing.T) {
+	e := setupWriteEnv(t, "write:categories", "write:budgets")
+	cat := testutil.CreateTestCategory(t, e.db, e.user.ID, models.CategoryTypeExpense)
+	budget := testutil.CreateTestBudget(t, e.db, e.user.ID, cat.ID)
+
+	wantOK(t, e.call(t, e.ctx("write:categories"), "update_category", map[string]any{
+		"category_id": cat.ID, "name": "Renamed",
+	}))
+	wantOK(t, e.call(t, e.ctx("write:budgets"), "update_budget", map[string]any{
+		"budget_id": budget.ID, "amount": 123.45,
+	}))
+
+	for action, want := range map[string]string{
+		"MCP_UPDATE_CATEGORY": fmt.Sprintf(`"name":{"from":%q,"to":"Renamed"}`, cat.Name),
+		"MCP_UPDATE_BUDGET":   fmt.Sprintf(`"amount":{"from":%d,"to":12345}`, budget.Amount),
+	} {
+		var log models.AuditLog
+		if err := e.db.Where("action = ?", action).First(&log).Error; err != nil {
+			t.Fatalf("%s: %v", action, err)
+		}
+		if !strings.Contains(log.Changes, want) {
+			t.Errorf("%s audit %s missing %s", action, log.Changes, want)
+		}
+	}
+}
+
+func TestTextLimitsCountCharacters(t *testing.T) {
+	const scope = "write:categories"
+	e := setupWriteEnv(t, scope)
+	// 100 multi-byte characters is 300 bytes: within the REST limit of 100.
+	wantOK(t, e.call(t, e.ctx(scope), "create_category", map[string]any{
+		"name": strings.Repeat("₹", maxNameLen), "type": "expense",
+	}))
+	wantError(t, e.call(t, e.ctx(scope), "create_category", map[string]any{
+		"name": strings.Repeat("₹", maxNameLen+1), "type": "expense",
+	}), "at most 100 characters")
 }

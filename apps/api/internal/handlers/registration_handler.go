@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"slices"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
 
@@ -107,7 +108,7 @@ func (h *RegistrationHandler) Register(c *gin.Context) {
 
 	// Force the hardened policy regardless of what the client asked for.
 	create := hydra.OAuth2ClientCreate{
-		ClientName:              req.ClientName,
+		ClientName:              truncateClientName(req.ClientName),
 		RedirectURIs:            req.RedirectURIs,
 		GrantTypes:              allowedGrantTypes,
 		ResponseTypes:           []string{"code"},
@@ -137,6 +138,19 @@ func (h *RegistrationHandler) Register(c *gin.Context) {
 	)
 
 	c.JSON(http.StatusCreated, client)
+}
+
+// maxClientNameLen caps a self-registered client's display name. It is shown
+// on the consent screen and stored in oauth_client_grants.client_name
+// (VARCHAR(255)), so an oversized name must not make every consent fail.
+const maxClientNameLen = 255
+
+// truncateClientName returns name cut to maxClientNameLen characters.
+func truncateClientName(name string) string {
+	if utf8.RuneCountInString(name) <= maxClientNameLen {
+		return name
+	}
+	return string([]rune(name)[:maxClientNameLen])
 }
 
 // defaultRegistrableScopes is the scope set assigned to a DCR client that

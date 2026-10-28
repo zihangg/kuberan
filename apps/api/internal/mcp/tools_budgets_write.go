@@ -1,7 +1,6 @@
 package mcp
 
 import (
-	"context"
 	"fmt"
 
 	"github.com/mark3labs/mcp-go/mcp"
@@ -12,11 +11,8 @@ import (
 // budgetsWriteScope gates the budget write tools.
 const budgetsWriteScope = "write:budgets"
 
-// maxBudgetNameLen matches the REST API's binding.
-const maxBudgetNameLen = 100
-
 func (s *Server) registerBudgetWriteTools() {
-	s.mcp.AddTool(
+	s.addWriteTool(
 		writeTool("create_budget",
 			"Create a monthly or yearly spending budget for an expense category. "+
 				"A category can have one active budget per period.",
@@ -26,10 +22,10 @@ func (s *Server) registerBudgetWriteTools() {
 			mcp.WithNumber("amount", mcp.Required(), mcp.Description("Budget limit in dollars, positive")),
 			mcp.WithString("period", mcp.Required(), mcp.Enum("monthly", "yearly"), mcp.Description("'monthly' or 'yearly'")),
 		),
-		s.handleCreateBudget,
+		budgetsWriteScope, s.prepareCreateBudget,
 	)
 
-	s.mcp.AddTool(
+	s.addWriteTool(
 		writeTool("update_budget",
 			"Change a budget's name, limit or period, or pause/resume it. Only the fields given change.",
 			true,
@@ -39,7 +35,7 @@ func (s *Server) registerBudgetWriteTools() {
 			mcp.WithString("period", mcp.Enum("monthly", "yearly"), mcp.Description("New period: 'monthly' or 'yearly'")),
 			mcp.WithBoolean("is_active", mcp.Description("false pauses the budget, true resumes it")),
 		),
-		s.handleUpdateBudget,
+		budgetsWriteScope, s.prepareUpdateBudget,
 	)
 }
 
@@ -53,104 +49,100 @@ func parseBudgetPeriod(v string) (models.BudgetPeriod, *mcp.CallToolResult) {
 	}
 }
 
-func (s *Server) handleCreateBudget(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	c, denied := s.authorizeWrite(ctx, budgetsWriteScope, 1)
-	if denied != nil {
-		return denied, nil
-	}
-	args := req.GetArguments()
-
+func (s *Server) prepareCreateBudget(c caller, args map[string]interface{}) (*writeOp, *mcp.CallToolResult) {
 	categoryID, res := requiredString(args, "category_id")
 	if res != nil {
-		return res, nil
+		return nil, res
 	}
 	name, res := requiredString(args, "name")
 	if res != nil {
-		return res, nil
+		return nil, res
 	}
-	if len(name) > maxBudgetNameLen {
-		return mcp.NewToolResultError(fmt.Sprintf("name must be at most %d characters", maxBudgetNameLen)), nil
+	if res := checkLength("name", name, maxNameLen); res != nil {
+		return nil, res
 	}
 	amount, res := s.requiredAmount(args)
 	if res != nil {
-		return res, nil
+		return nil, res
 	}
 	period, res := parseBudgetPeriod(stringArg(args, "period"))
 	if res != nil {
-		return res, nil
+		return nil, res
 	}
 
-	budget, err := s.services.Budgets.CreateBudget(c.UserID, categoryID, name, amount, period)
-	if err != nil {
-		return serviceError("create budget", err), nil
-	}
-	s.audit(c, "create_budget", "MCP_CREATE_BUDGET", "budget", budget.ID, map[string]interface{}{
-		"name": name, "amount": amount, "period": period, "category_id": categoryID,
-	})
-
-	return mcp.NewToolResultText(fmt.Sprintf("Created %s budget %q of %s\n  ID: %s\n",
-		budget.Period, budget.Name, formatCents(budget.Amount), budget.ID)), nil
+	return &writeOp{Cost: 1, Run: func() (string, []auditEntry, *mcp.CallToolResult) {
+		budget, err := s.services.Budgets.CreateBudget(c.UserID, categoryID, name, amount, period)
+		if err != nil {
+			return "", nil, serviceError("create budget", err)
+		}
+		return fmt.Sprintf("Created %s budget %q of %s\n  ID: %s\n", budget.Period, budget.Name, formatCents(budget.Amount), budget.ID),
+			[]auditEntry{{
+				Action: "MCP_CREATE_BUDGET", ResourceType: "budget", ResourceID: budget.ID,
+				Changes: map[string]interface{}{"name": name, "amount": amount, "period": period, "category_id": categoryID},
+			}}, nil
+	}}, nil
 }
 
-func (s *Server) handleUpdateBudget(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	c, denied := s.authorizeWrite(ctx, budgetsWriteScope, 1)
-	if denied != nil {
-		return denied, nil
-	}
-	args := req.GetArguments()
-
+func (s *Server) prepareUpdateBudget(c caller, args map[string]interface{}) (*writeOp, *mcp.CallToolResult) {
 	budgetID, res := requiredString(args, "budget_id")
 	if res != nil {
-		return res, nil
+		return nil, res
 	}
-	before, err := s.services.Budgets.GetBudgetByID(c.UserID, budgetID)
-	if err != nil {
-		return serviceError("find budget", err), nil
-	}
-
-	changes := map[string]interface{}{}
 	name := stringArg(args, "name")
-	if len(name) > maxBudgetNameLen {
-		return mcp.NewToolResultError(fmt.Sprintf("name must be at most %d characters", maxBudgetNameLen)), nil
+	if res := checkLength("name", name, maxNameLen); res != nil {
+		return nil, res
 	}
-	if name != "" {
-		changes["name"] = map[string]interface{}{"from": before.Name, "to": name}
-	}
-	var amount *int64
-	if cents, present, res := s.amountArg(args); res != nil {
-		return res, nil
-	} else if present {
-		amount = &cents
-		changes["amount"] = map[string]interface{}{"from": before.Amount, "to": cents}
+	amount, amountGiven, res := s.amountArg(args)
+	if res != nil {
+		return nil, res
 	}
 	var period *models.BudgetPeriod
 	if v := stringArg(args, "period"); v != "" {
 		p, res := parseBudgetPeriod(v)
 		if res != nil {
-			return res, nil
+			return nil, res
 		}
 		period = &p
-		changes["period"] = map[string]interface{}{"from": before.Period, "to": p}
 	}
 	var isActive *bool
 	if v, ok := args["is_active"].(bool); ok {
 		isActive = &v
-		changes["is_active"] = map[string]interface{}{"from": before.IsActive, "to": v}
 	}
-	if len(changes) == 0 {
-		return mcp.NewToolResultError("nothing to update: give at least one of name, amount, period, is_active"), nil
+	if name == "" && !amountGiven && period == nil && isActive == nil {
+		return nil, mcp.NewToolResultError("nothing to update: give at least one of name, amount, period, is_active")
 	}
 
-	budget, err := s.services.Budgets.UpdateBudget(c.UserID, budgetID, name, amount, period, isActive)
+	before, err := s.services.Budgets.GetBudgetByID(c.UserID, budgetID)
 	if err != nil {
-		return serviceError("update budget", err), nil
+		return nil, serviceError("find budget", err)
 	}
-	s.audit(c, "update_budget", "MCP_UPDATE_BUDGET", "budget", budget.ID, changes)
+	changes := map[string]interface{}{}
+	var newAmount *int64
+	if name != "" {
+		changes["name"] = change(before.Name, name)
+	}
+	if amountGiven {
+		newAmount = &amount
+		changes["amount"] = change(before.Amount, amount)
+	}
+	if period != nil {
+		changes["period"] = change(before.Period, *period)
+	}
+	if isActive != nil {
+		changes["is_active"] = change(before.IsActive, *isActive)
+	}
 
-	state := "active"
-	if !budget.IsActive {
-		state = "paused"
-	}
-	return mcp.NewToolResultText(fmt.Sprintf("Updated %s budget %q: %s (%s)\n  ID: %s\n",
-		budget.Period, budget.Name, formatCents(budget.Amount), state, budget.ID)), nil
+	return &writeOp{Cost: 1, Run: func() (string, []auditEntry, *mcp.CallToolResult) {
+		budget, err := s.services.Budgets.UpdateBudget(c.UserID, budgetID, name, newAmount, period, isActive)
+		if err != nil {
+			return "", nil, serviceError("update budget", err)
+		}
+		state := "active"
+		if !budget.IsActive {
+			state = "paused"
+		}
+		return fmt.Sprintf("Updated %s budget %q: %s (%s)\n  ID: %s\n",
+				budget.Period, budget.Name, formatCents(budget.Amount), state, budget.ID),
+			[]auditEntry{{Action: "MCP_UPDATE_BUDGET", ResourceType: "budget", ResourceID: budget.ID, Changes: changes}}, nil
+	}}, nil
 }

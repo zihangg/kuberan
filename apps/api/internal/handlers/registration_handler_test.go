@@ -264,3 +264,18 @@ func TestRegistrationHandler_WriteScopes(t *testing.T) {
 		}
 	})
 }
+
+func TestRegistrationHandler_TruncatesClientName(t *testing.T) {
+	admin := &mockHydraAdmin{}
+	handler := NewRegistrationHandler(admin, &recordingAuditService{}, testScopes)
+
+	rec := doRequest(setupRegistrationRouter(handler), "POST", "/oauth/register",
+		`{"redirect_uris":["https://claude.ai/cb"],"client_name":"`+strings.Repeat("ü", 400)+`"}`)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if n := len([]rune(admin.lastCreateClient.ClientName)); n != maxClientNameLen {
+		t.Errorf("client name has %d characters, want %d", n, maxClientNameLen)
+	}
+}

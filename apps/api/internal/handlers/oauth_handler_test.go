@@ -34,6 +34,8 @@ type mockHydraAdmin struct {
 	rejectLoginCalled   bool
 	createClientCalled  bool
 	revokeErr           error
+	sessions            []hydra.ConsentSession
+	sessionsErr         error
 	revokeCalled        bool
 	lastRevokeSubject   string
 	lastRevokeClient    string
@@ -104,6 +106,10 @@ func (m *mockHydraAdmin) CreateClient(ctx context.Context, in hydra.OAuth2Client
 		ResponseTypes:           in.ResponseTypes,
 		TokenEndpointAuthMethod: in.TokenEndpointAuthMethod,
 	}, nil
+}
+
+func (m *mockHydraAdmin) ListConsentSessions(context.Context, string) ([]hydra.ConsentSession, error) {
+	return m.sessions, m.sessionsErr
 }
 
 func (m *mockHydraAdmin) RevokeConsentSessions(_ context.Context, subject, clientID string) error {
@@ -737,6 +743,48 @@ func TestOAuthHandler_ListConnectedApps(t *testing.T) {
 		}
 	})
 
+	t.Run("adds Hydra-only connections as legacy entries", func(t *testing.T) {
+		admin := &mockHydraAdmin{sessions: []hydra.ConsentSession{
+			{ConsentRequest: hydra.ConsentSessionRequest{Client: hydra.OAuth2Client{ClientID: "known", ClientName: "Claude"}},
+				GrantScope: []string{"read:accounts"}},
+			{ConsentRequest: hydra.ConsentSessionRequest{Client: hydra.OAuth2Client{ClientID: "old", ClientName: "Old connector"}},
+				GrantScope: []string{"read:accounts", "offline_access"}},
+			{ConsentRequest: hydra.ConsentSessionRequest{Client: hydra.OAuth2Client{ClientID: "old", ClientName: "Old connector"}},
+				GrantScope: []string{"read:budgets"}},
+		}}
+		grants := &mockGrantService{grant: rememberedGrant("read:accounts", "read:accounts")}
+		handler := NewOAuthHandler(admin, &mockUserService{}, grants, &mockAuditService{}, testScopes, testResourceURL)
+
+		rec := doRequest(setupOAuthRouter(handler), "GET", "/oauth/clients", "")
+
+		clients, _ := parseJSON(t, rec)["clients"].([]interface{})
+		if len(clients) != 2 {
+			t.Fatalf("expected the grant plus one legacy client, got %v", clients)
+		}
+		legacy, _ := clients[1].(map[string]interface{})
+		if legacy["client_id"] != "old" || legacy["legacy"] != true {
+			t.Errorf("unexpected legacy entry: %v", legacy)
+		}
+		if !slices.Equal(toStrings(legacy["scopes"]), []string{"read:accounts", "read:budgets"}) {
+			t.Errorf("legacy scopes must merge sessions and drop protocol scopes, got %v", legacy["scopes"])
+		}
+		if first, _ := clients[0].(map[string]interface{}); first["legacy"] != nil {
+			t.Errorf("a client with a grant must not be marked legacy: %v", first)
+		}
+	})
+
+	t.Run("still lists grants when Hydra is unreachable", func(t *testing.T) {
+		admin := &mockHydraAdmin{sessionsErr: apperrors.ErrInternalServer}
+		grants := &mockGrantService{grant: rememberedGrant("read:accounts", "read:accounts")}
+		handler := NewOAuthHandler(admin, &mockUserService{}, grants, &mockAuditService{}, testScopes, testResourceURL)
+
+		rec := doRequest(setupOAuthRouter(handler), "GET", "/oauth/clients", "")
+
+		if rec.Code != http.StatusOK || len(parseJSON(t, rec)["clients"].([]interface{})) != 1 {
+			t.Fatalf("expected the grant to be listed, got %d %s", rec.Code, rec.Body.String())
+		}
+	})
+
 	t.Run("returns an empty list, not null", func(t *testing.T) {
 		handler := NewOAuthHandler(&mockHydraAdmin{}, &mockUserService{}, &mockGrantService{}, &mockAuditService{}, testScopes, testResourceURL)
 
@@ -786,31 +834,51 @@ func TestOAuthHandler_DisconnectApp(t *testing.T) {
 		}
 	})
 
-	t.Run("returns 404 for an unknown client", func(t *testing.T) {
+	t.Run("revokes in Hydra even without a grant (a pre-grant connection)", func(t *testing.T) {
 		admin := &mockHydraAdmin{}
-		handler := NewOAuthHandler(admin, &mockUserService{}, &mockGrantService{}, &mockAuditService{}, testScopes, testResourceURL)
+		grants := &mockGrantService{}
+		handler := NewOAuthHandler(admin, &mockUserService{}, grants, &mockAuditService{}, testScopes, testResourceURL)
 
-		rec := doRequest(setupOAuthRouter(handler), "DELETE", "/oauth/clients/nope", "")
+		rec := doRequest(setupOAuthRouter(handler), "DELETE", "/oauth/clients/legacy-client", "")
 
-		if rec.Code != http.StatusNotFound {
-			t.Fatalf("expected 404, got %d", rec.Code)
+		if rec.Code != http.StatusNoContent {
+			t.Fatalf("expected 204, got %d: %s", rec.Code, rec.Body.String())
 		}
-		assertErrorCode(t, parseJSON(t, rec), apperrors.ErrOAuthClientNotFound.Code)
-		if admin.revokeCalled {
-			t.Error("Hydra must not be called for an unknown client")
+		if !admin.revokeCalled || admin.lastRevokeClient != "legacy-client" || admin.lastRevokeSubject != "user-7" {
+			t.Errorf("expected a Hydra revoke for user-7/legacy-client, got %v %q %q", admin.revokeCalled, admin.lastRevokeSubject, admin.lastRevokeClient)
+		}
+		if grants.revokedFor != "" {
+			t.Error("there is no grant to revoke")
 		}
 	})
 
-	t.Run("returns 404 for an already revoked client", func(t *testing.T) {
+	t.Run("an already revoked grant still retries the Hydra revoke", func(t *testing.T) {
+		admin := &mockHydraAdmin{}
 		grant := rememberedGrant("read:accounts", "read:accounts")
 		revokedAt := time.Now()
 		grant.RevokedAt = &revokedAt
-		handler := NewOAuthHandler(&mockHydraAdmin{}, &mockUserService{}, &mockGrantService{grant: grant}, &mockAuditService{}, testScopes, testResourceURL)
+		grants := &mockGrantService{grant: grant}
+		handler := NewOAuthHandler(admin, &mockUserService{}, grants, &mockAuditService{}, testScopes, testResourceURL)
 
 		rec := doRequest(setupOAuthRouter(handler), "DELETE", "/oauth/clients/known", "")
 
-		if rec.Code != http.StatusNotFound {
-			t.Fatalf("expected 404, got %d", rec.Code)
+		if rec.Code != http.StatusNoContent || !admin.revokeCalled {
+			t.Fatalf("expected 204 and a Hydra revoke, got %d revoke=%v", rec.Code, admin.revokeCalled)
+		}
+		if grants.revokedFor != "" {
+			t.Error("an already revoked grant must not be revoked again")
+		}
+	})
+
+	t.Run("propagates grant lookup failures without calling Hydra", func(t *testing.T) {
+		admin := &mockHydraAdmin{}
+		grants := &mockGrantService{getErr: apperrors.ErrInternalServer}
+		handler := NewOAuthHandler(admin, &mockUserService{}, grants, &mockAuditService{}, testScopes, testResourceURL)
+
+		rec := doRequest(setupOAuthRouter(handler), "DELETE", "/oauth/clients/known", "")
+
+		if rec.Code != http.StatusInternalServerError || admin.revokeCalled {
+			t.Fatalf("expected 500 and no Hydra call, got %d revoke=%v", rec.Code, admin.revokeCalled)
 		}
 	})
 }

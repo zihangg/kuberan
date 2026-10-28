@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -28,8 +29,12 @@ type AdminClient interface {
 	GetClient(ctx context.Context, clientID string) (*OAuth2Client, error)
 	CreateClient(ctx context.Context, in OAuth2ClientCreate) (*OAuth2Client, error)
 
-	// RevokeConsentSessions revokes every consent subject has given clientID,
-	// along with the access and refresh tokens issued under it.
+	// ListConsentSessions lists the consent sessions subject has granted, across
+	// all clients.
+	ListConsentSessions(ctx context.Context, subject string) ([]ConsentSession, error)
+	// RevokeConsentSessions revokes every consent subject has given clientID and
+	// the refresh tokens issued under it. Access tokens already issued (JWTs,
+	// validated offline) stay valid until they expire.
 	RevokeConsentSessions(ctx context.Context, subject, clientID string) error
 }
 
@@ -149,6 +154,23 @@ func (c *client) CreateClient(ctx context.Context, in OAuth2ClientCreate) (*OAut
 	}
 	return &out, nil
 }
+
+// ListConsentSessions lists subject's consent sessions (the first page of up to
+// maxConsentSessions, which is far more clients than one user connects).
+func (c *client) ListConsentSessions(ctx context.Context, subject string) ([]ConsentSession, error) {
+	if subject == "" {
+		return nil, apperrors.WithMessage(apperrors.ErrInvalidInput, "subject is required")
+	}
+	var out []ConsentSession
+	if err := c.do(ctx, http.MethodGet, "/admin/oauth2/auth/sessions/consent",
+		url.Values{"subject": {subject}, "page_size": {strconv.Itoa(maxConsentSessions)}}, nil, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// maxConsentSessions is the page size requested by ListConsentSessions.
+const maxConsentSessions = 250
 
 // RevokeConsentSessions revokes subject's consent sessions for clientID. Hydra
 // invalidates the refresh tokens issued under them, so the client cannot mint

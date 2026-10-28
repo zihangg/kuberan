@@ -519,12 +519,16 @@ export interface OAuthConsentAcceptRequest {
 }
 
 // An OAuth client (e.g. a Claude connector) the user has granted access to.
+// legacy marks a connection made before per-scope grants: it can read but
+// never write, and its connection date is unknown.
 export interface ConnectedApp {
   client_id: string;
   client_name: string;
   scopes: string[];
   auto_accept: boolean;
-  created_at: string;
+  legacy?: boolean;
+  created_at?: string;
+  // Updated only when the app makes a change (an MCP write), not on reads.
   last_used_at?: string;
 }
 

@@ -17,6 +17,7 @@ import (
 // protocolScopes are the OIDC / refresh-token scopes that always pass through
 // consent in addition to the registered API scopes. Dropping
 // offline_access here would silently break silent refresh (Phase 3).
+// Keep in sync with PROTOCOL_SCOPES in apps/web/src/lib/oauth-scopes.ts.
 var protocolScopes = map[string]bool{
 	"openid":         true,
 	"offline":        true,
@@ -432,7 +433,8 @@ func capScopes(requested, allowed []string) []string {
 }
 
 // writeScopePrefix marks scopes that let a client change the user's data
-// (plan 022). They are never granted without an explicit opt-in.
+// (plan 022). They are never granted without an explicit opt-in. Keep in sync
+// with isWriteScope in apps/web/src/lib/oauth-scopes.ts.
 const writeScopePrefix = "write:"
 
 // apiScopes returns scopes without the OIDC/refresh protocol scopes.
