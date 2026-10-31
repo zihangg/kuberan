@@ -144,7 +144,7 @@ func setupApp(t *testing.T) *testApp {
 		Investment:           handlers.NewInvestmentHandler(investmentService, auditService),
 		Security:             handlers.NewSecurityHandler(securityService, auditService),
 		Snapshot:             handlers.NewPortfolioSnapshotHandler(snapshotService, auditService),
-		FixedDepositPipeline: handlers.NewFixedDepositPipelineHandler(fdService),
+		FixedDepositPipeline: handlers.NewFixedDepositPipelineHandler(fdService, auditService),
 		Telegram:             handlers.NewTelegramHandler(telegramService, auditService),
 	}, handlers.RouteSecrets{
 		BotInternalSecret: "test-bot-secret",

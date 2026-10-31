@@ -136,7 +136,7 @@ func run() error {
 	investmentHandler := handlers.NewInvestmentHandler(investmentService, auditService)
 	securityHandler := handlers.NewSecurityHandler(securityService, auditService)
 	snapshotHandler := handlers.NewPortfolioSnapshotHandler(snapshotService, auditService)
-	fdPipelineHandler := handlers.NewFixedDepositPipelineHandler(fdService)
+	fdPipelineHandler := handlers.NewFixedDepositPipelineHandler(fdService, auditService)
 	telegramHandler := handlers.NewTelegramHandler(telegramService, auditService)
 
 	// Register custom validators before routes
