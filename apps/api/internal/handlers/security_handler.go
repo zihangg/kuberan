@@ -40,7 +40,7 @@ type CreateSecurityRequest struct {
 
 // RecordPricesRequest represents the request payload for bulk price recording.
 type RecordPricesRequest struct {
-	Prices []RecordPriceEntry `json:"prices" binding:"required,min=1,dive"`
+	Prices []RecordPriceEntry `json:"prices" binding:"required,min=1,max=5000,dive"`
 }
 
 // RecordPriceEntry represents a single price entry in a bulk request.

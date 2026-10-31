@@ -394,6 +394,7 @@ DB_USER=kuberan
 DB_PASSWORD=kuberan
 DB_NAME=kuberan
 DB_SSLMODE=disable
+DB_MAX_OPEN_CONNS=20             # pool defaults; also DB_MAX_IDLE_CONNS=10, DB_CONN_MAX_IDLE_TIME=5m, DB_CONN_MAX_LIFETIME=1h
 JWT_SECRET=<required in production>
 JWT_EXPIRES_IN=24h               # config default; access-token lifetime is hardcoded to 15m in middleware
 PIPELINE_API_KEY=<key for pipeline endpoints; shared with the oracle>

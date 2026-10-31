@@ -817,7 +817,7 @@ func (s *accountService) enrichInvestmentBalances(accounts []models.Account) err
 	// Accumulate market value per account
 	balances := make(map[string]int64)
 	for _, h := range holdings {
-		balances[h.AccountID] += int64(h.Quantity * float64(prices[h.SecurityID]))
+		balances[h.AccountID] += valueCents(h.Quantity, prices[h.SecurityID])
 	}
 
 	// Set balances on the account slice

@@ -92,6 +92,10 @@ var (
 	ErrInvalidTypeChange      = &AppError{Code: "INVALID_TYPE_CHANGE", Message: "Cannot change transaction type to or from transfer/investment", StatusCode: http.StatusBadRequest}
 )
 
+// ErrTransferCurrencyMismatch rejects a transfer between accounts whose
+// currencies differ (no FX conversion is performed).
+var ErrTransferCurrencyMismatch = &AppError{Code: "TRANSFER_CURRENCY_MISMATCH", Message: "Cannot transfer between accounts with different currencies", StatusCode: http.StatusBadRequest}
+
 // Budget errors.
 var (
 	ErrBudgetNotFound      = &AppError{Code: "BUDGET_NOT_FOUND", Message: "Budget not found", StatusCode: http.StatusNotFound}
