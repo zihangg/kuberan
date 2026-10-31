@@ -80,10 +80,12 @@ func (s *Server) handleListReceivables(ctx context.Context, req mcp.CallToolRequ
 		}
 		filter.Kind = kind
 	}
-	if v, ok := args["counterparty"].(string); ok {
-		// The service normalizes the key the same way stored keys are derived.
-		filter.CounterpartyKey = v
+	counterparty, res := filterTextArg(args, "counterparty")
+	if res != nil {
+		return res, nil
 	}
+	// The service normalizes the key the same way stored keys are derived.
+	filter.CounterpartyKey = counterparty
 
 	result, err := s.services.Receivables.ListReceivables(userID, page, filter)
 	if err != nil {
@@ -101,12 +103,12 @@ func (s *Server) handleListReceivables(ctx context.Context, req mcp.CallToolRequ
 	for i := range result.Data {
 		r := &result.Data[i]
 		sb.WriteString(fmt.Sprintf("  %s  [%s]  %s  status: %s\n",
-			r.CounterpartyName, r.Kind, formatCents(r.Amount), r.Status))
+			untrusted(r.CounterpartyName), r.Kind, formatCents(r.Amount), r.Status))
 		sb.WriteString(fmt.Sprintf("    paid %s, written off %s, outstanding %s\n",
 			formatCents(r.PaidAmount), formatCents(r.WrittenOffAmount), formatCents(r.OutstandingAmount())))
 		if r.Transaction != nil {
 			sb.WriteString(fmt.Sprintf("    Expense: %s on %s (total %s)\n",
-				r.Transaction.Description, r.Transaction.Date.Format("2006-01-02"), formatCents(r.Transaction.Amount)))
+				untrusted(r.Transaction.Description), r.Transaction.Date.Format("2006-01-02"), formatCents(r.Transaction.Amount)))
 		}
 		sb.WriteString(fmt.Sprintf("    ID: %s\n", r.ID))
 	}
@@ -138,8 +140,8 @@ func (s *Server) handleGetReceivablesSummary(ctx context.Context, _ mcp.CallTool
 
 	sb.WriteString("\nBy counterparty:\n")
 	for _, c := range summary.ByCounterparty {
-		sb.WriteString(fmt.Sprintf("  %-25s %12s  (%d open, oldest %s)\n",
-			c.CounterpartyName, formatCents(c.Outstanding), c.OpenCount, c.OldestDate.Format("2006-01-02")))
+		sb.WriteString(fmt.Sprintf("  %-27s %12s  (%d open, oldest %s)\n",
+			untrusted(c.CounterpartyName), formatCents(c.Outstanding), c.OpenCount, c.OldestDate.Format("2006-01-02")))
 	}
 
 	sb.WriteString("\nBy kind:\n")

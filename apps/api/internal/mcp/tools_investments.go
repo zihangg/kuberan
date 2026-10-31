@@ -55,19 +55,16 @@ func (s *Server) handleGetPortfolio(ctx context.Context, _ mcp.CallToolRequest) 
 	holdings, err := s.services.Investments.GetAllInvestments(userID, services.InvestmentStatusOpen, page)
 	if err == nil && len(holdings.Data) > 0 {
 		sb.WriteString("\n  Holdings:\n")
-		sb.WriteString(fmt.Sprintf("    %-8s %-20s %10s %12s %12s\n",
+		sb.WriteString(fmt.Sprintf("    %-8s %-25s %10s %12s %12s\n",
 			"Symbol", "Name", "Qty", "Cost Basis", "Cur. Value"))
-		sb.WriteString(fmt.Sprintf("    %-8s %-20s %10s %12s %12s\n",
+		sb.WriteString(fmt.Sprintf("    %-8s %-25s %10s %12s %12s\n",
 			"------", "----", "---", "----------", "----------"))
 
 		for _, inv := range holdings.Data {
-			symbol := inv.Security.Symbol
-			name := inv.Security.Name
-			if len(name) > 20 {
-				name = name[:17] + "..."
-			}
+			symbol := cleanText(inv.Security.Symbol, 12)
+			name := untrusted(cleanText(inv.Security.Name, 20))
 			currentValue := int64(math.Round(inv.Quantity * float64(inv.CurrentPrice)))
-			sb.WriteString(fmt.Sprintf("    %-8s %-20s %10.2f %12s %12s\n",
+			sb.WriteString(fmt.Sprintf("    %-8s %-25s %10.2f %12s %12s\n",
 				symbol, name, inv.Quantity, formatCents(inv.CostBasis), formatCents(currentValue)))
 		}
 	}

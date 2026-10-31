@@ -4,12 +4,10 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/mark3labs/mcp-go/mcp"
 
 	"kuberan/internal/models"
-	"kuberan/internal/pagination"
 	"kuberan/internal/services"
 )
 
@@ -42,14 +40,14 @@ func (s *Server) registerTransactionTools() {
 	s.mcp.AddTool(
 		readTool("get_monthly_summary",
 			mcp.WithDescription("Get monthly income vs expenses summary for the last N months. Shows net savings trend."),
-			mcp.WithNumber("months", mcp.Description("Number of months to look back (default 6)")),
+			mcp.WithNumber("months", mcp.Description("Number of months to look back (default 6, 1 to 24)")),
 		),
 		s.handleGetMonthlySummary,
 	)
 
 	s.mcp.AddTool(
 		readTool("get_daily_spending",
-			mcp.WithDescription("Get daily expense totals for a date range. Useful for spotting spending patterns."),
+			mcp.WithDescription("Get daily expense totals for a date range of at most 366 days. Useful for spotting spending patterns."),
 			mcp.WithString("from_date", mcp.Required(), mcp.Description("Start date (YYYY-MM-DD)")),
 			mcp.WithString("to_date", mcp.Required(), mcp.Description("End date (YYYY-MM-DD)")),
 		),
@@ -58,7 +56,7 @@ func (s *Server) registerTransactionTools() {
 
 	s.mcp.AddTool(
 		readTool("get_daily_summary",
-			mcp.WithDescription("Get daily income and expense totals for a date range. Useful for a calendar-style view of cash flow."),
+			mcp.WithDescription("Get daily income and expense totals for a date range of at most 366 days. Useful for a calendar-style view of cash flow."),
 			mcp.WithString("from_date", mcp.Required(), mcp.Description("Start date (YYYY-MM-DD)")),
 			mcp.WithString("to_date", mcp.Required(), mcp.Description("End date (YYYY-MM-DD)")),
 		),
@@ -108,23 +106,23 @@ func (s *Server) handleListTransactions(ctx context.Context, req mcp.CallToolReq
 			return mcp.NewToolResultError("invalid type, expected one of: income, expense, transfer, investment, reimbursement"), nil
 		}
 	}
-	if v, ok := args["from_date"].(string); ok && v != "" {
-		if t, err := time.Parse("2006-01-02", v); err == nil {
-			filter.FromDate = &t
+	var res *mcp.CallToolResult
+	if filter.FromDate, res = optionalArgDate(args, "from_date"); res != nil {
+		return res, nil
+	}
+	if filter.ToDate, res = optionalArgDate(args, "to_date"); res != nil {
+		return res, nil
+	}
+	if filter.FromDate != nil && filter.ToDate != nil {
+		if res := checkRange(*filter.FromDate, *filter.ToDate, 0); res != nil {
+			return res, nil
 		}
 	}
-	if v, ok := args["to_date"].(string); ok && v != "" {
-		if t, err := time.Parse("2006-01-02", v); err == nil {
-			filter.ToDate = &t
-		}
+	if filter.MinAmount, res = amountFilterArg(args, "min_amount"); res != nil {
+		return res, nil
 	}
-	if v, ok := args["min_amount"].(float64); ok {
-		cents := dollarsToCents(v)
-		filter.MinAmount = &cents
-	}
-	if v, ok := args["max_amount"].(float64); ok {
-		cents := dollarsToCents(v)
-		filter.MaxAmount = &cents
+	if filter.MaxAmount, res = amountFilterArg(args, "max_amount"); res != nil {
+		return res, nil
 	}
 
 	result, err := s.services.Transactions.GetUserTransactions(userID, page, filter)
@@ -142,38 +140,22 @@ func (s *Server) handleListTransactions(ctx context.Context, req mcp.CallToolReq
 	for _, t := range result.Data {
 		category := "uncategorized"
 		if t.Category != nil {
-			category = t.Category.Name
+			category = untrusted(t.Category.Name)
 		}
-		sb.WriteString(fmt.Sprintf("  %s  %-10s  %12s  %-20s  %s\n",
+		sb.WriteString(fmt.Sprintf("  %s  %-10s  %12s  %-22s  %s\n",
 			t.Date.Format("2006-01-02"),
 			t.Type,
 			formatCents(t.Amount),
 			category,
-			t.Description,
+			untrusted(t.Description),
 		))
 		if note := transactionNote(t); note != "" {
 			sb.WriteString("    " + note + "\n")
 		}
-		sb.WriteString(fmt.Sprintf("    ID: %s  Account: %s\n", t.ID, t.Account.Name))
+		sb.WriteString(fmt.Sprintf("    ID: %s  Account: %s\n", t.ID, untrusted(t.Account.Name)))
 	}
 
 	return mcp.NewToolResultText(sb.String()), nil
-}
-
-// parsePage reads the optional page (default 1) and page_size (default 20,
-// capped at 100) tool arguments.
-func parsePage(args map[string]interface{}) pagination.PageRequest {
-	page := pagination.PageRequest{Page: 1, PageSize: 20}
-	if v, ok := args["page"].(float64); ok && v > 0 {
-		page.Page = int(v)
-	}
-	if v, ok := args["page_size"].(float64); ok && v > 0 {
-		page.PageSize = int(v)
-		if page.PageSize > 100 {
-			page.PageSize = 100
-		}
-	}
-	return page
 }
 
 // transactionNote returns an extra line describing shared-expense semantics
@@ -205,17 +187,11 @@ func (s *Server) handleGetSpendingByCategory(ctx context.Context, req mcp.CallTo
 	}
 
 	args := req.GetArguments()
-	fromStr, _ := args["from_date"].(string)
-	toStr, _ := args["to_date"].(string)
-
-	from, err := time.Parse("2006-01-02", fromStr)
-	if err != nil {
-		return mcp.NewToolResultError("invalid from_date format, expected YYYY-MM-DD"), nil
+	from, to, res := dateRangeArgs(args, maxAggregateRangeDays)
+	if res != nil {
+		return res, nil
 	}
-	to, err := time.Parse("2006-01-02", toStr)
-	if err != nil {
-		return mcp.NewToolResultError("invalid to_date format, expected YYYY-MM-DD"), nil
-	}
+	fromStr, toStr := from.Format("2006-01-02"), to.Format("2006-01-02")
 
 	result, err := s.services.Transactions.GetSpendingByCategory(userID, from, to)
 	if err != nil {
@@ -225,7 +201,7 @@ func (s *Server) handleGetSpendingByCategory(ctx context.Context, req mcp.CallTo
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("Spending by Category (%s to %s):\n\n", fromStr, toStr))
 	for _, item := range result.Items {
-		sb.WriteString(fmt.Sprintf("  %-30s %12s\n", item.CategoryName, formatCents(item.Total)))
+		sb.WriteString(fmt.Sprintf("  %-32s %12s\n", untrusted(item.CategoryName), formatCents(item.Total)))
 	}
 	sb.WriteString(fmt.Sprintf("\n  Total: %s\n", formatCents(result.TotalSpent)))
 
@@ -242,10 +218,7 @@ func (s *Server) handleGetMonthlySummary(ctx context.Context, req mcp.CallToolRe
 	}
 
 	args := req.GetArguments()
-	months := 6
-	if v, ok := args["months"].(float64); ok && v > 0 {
-		months = int(v)
-	}
+	months := monthsArg(args)
 
 	items, err := s.services.Transactions.GetMonthlySummary(userID, months)
 	if err != nil {
@@ -280,17 +253,11 @@ func (s *Server) handleGetDailySpending(ctx context.Context, req mcp.CallToolReq
 	}
 
 	args := req.GetArguments()
-	fromStr, _ := args["from_date"].(string)
-	toStr, _ := args["to_date"].(string)
-
-	from, err := time.Parse("2006-01-02", fromStr)
-	if err != nil {
-		return mcp.NewToolResultError("invalid from_date format, expected YYYY-MM-DD"), nil
+	from, to, res := dateRangeArgs(args, maxDailyRangeDays)
+	if res != nil {
+		return res, nil
 	}
-	to, err := time.Parse("2006-01-02", toStr)
-	if err != nil {
-		return mcp.NewToolResultError("invalid to_date format, expected YYYY-MM-DD"), nil
-	}
+	fromStr, toStr := from.Format("2006-01-02"), to.Format("2006-01-02")
 
 	items, err := s.services.Transactions.GetDailySpending(userID, from, to)
 	if err != nil {
@@ -320,17 +287,11 @@ func (s *Server) handleGetDailySummary(ctx context.Context, req mcp.CallToolRequ
 	}
 
 	args := req.GetArguments()
-	fromStr, _ := args["from_date"].(string)
-	toStr, _ := args["to_date"].(string)
-
-	from, err := time.Parse("2006-01-02", fromStr)
-	if err != nil {
-		return mcp.NewToolResultError("invalid from_date format, expected YYYY-MM-DD"), nil
+	from, to, res := dateRangeArgs(args, maxDailyRangeDays)
+	if res != nil {
+		return res, nil
 	}
-	to, err := time.Parse("2006-01-02", toStr)
-	if err != nil {
-		return mcp.NewToolResultError("invalid to_date format, expected YYYY-MM-DD"), nil
-	}
+	fromStr, toStr := from.Format("2006-01-02"), to.Format("2006-01-02")
 
 	items, err := s.services.Transactions.GetDailySummary(userID, from, to)
 	if err != nil {
@@ -362,25 +323,13 @@ func (s *Server) handleGetTopExpenses(ctx context.Context, req mcp.CallToolReque
 	}
 
 	args := req.GetArguments()
-	fromStr, _ := args["from_date"].(string)
-	toStr, _ := args["to_date"].(string)
+	from, to, res := dateRangeArgs(args, maxAggregateRangeDays)
+	if res != nil {
+		return res, nil
+	}
+	fromStr, toStr := from.Format("2006-01-02"), to.Format("2006-01-02")
 
-	from, err := time.Parse("2006-01-02", fromStr)
-	if err != nil {
-		return mcp.NewToolResultError("invalid from_date format, expected YYYY-MM-DD"), nil
-	}
-	to, err := time.Parse("2006-01-02", toStr)
-	if err != nil {
-		return mcp.NewToolResultError("invalid to_date format, expected YYYY-MM-DD"), nil
-	}
-
-	limit := 10
-	if v, ok := args["limit"].(float64); ok && v > 0 {
-		limit = int(v)
-		if limit > 100 {
-			limit = 100
-		}
-	}
+	limit := limitArg(args, "limit", 10)
 
 	var categoryID *string
 	if v, ok := args["category_id"].(string); ok && v != "" {
@@ -404,8 +353,9 @@ func (s *Server) handleGetTopExpenses(ctx context.Context, req mcp.CallToolReque
 		if item.PersonalAmount != nil {
 			effective = *item.PersonalAmount
 		}
-		sb.WriteString(fmt.Sprintf("  %2d. %-30s %12s  [%s / %s]  %s\n",
-			i+1, item.Description, formatCents(effective), item.CategoryName, item.AccountName, item.Date.Format("2006-01-02")))
+		sb.WriteString(fmt.Sprintf("  %2d. %-32s %12s  [%s / %s]  %s\n",
+			i+1, untrusted(item.Description), formatCents(effective), untrusted(item.CategoryName),
+			untrusted(item.AccountName), item.Date.Format("2006-01-02")))
 		if item.PersonalAmount != nil {
 			sb.WriteString("      " + sharedExpenseNote(*item.PersonalAmount, item.Amount) + "\n")
 		}
