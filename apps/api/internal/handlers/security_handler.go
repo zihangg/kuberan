@@ -204,6 +204,9 @@ func (h *SecurityHandler) RecordPrices(c *gin.Context) {
 		return
 	}
 
+	h.auditService.Log("", "PIPELINE_RECORD_PRICES", "security_price", "", c.ClientIP(),
+		map[string]interface{}{"prices_recorded": count})
+
 	c.JSON(http.StatusOK, gin.H{"prices_recorded": count})
 }
 
