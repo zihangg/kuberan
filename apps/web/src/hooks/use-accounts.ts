@@ -1,4 +1,9 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  keepPreviousData,
+  useQuery,
+  useMutation,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { apiClient } from "@/lib/api-client";
 import type { Account } from "@/types/models";
 import type {
@@ -29,6 +34,7 @@ export function useAccounts(params?: PaginationParams) {
       apiClient.get<PageResponse<Account>>("/api/v1/accounts", {
         ...params,
       }),
+    placeholderData: keepPreviousData,
   });
 }
 

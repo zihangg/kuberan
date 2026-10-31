@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api-client";
 import type { Security, SecurityPrice } from "@/types/models";
 import type {
@@ -26,6 +26,8 @@ export function useSecurities(params?: SecurityFilters) {
       apiClient.get<PageResponse<Security>>("/api/v1/securities", {
         ...params,
       }),
+    // Keep results on screen while a new page or search loads.
+    placeholderData: keepPreviousData,
   });
 }
 

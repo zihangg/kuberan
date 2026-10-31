@@ -1,4 +1,9 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  keepPreviousData,
+  useQuery,
+  useMutation,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { apiClient } from "@/lib/api-client";
 import type { Investment, InvestmentTransaction } from "@/types/models";
 import type {
@@ -54,6 +59,7 @@ export function useAllInvestments(params?: AllInvestmentsParams) {
       apiClient.get<PageResponse<Investment>>("/api/v1/investments", {
         ...params,
       }),
+    placeholderData: keepPreviousData,
   });
 }
 
@@ -82,6 +88,9 @@ export function useAccountInvestments(
         { ...params }
       ),
     enabled: !!accountId,
+    // Keep the current page while paging, never another account's holdings.
+    placeholderData: (previous, previousQuery) =>
+      previousQuery?.queryKey[2] === accountId ? previous : undefined,
   });
 }
 
@@ -97,6 +106,8 @@ export function useInvestmentTransactions(
         { ...params }
       ),
     enabled: !!investmentId,
+    placeholderData: (previous, previousQuery) =>
+      previousQuery?.queryKey[2] === investmentId ? previous : undefined,
   });
 }
 
