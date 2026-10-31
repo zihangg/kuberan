@@ -1730,6 +1730,7 @@ definitions:
     - transfer
     - investment
     - reimbursement
+    - opening_balance
     type: string
     x-enum-varnames:
     - TransactionTypeIncome
@@ -1737,6 +1738,7 @@ definitions:
     - TransactionTypeTransfer
     - TransactionTypeInvestment
     - TransactionTypeReimbursement
+    - TransactionTypeOpeningBalance
   kuberan_internal_pagination.PageResponse-kuberan_internal_models_Account:
     properties:
       data:
