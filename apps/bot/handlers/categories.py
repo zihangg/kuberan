@@ -2,6 +2,7 @@ import logging
 from telegram import Update
 from telegram.ext import ContextTypes
 from api_client import KuberanAPIClient, UserAPIClient
+from utils.formatting import display_icon
 
 logger = logging.getLogger(__name__)
 
@@ -17,13 +18,13 @@ def _format_category_tree(categories: list) -> str:
 
     lines = []
     for p in parents:
-        icon = p.get('icon', '')
+        icon = display_icon(p.get('icon', ''))
         prefix = f"{icon} " if icon else ""
         desc = f" - _{p['description']}_" if p.get('description') else ""
         lines.append(f"{prefix}*{p['name']}*{desc}")
 
         for child in children_map.get(p['id'], []):
-            child_icon = child.get('icon', '')
+            child_icon = display_icon(child.get('icon', ''))
             child_prefix = f"  {child_icon} " if child_icon else "  "
             child_desc = f" - _{child['description']}_" if child.get('description') else ""
             lines.append(f"{child_prefix}{child['name']}{child_desc}")

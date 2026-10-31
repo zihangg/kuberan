@@ -7,7 +7,7 @@ from telegram.ext import (
     MessageHandler, CallbackQueryHandler, filters
 )
 from api_client import KuberanAPIClient, UserAPIClient
-from utils.formatting import format_currency
+from utils.formatting import format_currency, display_icon, is_emoji_icon
 
 logger = logging.getLogger(__name__)
 
@@ -106,7 +106,7 @@ def _order_categories_hierarchically(categories: list) -> list:
 
 def _category_button_label(cat: dict) -> str:
     """Build a button label with optional icon and subcategory indicator."""
-    icon = cat.get('icon', '')
+    icon = display_icon(cat.get('icon', ''))
     name = cat['name']
     if icon:
         return f"{icon} {name}"
@@ -193,7 +193,7 @@ def _build_currency_keyboard():
 def _format_category_display(txn_data: dict) -> str:
     """Format category name with icon if available."""
     cat = txn_data.get('category_name') or "None"
-    icon = txn_data.get('category_icon', '')
+    icon = display_icon(txn_data.get('category_icon', ''))
     return f"{icon} {cat}".strip() if icon else cat
 
 
@@ -446,7 +446,7 @@ def create_transaction_conversation(api_client: KuberanAPIClient, txn_type: str)
         for i in range(0, len(top_level), 2):
             row = [
                 InlineKeyboardButton(
-                    f"{c.get('icon', '')} {c['name']}".strip(),
+                    f"{display_icon(c.get('icon', ''))} {c['name']}".strip(),
                     callback_data=f"ncp:{c['id']}"
                 )
                 for c in top_level[i:i + 2]
@@ -522,7 +522,17 @@ def create_transaction_conversation(api_client: KuberanAPIClient, txn_type: str)
             return ConversationHandler.END
 
         icon = update.message.text.strip()
-        txn['new_cat_icon'] = icon[:2] if icon else ""
+        if not is_emoji_icon(icon):
+            # The API only accepts a single emoji here; ask again rather than
+            # failing the whole category creation.
+            await update.message.reply_text(
+                "That isn't a single emoji. Send one emoji (e.g. ☕ 🍕 💰), or tap Skip:",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("Skip", callback_data="nci:skip")]
+                ])
+            )
+            return NEW_CAT_ICON
+        txn['new_cat_icon'] = icon
         return await _create_new_category_and_confirm(txn, update.message.reply_text)
 
     async def handle_new_cat_icon_skip(update: Update, context: ContextTypes.DEFAULT_TYPE):
