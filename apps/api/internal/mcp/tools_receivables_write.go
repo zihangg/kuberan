@@ -79,9 +79,9 @@ func (s *Server) prepareRecordRepayment(c caller, args map[string]interface{}) (
 		}
 
 		var sb strings.Builder
-		sb.WriteString(fmt.Sprintf("Recorded repayment of %s on %s\n", formatCents(settlement.Amount), settlement.Date.Format("2006-01-02")))
+		fmt.Fprintf(&sb, "Recorded repayment of %s on %s\n", formatCents(settlement.Amount), settlement.Date.Format("2006-01-02"))
 		sb.WriteString(receivableLine(rec))
-		sb.WriteString(fmt.Sprintf("  Repayment transaction ID: %s\n", settlement.TransactionID))
+		fmt.Fprintf(&sb, "  Repayment transaction ID: %s\n", settlement.TransactionID)
 		sb.WriteString(s.balanceLine(c.UserID, accountID))
 		return sb.String(), []auditEntry{{
 			Action: "MCP_RECORD_REPAYMENT", ResourceType: "receivable", ResourceID: rec.ID,

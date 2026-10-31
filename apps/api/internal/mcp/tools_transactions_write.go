@@ -156,11 +156,11 @@ func (s *Server) prepareCreateTransaction(c caller, args map[string]interface{})
 		}
 
 		var sb strings.Builder
-		sb.WriteString(fmt.Sprintf("Created %s of %s on %s: %s\n",
-			txn.Type, formatCents(txn.Amount), txn.Date.Format("2006-01-02"), untrusted(txn.Description)))
-		sb.WriteString(fmt.Sprintf("  ID: %s\n", txn.ID))
+		fmt.Fprintf(&sb, "Created %s of %s on %s: %s\n",
+			txn.Type, formatCents(txn.Amount), txn.Date.Format("2006-01-02"), untrusted(txn.Description))
+		fmt.Fprintf(&sb, "  ID: %s\n", txn.ID)
 		if txn.CategoryID != nil {
-			sb.WriteString(fmt.Sprintf("  Category ID: %s\n", *txn.CategoryID))
+			fmt.Fprintf(&sb, "  Category ID: %s\n", *txn.CategoryID)
 		}
 		sb.WriteString(s.balanceLine(c.UserID, accountID))
 		return sb.String(), []auditEntry{{
@@ -199,8 +199,8 @@ func (s *Server) prepareCreateTransfer(c caller, args map[string]interface{}) (*
 		}
 
 		var sb strings.Builder
-		sb.WriteString(fmt.Sprintf("Transferred %s on %s\n", formatCents(txn.Amount), txn.Date.Format("2006-01-02")))
-		sb.WriteString(fmt.Sprintf("  ID: %s\n", txn.ID))
+		fmt.Fprintf(&sb, "Transferred %s on %s\n", formatCents(txn.Amount), txn.Date.Format("2006-01-02"))
+		fmt.Fprintf(&sb, "  ID: %s\n", txn.ID)
 		sb.WriteString(s.balanceLine(c.UserID, fromID))
 		sb.WriteString(s.balanceLine(c.UserID, toID))
 		return sb.String(), []auditEntry{{
@@ -307,9 +307,9 @@ func (s *Server) prepareUpdateTransaction(c caller, args map[string]interface{})
 		}
 
 		var sb strings.Builder
-		sb.WriteString(fmt.Sprintf("Updated transaction: %s  %s  %s  %s\n",
-			txn.Date.Format("2006-01-02"), txn.Type, formatCents(txn.Amount), untrusted(txn.Description)))
-		sb.WriteString(fmt.Sprintf("  ID: %s\n", txn.ID))
+		fmt.Fprintf(&sb, "Updated transaction: %s  %s  %s  %s\n",
+			txn.Date.Format("2006-01-02"), txn.Type, formatCents(txn.Amount), untrusted(txn.Description))
+		fmt.Fprintf(&sb, "  ID: %s\n", txn.ID)
 		sb.WriteString(note)
 		sb.WriteString(s.balanceLine(c.UserID, txn.AccountID))
 		return sb.String(), []auditEntry{{
@@ -371,7 +371,7 @@ func (s *Server) prepareCategorizeTransactions(c caller, args map[string]interfa
 		}
 
 		var sb strings.Builder
-		sb.WriteString(fmt.Sprintf("Set category %s on %d of %d transactions.\n", untrusted(category.Name), len(audits), len(ids)))
+		fmt.Fprintf(&sb, "Set category %s on %d of %d transactions.\n", untrusted(category.Name), len(audits), len(ids))
 		if len(skipped) > 0 {
 			sb.WriteString("Skipped:\n")
 			for _, line := range skipped {

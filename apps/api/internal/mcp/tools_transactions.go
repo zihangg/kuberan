@@ -135,7 +135,7 @@ func (s *Server) handleListTransactions(ctx context.Context, req mcp.CallToolReq
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Transactions (page %d of %d, %d total):\n\n", result.Page, result.TotalPages, result.TotalItems))
+	fmt.Fprintf(&sb, "Transactions (page %d of %d, %d total):\n\n", result.Page, result.TotalPages, result.TotalItems)
 
 	for i := range result.Data {
 		t := &result.Data[i]
@@ -143,17 +143,16 @@ func (s *Server) handleListTransactions(ctx context.Context, req mcp.CallToolReq
 		if t.Category != nil {
 			category = untrusted(t.Category.Name)
 		}
-		sb.WriteString(fmt.Sprintf("  %s  %-10s  %12s  %-22s  %s\n",
+		fmt.Fprintf(&sb, "  %s  %-10s  %12s  %-22s  %s\n",
 			t.Date.Format("2006-01-02"),
 			t.Type,
 			formatCents(t.Amount),
 			category,
-			untrusted(t.Description),
-		))
+			untrusted(t.Description))
 		if note := transactionNote(*t); note != "" {
 			sb.WriteString("    " + note + "\n")
 		}
-		sb.WriteString(fmt.Sprintf("    ID: %s  Account: %s\n", t.ID, untrusted(t.Account.Name)))
+		fmt.Fprintf(&sb, "    ID: %s  Account: %s\n", t.ID, untrusted(t.Account.Name))
 	}
 
 	return mcp.NewToolResultText(sb.String()), nil
@@ -200,11 +199,11 @@ func (s *Server) handleGetSpendingByCategory(ctx context.Context, req mcp.CallTo
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Spending by Category (%s to %s):\n\n", fromStr, toStr))
+	fmt.Fprintf(&sb, "Spending by Category (%s to %s):\n\n", fromStr, toStr)
 	for _, item := range result.Items {
-		sb.WriteString(fmt.Sprintf("  %-32s %12s\n", untrusted(item.CategoryName), formatCents(item.Total)))
+		fmt.Fprintf(&sb, "  %-32s %12s\n", untrusted(item.CategoryName), formatCents(item.Total))
 	}
-	sb.WriteString(fmt.Sprintf("\n  Total: %s\n", formatCents(result.TotalSpent)))
+	fmt.Fprintf(&sb, "\n  Total: %s\n", formatCents(result.TotalSpent))
 
 	return mcp.NewToolResultText(sb.String()), nil
 }
@@ -231,14 +230,14 @@ func (s *Server) handleGetMonthlySummary(ctx context.Context, req mcp.CallToolRe
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Monthly Summary (last %d months):\n\n", months))
-	sb.WriteString(fmt.Sprintf("  %-10s %12s %12s %12s\n", "Month", "Income", "Expenses", "Net"))
-	sb.WriteString(fmt.Sprintf("  %-10s %12s %12s %12s\n", "-----", "------", "--------", "---"))
+	fmt.Fprintf(&sb, "Monthly Summary (last %d months):\n\n", months)
+	fmt.Fprintf(&sb, "  %-10s %12s %12s %12s\n", "Month", "Income", "Expenses", "Net")
+	fmt.Fprintf(&sb, "  %-10s %12s %12s %12s\n", "-----", "------", "--------", "---")
 
 	for _, item := range items {
 		net := item.Income - item.Expenses
-		sb.WriteString(fmt.Sprintf("  %-10s %12s %12s %12s\n",
-			item.Month, formatCents(item.Income), formatCents(item.Expenses), formatCents(net)))
+		fmt.Fprintf(&sb, "  %-10s %12s %12s %12s\n",
+			item.Month, formatCents(item.Income), formatCents(item.Expenses), formatCents(net))
 	}
 
 	return mcp.NewToolResultText(sb.String()), nil
@@ -270,9 +269,9 @@ func (s *Server) handleGetDailySpending(ctx context.Context, req mcp.CallToolReq
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Daily Spending (%s to %s):\n\n", fromStr, toStr))
+	fmt.Fprintf(&sb, "Daily Spending (%s to %s):\n\n", fromStr, toStr)
 	for _, item := range items {
-		sb.WriteString(fmt.Sprintf("  %s  %12s\n", item.Date, formatCents(item.Total)))
+		fmt.Fprintf(&sb, "  %s  %12s\n", item.Date, formatCents(item.Total))
 	}
 
 	return mcp.NewToolResultText(sb.String()), nil
@@ -304,11 +303,11 @@ func (s *Server) handleGetDailySummary(ctx context.Context, req mcp.CallToolRequ
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Daily Summary (%s to %s):\n\n", fromStr, toStr))
+	fmt.Fprintf(&sb, "Daily Summary (%s to %s):\n\n", fromStr, toStr)
 	for _, item := range items {
 		net := item.Income - item.Expenses
-		sb.WriteString(fmt.Sprintf("  %s  +%s  -%s  net %s\n",
-			item.Date, formatCents(item.Income), formatCents(item.Expenses), formatCents(net)))
+		fmt.Fprintf(&sb, "  %s  +%s  -%s  net %s\n",
+			item.Date, formatCents(item.Income), formatCents(item.Expenses), formatCents(net))
 	}
 
 	return mcp.NewToolResultText(sb.String()), nil
@@ -347,7 +346,7 @@ func (s *Server) handleGetTopExpenses(ctx context.Context, req mcp.CallToolReque
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Top Expenses (%s to %s):\n\n", fromStr, toStr))
+	fmt.Fprintf(&sb, "Top Expenses (%s to %s):\n\n", fromStr, toStr)
 	for i := range result.Items {
 		item := &result.Items[i]
 		// Items are ranked by the effective amount (the user's own share), so show that.
@@ -355,9 +354,9 @@ func (s *Server) handleGetTopExpenses(ctx context.Context, req mcp.CallToolReque
 		if item.PersonalAmount != nil {
 			effective = *item.PersonalAmount
 		}
-		sb.WriteString(fmt.Sprintf("  %2d. %-32s %12s  [%s / %s]  %s\n",
+		fmt.Fprintf(&sb, "  %2d. %-32s %12s  [%s / %s]  %s\n",
 			i+1, untrusted(item.Description), formatCents(effective), untrusted(item.CategoryName),
-			untrusted(item.AccountName), item.Date.Format("2006-01-02")))
+			untrusted(item.AccountName), item.Date.Format("2006-01-02"))
 		if item.PersonalAmount != nil {
 			sb.WriteString("      " + sharedExpenseNote(*item.PersonalAmount, item.Amount) + "\n")
 		}

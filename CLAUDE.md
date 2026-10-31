@@ -28,7 +28,7 @@ Monorepo with five applications:
 ## Technology Stack
 
 ### Backend (`apps/api/`)
-- **Language**: Go 1.24
+- **Language**: Go 1.26
 - **Framework**: Gin (HTTP router)
 - **ORM**: GORM with PostgreSQL 16
 - **Auth**: JWT (golang-jwt/jwt/v5) with bcrypt password hashing

@@ -153,7 +153,7 @@ func (h *OAuthHandler) Login(c *gin.Context) {
 	user, err := h.userService.AttemptLogin(req.Email, req.Password)
 	if err != nil {
 		h.auditService.Log("", "OAUTH_LOGIN_FAILED", "user", "", c.ClientIP(),
-			map[string]interface{}{"email": req.Email})
+			map[string]interface{}{"email": truncateRunes(req.Email, maxAuditEmailLen)})
 		respondWithError(c, err)
 		return
 	}

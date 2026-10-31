@@ -2,7 +2,7 @@
 # cache mounts below.
 
 # ---- Builder ----
-FROM golang:1.25-alpine3.22 AS builder
+FROM golang:1.26-alpine3.22 AS builder
 WORKDIR /app
 
 # Download dependencies first (cached layer + persistent module cache)
