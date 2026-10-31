@@ -145,7 +145,8 @@ Note: Budgets exist in the backend API but have no page in the redesigned UI (on
 - **Route groups**: `(auth)` for public pages, `(oauth)` for the Hydra login/consent pages (MCP OAuth flow), `(dashboard)` for protected pages with sidebar layout
 - **Provider chain**: Root layout wraps `ThemeProvider` > `QueryProvider` > `AuthProvider` > `Toaster`
 - **Data fetching**: All API calls go through `lib/api-client.ts`, consumed by React Query hooks in `src/hooks/`. Each hook file exports a query key factory for structured cache management
-- **Auth flow**: JWT access tokens (localStorage) + auth flag cookie (for middleware). Auto-refresh on 401 with concurrent request deduplication
+- **Auth flow**: access token in memory only; refresh token in the HttpOnly `kuberan_refresh` cookie (API-set, `credentials: "include"` on `/api/v1/auth/*`). The session is bootstrapped with `POST /auth/refresh` on load (page queries wait on it in `api-client.ts`), legacy localStorage tokens are migrated once. Auth flag cookie (non-secret) drives middleware redirects. Auto-refresh on 401 with concurrent request deduplication; cross-tab login/logout (BroadcastChannel, `lib/auth-channel.ts`) clears the query cache
+- **Security headers**: per-request nonce CSP in `src/middleware.ts` (pass the nonce from `headers().get("x-nonce")` to any new inline script); static headers (HSTS, nosniff, Referrer/Permissions-Policy) in `next.config.ts`
 - **Component organization**: ShadCN primitives in `ui/`, feature-specific dialogs in domain folders (`accounts/`, `transactions/`, etc.)
 - **Forms**: react-hook-form with zod schemas for validation, ShadCN Form components for UI
 
