@@ -60,7 +60,8 @@ func (s *Server) handleGetPortfolio(ctx context.Context, _ mcp.CallToolRequest) 
 		sb.WriteString(fmt.Sprintf("    %-8s %-25s %10s %12s %12s\n",
 			"------", "----", "---", "----------", "----------"))
 
-		for _, inv := range holdings.Data {
+		for j := range holdings.Data {
+			inv := &holdings.Data[j]
 			symbol := cleanText(inv.Security.Symbol, 12)
 			name := untrusted(cleanText(inv.Security.Name, 20))
 			currentValue := int64(math.Round(inv.Quantity * float64(inv.CurrentPrice)))

@@ -200,7 +200,7 @@ func (v *HydraValidator) refresh(ctx context.Context) error {
 
 // download retrieves and parses the JWKS document (at most maxJWKSBytes).
 func (v *HydraValidator) download(ctx context.Context) (map[string]*rsa.PublicKey, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, v.jwksURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, v.jwksURL, http.NoBody)
 	if err != nil {
 		return nil, fmt.Errorf("build JWKS request: %w", err)
 	}

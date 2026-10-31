@@ -115,7 +115,7 @@ func TestRequireBearer(t *testing.T) {
 			nextCalled = false
 			h := withWWWAuthenticate(requireBearer(next, tt.validator, nil), testOAuthConfig)
 
-			req := httptest.NewRequest("POST", "/mcp", nil)
+			req := httptest.NewRequest("POST", "/mcp", http.NoBody)
 			if tt.authHeader != "" {
 				req.Header.Set("Authorization", tt.authHeader)
 			}
@@ -309,7 +309,7 @@ func TestMakeAuthFromRequest(t *testing.T) {
 
 	t.Run("no validated claims yields no user", func(t *testing.T) {
 		fn := makeAuthFromRequest(nil)
-		req := httptest.NewRequest("POST", "/mcp", nil)
+		req := httptest.NewRequest("POST", "/mcp", http.NoBody)
 		// A header alone is not trusted: only claims attached by requireBearer.
 		req.Header.Set("Authorization", "Bearer sometoken")
 		ctx := fn(req.Context(), req)

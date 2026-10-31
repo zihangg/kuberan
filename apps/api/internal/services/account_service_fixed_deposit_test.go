@@ -30,8 +30,6 @@ func fdDate(year, month, day int) time.Time {
 
 func ptrFreq(f models.PayoutFrequency) *models.PayoutFrequency { return &f }
 func ptrStr(s string) *string                                  { return &s }
-func ptrInt64(n int64) *int64                                  { return &n }
-func ptrComp(c models.Compounding) *models.Compounding         { return &c }
 
 // ---------------------------------------------------------------------------
 // TestCreateFixedDepositAccount

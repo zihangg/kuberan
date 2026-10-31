@@ -137,7 +137,8 @@ func (s *Server) handleListTransactions(ctx context.Context, req mcp.CallToolReq
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("Transactions (page %d of %d, %d total):\n\n", result.Page, result.TotalPages, result.TotalItems))
 
-	for _, t := range result.Data {
+	for i := range result.Data {
+		t := &result.Data[i]
 		category := "uncategorized"
 		if t.Category != nil {
 			category = untrusted(t.Category.Name)
@@ -149,7 +150,7 @@ func (s *Server) handleListTransactions(ctx context.Context, req mcp.CallToolReq
 			category,
 			untrusted(t.Description),
 		))
-		if note := transactionNote(t); note != "" {
+		if note := transactionNote(*t); note != "" {
 			sb.WriteString("    " + note + "\n")
 		}
 		sb.WriteString(fmt.Sprintf("    ID: %s  Account: %s\n", t.ID, untrusted(t.Account.Name)))
@@ -347,7 +348,8 @@ func (s *Server) handleGetTopExpenses(ctx context.Context, req mcp.CallToolReque
 
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("Top Expenses (%s to %s):\n\n", fromStr, toStr))
-	for i, item := range result.Items {
+	for i := range result.Items {
+		item := &result.Items[i]
 		// Items are ranked by the effective amount (the user's own share), so show that.
 		effective := item.Amount
 		if item.PersonalAmount != nil {

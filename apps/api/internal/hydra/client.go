@@ -84,7 +84,7 @@ func (c *client) AcceptLogin(ctx context.Context, challenge string, p AcceptLogi
 		"remember":     p.Remember,
 		"remember_for": p.RememberFor,
 	}
-	return c.redirect(ctx, http.MethodPut,
+	return c.redirect(ctx,
 		"/admin/oauth2/auth/requests/login/accept", url.Values{"login_challenge": {challenge}}, body)
 }
 
@@ -94,7 +94,7 @@ func (c *client) RejectLogin(ctx context.Context, challenge, reason string) (str
 		return "", apperrors.WithMessage(apperrors.ErrInvalidInput, "login_challenge is required")
 	}
 	body := map[string]any{"error": "access_denied", "error_description": reason}
-	return c.redirect(ctx, http.MethodPut,
+	return c.redirect(ctx,
 		"/admin/oauth2/auth/requests/login/reject", url.Values{"login_challenge": {challenge}}, body)
 }
 
@@ -122,7 +122,7 @@ func (c *client) AcceptConsent(ctx context.Context, challenge string, p AcceptCo
 		"remember":                    p.Remember,
 		"remember_for":                p.RememberFor,
 	}
-	return c.redirect(ctx, http.MethodPut,
+	return c.redirect(ctx,
 		"/admin/oauth2/auth/requests/consent/accept", url.Values{"consent_challenge": {challenge}}, body)
 }
 
@@ -132,7 +132,7 @@ func (c *client) RejectConsent(ctx context.Context, challenge, reason string) (s
 		return "", apperrors.WithMessage(apperrors.ErrInvalidInput, "consent_challenge is required")
 	}
 	body := map[string]any{"error": "access_denied", "error_description": reason}
-	return c.redirect(ctx, http.MethodPut,
+	return c.redirect(ctx,
 		"/admin/oauth2/auth/requests/consent/reject", url.Values{"consent_challenge": {challenge}}, body)
 }
 
@@ -213,10 +213,11 @@ func (c *client) RevokeAllSessions(ctx context.Context, subject string) error {
 	return nil
 }
 
-// redirect performs a request whose response is a Hydra redirect envelope.
-func (c *client) redirect(ctx context.Context, method, path string, query url.Values, body any) (string, error) {
+// redirect performs a PUT whose response is a Hydra redirect envelope (the
+// accept/reject endpoints).
+func (c *client) redirect(ctx context.Context, path string, query url.Values, body any) (string, error) {
 	var out redirectResponse
-	if err := c.do(ctx, method, path, query, body, &out); err != nil {
+	if err := c.do(ctx, http.MethodPut, path, query, body, &out); err != nil {
 		return "", err
 	}
 	return out.RedirectTo, nil

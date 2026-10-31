@@ -59,7 +59,8 @@ func (s *Server) handleListCategories(ctx context.Context, req mcp.CallToolReque
 
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("Categories (%d total):\n\n", total))
-	for _, c := range data {
+	for i := range data {
+		c := &data[i]
 		line := fmt.Sprintf("  %-32s %-8s", untrusted(c.Name), c.Type)
 		if c.Description != "" {
 			line += " " + untrusted(c.Description)

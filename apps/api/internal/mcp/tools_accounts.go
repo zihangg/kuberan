@@ -40,7 +40,8 @@ func (s *Server) handleListAccounts(ctx context.Context, _ mcp.CallToolRequest) 
 
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("Accounts (%d total):\n\n", result.TotalItems))
-	for _, a := range result.Data {
+	for i := range result.Data {
+		a := &result.Data[i]
 		status := ""
 		if !a.IsActive {
 			status = " [inactive]"
