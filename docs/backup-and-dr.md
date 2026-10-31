@@ -401,6 +401,22 @@ first:
    heartbeat-based healthcheck. Log level comes from `LOG_LEVEL` (default
    `INFO`).
 10. **Images are tagged by git SHA** and the last three are kept; see §6.
+11. **Stricter production config.** The api, mcp and migrate binaries refuse
+    to start in production unless `JWT_SECRET` is at least 32 bytes and
+    `CORS_ORIGIN` lists the exact web origin(s) (no `*`).
+12. **Deploy api and web together.** The refresh token moved to an HttpOnly
+    `kuberan_refresh` cookie and is no longer in the login response body. The
+    new web build migrates existing sessions on first load; an old web build
+    against the new api cannot log in.
+13. **Migrations 000035–000036** run on startup: aggregate indexes (and two
+    redundant indexes dropped), and a unique index on Telegram link codes
+    (pending link codes are cleared, so anyone mid-link must generate a new
+    code).
+14. **Restart Hydra** to pick up PKCE enforcement for public clients. MCP
+    clients that skip PKCE will now be refused at authorize time.
+15. **Rate limits** apply to login, register, refresh and client registration
+    (`RATE_LIMIT_*`). They key on the client IP, so `API_TRUSTED_PROXY_CIDRS`
+    must cover the tunnel's source address or every user shares one budget.
 
 ---
 
