@@ -283,8 +283,8 @@ func TestAttemptLogin(t *testing.T) {
 		defer testutil.TeardownTestDB(t, db)
 		svc := NewUserService(db)
 
-		_, err := svc.CreateUser("trigger@example.com", "password123", "", "")
-		testutil.AssertNoError(t, err)
+		testutil.CreateTestUserWithEmail(t, db, "trigger@example.com")
+		var err error
 		for i := 0; i < 4; i++ {
 			_, err = svc.AttemptLogin("trigger@example.com", "wrong")
 			if err == ErrLoginLockoutTriggered || err == ErrLoginLocked {
@@ -306,8 +306,8 @@ func TestAttemptLogin(t *testing.T) {
 		defer testutil.TeardownTestDB(t, db)
 		svc := NewUserService(db)
 
-		_, err := svc.CreateUser("expired@example.com", "password123", "", "")
-		testutil.AssertNoError(t, err)
+		testutil.CreateTestUserWithEmail(t, db, "expired@example.com")
+		var err error
 		db.Exec("UPDATE users SET locked_until = ?, failed_login_attempts = 5 WHERE email = ?",
 			time.Now().Add(-time.Minute), "expired@example.com")
 
@@ -329,8 +329,7 @@ func TestAttemptLogin(t *testing.T) {
 		sqlDB.SetMaxOpenConns(1)
 		svc := NewUserService(db)
 
-		_, err = svc.CreateUser("race@example.com", "password123", "", "")
-		testutil.AssertNoError(t, err)
+		testutil.CreateTestUserWithEmail(t, db, "race@example.com")
 
 		const attempts = maxFailedAttempts - 1
 		var wg sync.WaitGroup
@@ -354,8 +353,8 @@ func TestAttemptLogin(t *testing.T) {
 		defer testutil.TeardownTestDB(t, db)
 		svc := NewUserService(db)
 
-		_, err := svc.CreateUser("long@example.com", "password123", "", "")
-		testutil.AssertNoError(t, err)
+		testutil.CreateTestUserWithEmail(t, db, "long@example.com")
+		var err error
 		_, err = svc.AttemptLogin("long@example.com", strings.Repeat("a", 100))
 		testutil.AssertAppError(t, err, "INVALID_CREDENTIALS")
 	})
