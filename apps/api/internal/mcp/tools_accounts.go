@@ -45,8 +45,8 @@ func (s *Server) handleListAccounts(ctx context.Context, _ mcp.CallToolRequest) 
 		if !a.IsActive {
 			status = " [inactive]"
 		}
-		sb.WriteString(fmt.Sprintf("  %-30s %-12s %s (%s)%s\n",
-			a.Name, a.Type, formatCents(a.Balance), a.Currency, status))
+		sb.WriteString(fmt.Sprintf("  %-32s %-12s %s (%s)%s\n",
+			untrusted(a.Name), a.Type, formatCents(a.Balance), a.Currency, status))
 		sb.WriteString(fmt.Sprintf("    ID: %s\n", a.ID))
 	}
 

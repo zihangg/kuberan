@@ -41,7 +41,7 @@ func (s *Server) registerReceivableWriteTools() {
 // receivableLine summarizes a receivable after a write.
 func receivableLine(r *models.Receivable) string {
 	return fmt.Sprintf("  %s: paid %s, written off %s, outstanding %s (status: %s)\n",
-		r.CounterpartyName, formatCents(r.PaidAmount), formatCents(r.WrittenOffAmount),
+		untrusted(r.CounterpartyName), formatCents(r.PaidAmount), formatCents(r.WrittenOffAmount),
 		formatCents(r.OutstandingAmount()), r.Status)
 }
 

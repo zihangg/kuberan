@@ -57,8 +57,8 @@ func (s *Server) handleListBudgets(ctx context.Context, req mcp.CallToolRequest)
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("Budgets (%d total):\n\n", result.TotalItems))
 	for _, b := range result.Data {
-		sb.WriteString(fmt.Sprintf("  %-25s %12s  %-8s  %s\n",
-			b.Name, formatCents(b.Amount), b.Period, b.Category.Name))
+		sb.WriteString(fmt.Sprintf("  %-27s %12s  %-8s  %s\n",
+			untrusted(b.Name), formatCents(b.Amount), b.Period, untrusted(b.Category.Name)))
 		sb.WriteString(fmt.Sprintf("    ID: %s\n", b.ID))
 	}
 
