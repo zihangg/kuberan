@@ -876,3 +876,58 @@ func TestUpdateAccount_FixedDepositFields(t *testing.T) {
 		}
 	})
 }
+
+// TestUpdateAccount_FixedDepositLinkedAccountValidation covers the IDOR fix:
+// re-pointing payouts must follow the same rules as creation.
+func TestUpdateAccount_FixedDepositLinkedAccountValidation(t *testing.T) {
+	t.Run("rejects_another_users_account_and_applies_nothing", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		svc := NewAccountService(db)
+		user := testutil.CreateTestUser(t, db)
+		other := testutil.CreateTestUser(t, db)
+		fdAcct, _ := testutil.CreateTestFixedDepositAccount(t, db, user.ID, testutil.FixedDepositParams{})
+		foreign := testutil.CreateTestCashAccountWithBalance(t, db, other.ID, 0)
+		newRate := 9.0
+
+		_, err := svc.UpdateAccount(user.ID, fdAcct.ID, AccountUpdateFields{
+			InterestRate:    &newRate,
+			LinkedAccountID: ptrStr(foreign.ID),
+		})
+		testutil.AssertAppError(t, err, "ACCOUNT_NOT_FOUND")
+
+		var details models.FixedDepositDetails
+		db.First(&details, "account_id = ?", fdAcct.ID)
+		if details.LinkedAccountID != nil {
+			t.Errorf("linked_account_id must stay unset, got %v", *details.LinkedAccountID)
+		}
+		var acct models.Account
+		db.First(&acct, "id = ?", fdAcct.ID)
+		if acct.InterestRate == newRate {
+			t.Error("rejected update must not apply other fields")
+		}
+	})
+
+	t.Run("rejects_non_cash_account", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		svc := NewAccountService(db)
+		user := testutil.CreateTestUser(t, db)
+		fdAcct, _ := testutil.CreateTestFixedDepositAccount(t, db, user.ID, testutil.FixedDepositParams{})
+		inv := testutil.CreateTestInvestmentAccount(t, db, user.ID)
+
+		_, err := svc.UpdateAccount(user.ID, fdAcct.ID, AccountUpdateFields{LinkedAccountID: ptrStr(inv.ID)})
+		testutil.AssertAppError(t, err, "INVALID_ACCOUNT_TYPE")
+	})
+
+	t.Run("rejects_self", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		svc := NewAccountService(db)
+		user := testutil.CreateTestUser(t, db)
+		fdAcct, _ := testutil.CreateTestFixedDepositAccount(t, db, user.ID, testutil.FixedDepositParams{})
+
+		_, err := svc.UpdateAccount(user.ID, fdAcct.ID, AccountUpdateFields{LinkedAccountID: ptrStr(fdAcct.ID)})
+		testutil.AssertAppError(t, err, "INVALID_INPUT")
+	})
+}

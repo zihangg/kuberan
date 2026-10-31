@@ -69,7 +69,9 @@ type UpdateAccountRequest struct {
 	PayoutType      *string `json:"payout_type" binding:"omitempty,oneof=cumulative periodic"`
 	PayoutFrequency *string `json:"payout_frequency" binding:"omitempty,oneof=monthly quarterly semiannual annual"`
 	Compounding     *string `json:"compounding" binding:"omitempty,oneof=monthly quarterly semiannual annual"`
-	LinkedAccountID *string `json:"linked_account_id"`
+	// LinkedAccountID re-points FD payouts; "" clears it, otherwise a UUID of
+	// one of the user's own cash accounts.
+	LinkedAccountID *string `json:"linked_account_id" binding:"omitempty,uuid"`
 }
 
 // CreateFixedDepositAccountRequest represents the request payload for creating a fixed deposit account.
