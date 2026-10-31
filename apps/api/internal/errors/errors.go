@@ -126,6 +126,7 @@ var (
 	ErrInvalidLinkCode       = &AppError{Code: "INVALID_LINK_CODE", Message: "Invalid or expired link code", StatusCode: http.StatusBadRequest}
 	ErrLinkCodeExpired       = &AppError{Code: "LINK_CODE_EXPIRED", Message: "Link code has expired", StatusCode: http.StatusBadRequest}
 	ErrTelegramAlreadyLinked = &AppError{Code: "TELEGRAM_ALREADY_LINKED", Message: "This Telegram account is already linked to another user", StatusCode: http.StatusConflict}
+	ErrTooManyLinkAttempts   = &AppError{Code: "TOO_MANY_LINK_ATTEMPTS", Message: "Too many failed link attempts, please try again later", StatusCode: http.StatusTooManyRequests}
 )
 
 // Attachment errors (transaction receipts, plan 017).

@@ -89,6 +89,20 @@ func (l *RateLimiter) Allow(key string) (allowed bool, retryAfter time.Duration)
 	return true, 0
 }
 
+// Exhausted reports, without recording an event, whether key has used up its
+// budget for the current window. Callers that only count failures use it to
+// refuse an attempt up front and call Allow when one fails.
+func (l *RateLimiter) Exhausted(key string) bool {
+	if l == nil || l.limit <= 0 || l.window <= 0 {
+		return false
+	}
+	now := l.now()
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	w, ok := l.windows[key]
+	return ok && now.Sub(w.start) < l.window && w.count >= l.limit
+}
+
 // sweep drops expired windows. Callers hold l.mu.
 func (l *RateLimiter) sweep(now time.Time) {
 	for k, w := range l.windows {
