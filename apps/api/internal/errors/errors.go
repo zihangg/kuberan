@@ -61,6 +61,8 @@ var (
 	ErrInvalidInput   = &AppError{Code: "INVALID_INPUT", Message: "Invalid input", StatusCode: http.StatusBadRequest}
 	ErrNotFound       = &AppError{Code: "NOT_FOUND", Message: "Resource not found", StatusCode: http.StatusNotFound}
 	ErrInternalServer = &AppError{Code: "INTERNAL_ERROR", Message: "An internal error occurred", StatusCode: http.StatusInternalServerError}
+	ErrRateLimited    = &AppError{Code: "RATE_LIMITED", Message: "Too many requests, please try again later", StatusCode: http.StatusTooManyRequests}
+	ErrBodyTooLarge   = &AppError{Code: "REQUEST_TOO_LARGE", Message: "Request body is too large", StatusCode: http.StatusRequestEntityTooLarge}
 )
 
 // User errors.
