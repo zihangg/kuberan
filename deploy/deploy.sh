@@ -33,6 +33,30 @@ if [ ! -f .env.prod ]; then
     exit 1
 fi
 
+# Preflight: settings the api/mcp/migrate binaries refuse to start without in
+# production. Checking them here fails the deploy before anything is built or
+# migrated, instead of at the health wait.
+env_value() {
+    # Last assignment wins, like compose; strips surrounding quotes.
+    grep -E "^[[:space:]]*$1=" .env.prod | tail -n 1 | cut -d= -f2- \
+        | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' -e 's/^"\(.*\)"$/\1/' -e "s/^'\(.*\)'$/\1/"
+}
+PREFLIGHT_ERRORS=()
+JWT_SECRET_VALUE="$(env_value JWT_SECRET)"
+if [ "${#JWT_SECRET_VALUE}" -lt 32 ]; then
+    PREFLIGHT_ERRORS+=("JWT_SECRET must be at least 32 bytes (generate with: openssl rand -hex 32). Changing it signs everyone out once.")
+fi
+CORS_ORIGIN_VALUE="$(env_value CORS_ORIGIN)"
+if [ -z "$CORS_ORIGIN_VALUE" ] || [[ "$CORS_ORIGIN_VALUE" == *"*"* ]]; then
+    PREFLIGHT_ERRORS+=("CORS_ORIGIN must list the exact web origin(s), e.g. https://app.example.com (no '*').")
+fi
+if [ "${#PREFLIGHT_ERRORS[@]}" -gt 0 ]; then
+    echo "ERROR: .env.prod needs updating before this deploy:"
+    for e in "${PREFLIGHT_ERRORS[@]}"; do echo "  - $e"; done
+    echo "See docs/backup-and-dr.md#upgrade-notes."
+    exit 1
+fi
+
 # Compose reads .env.prod for ${VAR} interpolation. The .env symlink makes
 # ad-hoc commands (cron's `compose run oracle`, docs snippets) see the same
 # values without --env-file.

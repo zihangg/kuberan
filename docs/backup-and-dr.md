@@ -345,8 +345,20 @@ otherwise restore the `kuberan_predeploy_<ts>.dump` taken by that deploy
 ## Upgrade notes
 
 For an existing install upgrading to the hardened compose/deploy setup. The
-deploy itself is automatic (`git pull && ./deploy/deploy.sh`); check these
-first:
+deploy itself is automatic (`git pull && ./deploy/deploy.sh`): it builds the
+api and web together, takes a pre-migration backup, runs migrations, recreates
+every service (including Hydra, so the new config applies) and waits for
+health. Before running it:
+
+- **Required — edit `.env.prod`:** `JWT_SECRET` must be at least 32 bytes
+  (`openssl rand -hex 32`; changing it signs everyone out once) and
+  `CORS_ORIGIN` must be the exact web origin, e.g. `https://app.<domain>`.
+  `deploy.sh` checks both and stops before building if either is wrong.
+- **Check:** your tunnel routes point at `localhost`/`127.0.0.1` (step 1),
+  `172.30.x` is free on the host (step 2), and decide on the MinIO image
+  (step 7).
+
+Everything else below is informational.
 
 1. **Ports are loopback-only.** api `8080`, mcp `8081`, hydra `4444` and web
    `3000` now publish on `127.0.0.1` (`PUBLISH_ADDRESS`). A tunnel connector
@@ -403,20 +415,25 @@ first:
 10. **Images are tagged by git SHA** and the last three are kept; see §6.
 11. **Stricter production config.** The api, mcp and migrate binaries refuse
     to start in production unless `JWT_SECRET` is at least 32 bytes and
-    `CORS_ORIGIN` lists the exact web origin(s) (no `*`).
-12. **Deploy api and web together.** The refresh token moved to an HttpOnly
-    `kuberan_refresh` cookie and is no longer in the login response body. The
-    new web build migrates existing sessions on first load; an old web build
-    against the new api cannot log in.
+    `CORS_ORIGIN` lists the exact web origin(s) (no `*`); `deploy.sh`
+    preflights both.
+12. **Refresh token cookie.** The refresh token moved to an HttpOnly
+    `kuberan_refresh` cookie and is no longer in the login response body.
+    `deploy.sh` ships the api and web together, and the new web build
+    migrates existing sessions on first load. Browser tabs still running the
+    old bundle need one reload.
 13. **Migrations 000035–000036** run on startup: aggregate indexes (and two
     redundant indexes dropped), and a unique index on Telegram link codes
     (pending link codes are cleared, so anyone mid-link must generate a new
     code).
-14. **Restart Hydra** to pick up PKCE enforcement for public clients. MCP
-    clients that skip PKCE will now be refused at authorize time.
+14. **PKCE is enforced** for public clients (Hydra is recreated by the
+    deploy, so no manual restart). MCP clients that skip PKCE are refused at
+    authorize time.
 15. **Rate limits** apply to login, register, refresh and client registration
-    (`RATE_LIMIT_*`). They key on the client IP, so `API_TRUSTED_PROXY_CIDRS`
-    must cover the tunnel's source address or every user shares one budget.
+    (`RATE_LIMIT_*`). They key on the client IP; `API_TRUSTED_PROXY_CIDRS`
+    and `MCP_TRUSTED_PROXY_CIDRS` default to the edge network
+    (`172.30.10.0/24`) so this works without changes. If you set
+    `KUBERAN_SUBNET_PREFIX`, set both to match.
 
 ---
 
