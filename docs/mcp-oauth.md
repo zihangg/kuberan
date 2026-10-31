@@ -329,8 +329,9 @@ outside a client's registration. Runbook: `plans/015-mcp-oauth-hydra/PHASE-3-5-R
 ## Deployment topology
 
 Public ingress is an **external Cloudflare tunnel** (managed outside this
-repo) that reaches services via host-published ports. Required mapping - order
-matters, the path rule must precede the catch-all:
+repo, `cloudflared` running on the host) that reaches services via ports
+published on `127.0.0.1` only. Required mapping - order matters, the path rule
+must precede the catch-all:
 
 | Public hostname | Host port | Purpose |
 |---|---|---|
@@ -340,15 +341,18 @@ matters, the path rule must precede the catch-all:
 | app domain `/oauth/login`, `/oauth/consent` | `:3000` (web) | Login + consent pages |
 
 Hydra admin (`:4445`) is never published by compose and never mapped in the
-tunnel. Routing `/oauth2/register` straight to Hydra would bypass every DCR
-control.
+tunnel. It binds only to Hydra's fixed address on the internal `hydra-admin`
+Docker network, which only the api joins, so no other container can reach it.
+Routing `/oauth2/register` straight to Hydra would bypass every DCR control.
 
 Configuration is via `.env.prod` (see `.env.prod.example`): `HYDRA_DSN`,
-`HYDRA_SECRETS_SYSTEM`, `HYDRA_ISSUER_URL`, `HYDRA_ADMIN_URL` (must be the
-Docker-network URL `http://hydra:4445` - the localhost default silently breaks
-the bridge), `HYDRA_LOGIN_URL`, `HYDRA_CONSENT_URL`, `MCP_RESOURCE_URL`, and
-`HYDRA_TLS_TERMINATION_CIDR` (the Docker network CIDR the tunnel connects
-from, so Hydra trusts `X-Forwarded-Proto: https` from cloudflared).
+`HYDRA_SECRETS_SYSTEM`, `HYDRA_ISSUER_URL`, `HYDRA_LOGIN_URL`,
+`HYDRA_CONSENT_URL`, `MCP_RESOURCE_URL`, and `HYDRA_TLS_TERMINATION_CIDR` (the
+kuberan `edge` network the tunnel arrives from, `172.30.10.0/24`, so Hydra
+trusts `X-Forwarded-Proto: https` from cloudflared). `HYDRA_ADMIN_URL` is fixed
+in `docker-compose.prod.yml` to `http://hydra-admin:4445` (in other setups it
+must be a container-network URL - the localhost default silently breaks the
+bridge). See `docs/backup-and-dr.md#upgrade-notes`.
 
 ## Hard-won interop notes
 
