@@ -91,7 +91,7 @@ func (h *RegistrationHandler) Register(c *gin.Context) {
 	for _, u := range req.RedirectURIs {
 		if !isValidRedirectURI(u) {
 			respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput,
-				"invalid redirect_uri: use https, http on a loopback address, or a private-use scheme (com.example.app:/callback)"))
+				"invalid redirect_uri: use https, http on a loopback address, or a native-app scheme (com.example.app:/callback)"))
 			return
 		}
 	}
@@ -224,9 +224,11 @@ var forbiddenSchemes = map[string]bool{
 //   - https with a host; or
 //   - http only on a loopback host (127.0.0.1, [::1] or localhost), for
 //     native apps that listen locally; or
-//   - a private-use scheme in reverse-DNS form (contains a dot, such as
-//     com.example.app:/callback), for native apps, never a scheme that runs
-//     script or reads local content.
+//   - a private-use scheme for native apps. RFC 8252 recommends reverse-DNS
+//     form (com.example.app:/callback), but common MCP clients register
+//     single-word schemes (cursor://, vscode://), so any scheme is accepted
+//     except one that runs script or reads local content. The consent screen
+//     warns the user when the target is a custom scheme.
 func isValidRedirectURI(s string) bool {
 	if s == "" || len(s) > maxRedirectURILen || strings.ContainsAny(s, " \t\r\n\\") {
 		return false
@@ -242,7 +244,7 @@ func isValidRedirectURI(s string) bool {
 	case "http":
 		return isLoopbackHost(u.Hostname())
 	}
-	return !forbiddenSchemes[scheme] && strings.Contains(scheme, ".")
+	return !forbiddenSchemes[scheme]
 }
 
 // isLoopbackHost reports whether host is a loopback address or localhost.

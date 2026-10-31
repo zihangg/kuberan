@@ -307,6 +307,8 @@ func TestIsValidRedirectURIPolicy(t *testing.T) {
 		"http://[::1]:8080/cb",
 		"com.example.app:/oauth2redirect",
 		"com.example.app://callback",
+		"cursor://anysphere.cursor-retrieval/oauth/callback",
+		"vscode://callback",
 	}
 	invalid := []string{
 		"",
@@ -323,7 +325,6 @@ func TestIsValidRedirectURIPolicy(t *testing.T) {
 		"vbscript:x",
 		"blob:https://claude.ai/x",
 		"about:blank",
-		"myapp:/cb", // private-use schemes must be reverse-DNS
 		"https://claude.ai/" + strings.Repeat("a", 2048),
 		"https://claude.ai/cb\nx",
 	}

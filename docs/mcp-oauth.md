@@ -179,10 +179,12 @@ everything a client submits:
 - 1 to 3 `redirect_uris`, each at most 2048 characters, no fragment, no
   userinfo, and one of: `https://` with a host; `http://` only on a loopback
   host (`127.0.0.1`, `[::1]`, `localhost`, RFC 8252 7.3); or a private-use
-  reverse-DNS scheme (contains a dot, e.g. `com.example.app:/callback`,
-  RFC 8252 7.1). `javascript:`, `data:`, `file:`, `vbscript:`, `blob:`,
-  `about:` and similar are always refused. Note that single-word custom
-  schemes (`myapp://`) are refused too;
+  native-app scheme (RFC 8252 7.1 prefers reverse-DNS like
+  `com.example.app:/callback`, but single-word schemes such as `cursor://`
+  and `vscode://` are accepted because common MCP clients use them; the
+  consent screen warns when the target is a custom scheme). `javascript:`,
+  `data:`, `file:`, `vbscript:`, `blob:`, `about:` and similar are always
+  refused;
 - `client_name`: control and format characters (newlines, bidi overrides,
   zero-width characters) become spaces, whitespace is collapsed, and it is
   cut to 100 characters.
