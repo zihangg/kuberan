@@ -211,3 +211,68 @@ func TestRejectConsent(t *testing.T) {
 		t.Errorf("body = %+v", rs.lastBody)
 	}
 }
+
+func TestRevokeConsentSessions(t *testing.T) {
+	rs := newRecordingServer(t, http.StatusNoContent, nil)
+	c := NewAdminClient(rs.server.URL)
+
+	if err := c.RevokeConsentSessions(context.Background(), "user-1", "cid"); err != nil {
+		t.Fatalf("RevokeConsentSessions: %v", err)
+	}
+	if rs.lastMethod != http.MethodDelete || rs.lastPath != "/admin/oauth2/auth/sessions/consent" {
+		t.Errorf("unexpected request: %s %s", rs.lastMethod, rs.lastPath)
+	}
+	if rs.lastQuery != "client=cid&subject=user-1" {
+		t.Errorf("unexpected query: %s", rs.lastQuery)
+	}
+}
+
+func TestRevokeConsentSessionsNotFoundIsSuccess(t *testing.T) {
+	rs := newRecordingServer(t, http.StatusNotFound, nil)
+	c := NewAdminClient(rs.server.URL)
+
+	if err := c.RevokeConsentSessions(context.Background(), "user-1", "cid"); err != nil {
+		t.Errorf("expected 404 to be treated as already revoked, got %v", err)
+	}
+}
+
+func TestRevokeConsentSessionsRequiresIDs(t *testing.T) {
+	c := NewAdminClient("http://unused")
+	var appErr *apperrors.AppError
+	err := c.RevokeConsentSessions(context.Background(), "", "cid")
+	if !stderrors.As(err, &appErr) || appErr.Code != apperrors.ErrInvalidInput.Code {
+		t.Errorf("want ErrInvalidInput, got %v", err)
+	}
+}
+
+func TestRevokeConsentSessionsServerError(t *testing.T) {
+	rs := newRecordingServer(t, http.StatusInternalServerError, nil)
+	c := NewAdminClient(rs.server.URL)
+
+	if err := c.RevokeConsentSessions(context.Background(), "user-1", "cid"); err == nil {
+		t.Error("expected a 500 from Hydra to surface as an error")
+	}
+}
+
+func TestListConsentSessions(t *testing.T) {
+	rs := newRecordingServer(t, http.StatusOK, []map[string]any{{
+		"consent_request": map[string]any{"client": map[string]any{"client_id": "cid", "client_name": "Claude"}},
+		"grant_scope":     []string{"read:accounts", "offline_access"},
+	}})
+	c := NewAdminClient(rs.server.URL)
+
+	got, err := c.ListConsentSessions(context.Background(), "user-1")
+	if err != nil {
+		t.Fatalf("ListConsentSessions: %v", err)
+	}
+	if rs.lastMethod != http.MethodGet || rs.lastPath != "/admin/oauth2/auth/sessions/consent" ||
+		rs.lastQuery != "page_size=250&subject=user-1" {
+		t.Errorf("unexpected request: %s %s?%s", rs.lastMethod, rs.lastPath, rs.lastQuery)
+	}
+	if len(got) != 1 || got[0].ConsentRequest.Client.ClientID != "cid" || len(got[0].GrantScope) != 2 {
+		t.Errorf("unexpected sessions: %+v", got)
+	}
+	if _, err := c.ListConsentSessions(context.Background(), ""); err == nil {
+		t.Error("an empty subject must be rejected")
+	}
+}

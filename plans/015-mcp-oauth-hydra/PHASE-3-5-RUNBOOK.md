@@ -181,3 +181,70 @@ back: redeploy the pre-Phase-4 api/mcp image, run
 `go run cmd/migrate/main.go down 1` to re-add `users.mcp_token_hash` (migration
 `000023`), re-issue a legacy token, and re-add the connector in Claude. Single
 user -> the cutover window is small and acceptable.
+
+---
+
+## 5. Enabling MCP write access (plan 022)
+
+Write access is off by default. See `docs/mcp-oauth.md` ("Write access") for
+the design.
+
+1. **Deploy with writes off.** Migration `000033` replaces
+   `trusted_oauth_clients` with `oauth_client_grants`, so existing trust rows are
+   dropped: the next connect shows the consent screen once. Re-run the section 1
+   fast checks. `scopes_supported` must still list only `read:*`.
+   - Existing connectors keep their Hydra session and read access, with no
+     grant row. Settings > Connected apps lists them as "connected before
+     per-app permissions", and Disconnect revokes them. Disconnect each one
+     (or, for every user, `curl -X DELETE "http://hydra:4445/admin/oauth2/auth/sessions/consent?subject=<user-id>&all=true"`
+     from inside the Docker network) so every live connection has a grant.
+   - Set `MCP_TRUSTED_PROXY_CIDRS` to the Docker network the tunnel connects
+     from (the same range as `HYDRA_TLS_TERMINATION_CIDR`), so audit rows
+     record the real client IP.
+2. **Turn writes on.** Set `MCP_WRITE_ENABLED=true` in `.env.prod`. Both the
+   `api` and `mcp` services read it, so restart both. Check that
+   `scopes_supported` now also lists `write:transactions write:categories
+   write:budgets`.
+3. **Re-add the connector.** Existing DCR clients were registered with only
+   `read:*`, and Hydra rejects an authorize request for scopes outside a
+   client's registered set. Remove the connector in Claude and add it again so
+   it re-registers.
+4. **E2E pass criteria:**
+   - Connect *without* ticking any "Allow changes" box. Asking Claude to add a
+     transaction returns "not allowed to make changes".
+   - Settings > Connected apps shows the client as "Read only".
+   - Reconnect, tick "Add and edit transactions". Claude asks before calling
+     `create_transaction`. The transaction appears in the web app, and an
+     `MCP_CREATE_TRANSACTION` row in `audit_logs` carries the client's
+     `client_id`.
+   - Settings > Connected apps > Disconnect. The very next write fails
+     immediately. Reads stop within 15 minutes and refresh is rejected.
+5. **Rollback.** Set `MCP_WRITE_ENABLED=false` and restart `api` and `mcp`. The
+   write tools disappear and `write:*` scopes can no longer be registered or
+   granted. Grants keep their recorded write scopes, but no tool accepts them.
+
+---
+
+## 6. One-off data check after deploying plan 022
+
+Before this branch, the transaction service stored any `category_id` without
+checking that the category belonged to the user. List transactions linked to
+another user's category (expect none):
+
+```sql
+SELECT t.id AS transaction_id, t.user_id AS transaction_owner,
+       c.user_id AS category_owner, c.name AS category_name
+FROM transactions t JOIN categories c ON c.id = t.category_id
+WHERE c.user_id <> t.user_id;
+```
+
+If any appear, review them, then uncategorize them (the balance is
+unaffected; the category was never the user's):
+
+```sql
+UPDATE transactions t SET category_id = NULL FROM categories c
+WHERE c.id = t.category_id AND c.user_id <> t.user_id;
+```
+
+Audit events with no signed-in user (e.g. `LOGIN_FAILED`) were dropped before
+migration `000034`; there is nothing to recover.

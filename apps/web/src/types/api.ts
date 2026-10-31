@@ -499,18 +499,41 @@ export interface OAuthConsentClient {
   client_name: string;
 }
 
-// GET /oauth/consent returns either redirect_to (trusted client, auto-accepted)
-// or the details an unknown client's consent screen needs to render.
+// GET /oauth/consent returns either redirect_to (remembered client, auto-accepted
+// for scopes the user already reviewed) or the details the consent screen needs
+// to render, including the scopes the user approved last time (plan 022).
 export interface OAuthConsentDetails {
   redirect_to?: string;
   client?: OAuthConsentClient;
   requested_scopes?: string[];
+  previously_approved?: string[];
   redirect_uris?: string[];
 }
 
+// granted_scopes lists the API scopes the user ticked; protocol scopes are
+// granted automatically.
 export interface OAuthConsentAcceptRequest {
   consent_challenge: string;
   remember_client: boolean;
+  granted_scopes: string[];
+}
+
+// An OAuth client (e.g. a Claude connector) the user has granted access to.
+// legacy marks a connection made before per-scope grants: it can read but
+// never write, and its connection date is unknown.
+export interface ConnectedApp {
+  client_id: string;
+  client_name: string;
+  scopes: string[];
+  auto_accept: boolean;
+  legacy?: boolean;
+  created_at?: string;
+  // Updated only when the app makes a change (an MCP write), not on reads.
+  last_used_at?: string;
+}
+
+export interface ConnectedAppsResponse {
+  clients: ConnectedApp[];
 }
 
 // ---- Receivables / shared expenses (plan 021) ----

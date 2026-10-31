@@ -13,7 +13,7 @@ import (
 
 func (s *Server) registerCategoryTools() {
 	s.mcp.AddTool(
-		mcp.NewTool("list_categories",
+		readTool("list_categories",
 			mcp.WithDescription("List all transaction categories (income and expense types). Limited to the first 100 categories."),
 			mcp.WithString("type", mcp.Description("Filter by category type: 'income' or 'expense'")),
 		),

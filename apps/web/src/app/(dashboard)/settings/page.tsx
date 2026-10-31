@@ -4,6 +4,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { TelegramSettings } from "@/components/settings/telegram-settings";
 import { AppearanceSettings } from "@/components/settings/appearance-settings";
 import { DefaultAccountSettings } from "@/components/settings/default-account-settings";
+import { ConnectedAppsSettings } from "@/components/settings/connected-apps-settings";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -101,10 +102,12 @@ export default function SettingsPage() {
       </div>
 
       <Tabs defaultValue="profile" className="w-full">
-        <TabsList>
+        {/* Four tabs overflow a phone screen; scroll the tab bar, not the page. */}
+        <TabsList className="max-w-full justify-start overflow-x-auto">
           <TabsTrigger value="profile">Profile</TabsTrigger>
           <TabsTrigger value="appearance">Appearance</TabsTrigger>
           <TabsTrigger value="telegram">Telegram bot</TabsTrigger>
+          <TabsTrigger value="connected-apps">Connected apps</TabsTrigger>
         </TabsList>
 
         <TabsContent value="profile" className="mt-5">
@@ -117,6 +120,10 @@ export default function SettingsPage() {
 
         <TabsContent value="telegram" className="mt-5">
           <TelegramSettings />
+        </TabsContent>
+
+        <TabsContent value="connected-apps" className="mt-5">
+          <ConnectedAppsSettings />
         </TabsContent>
       </Tabs>
     </div>

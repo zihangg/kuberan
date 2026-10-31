@@ -69,7 +69,7 @@ func setupIsolatedDB(t *testing.T) *gorm.DB {
 		&models.Investment{},
 		&models.InvestmentTransaction{},
 		&models.AuditLog{},
-		&models.TrustedOAuthClient{},
+		&models.OAuthClientGrant{},
 		&models.RefreshSession{},
 		&models.TransactionRule{},
 		&models.TransactionRuleCondition{},
@@ -110,7 +110,7 @@ func setupApp(t *testing.T) *testApp {
 
 	fdService := services.NewFixedDepositService(db, categoryService)
 	telegramService := services.NewTelegramService(db)
-	trustedClientService := services.NewTrustedClientService(db)
+	oauthGrantService := services.NewOAuthGrantService(db)
 
 	// Hydra is never contacted by these tests; the OAuth routes are registered
 	// (as in production) but backed by an unreachable admin URL.
@@ -125,7 +125,7 @@ func setupApp(t *testing.T) *testApp {
 
 	handlers.RegisterRoutes(router, handlers.Routes{
 		Auth:                 handlers.NewAuthHandler(userService, auditService),
-		OAuth:                handlers.NewOAuthHandler(hydraAdmin, userService, trustedClientService, auditService, oauthScopes, "http://localhost:8081"),
+		OAuth:                handlers.NewOAuthHandler(hydraAdmin, userService, oauthGrantService, auditService, oauthScopes, "http://localhost:8081"),
 		Registration:         handlers.NewRegistrationHandler(hydraAdmin, auditService, oauthScopes),
 		Account:              handlers.NewAccountHandler(accountService, auditService),
 		Category:             handlers.NewCategoryHandler(categoryService, auditService),

@@ -69,3 +69,16 @@ type AcceptConsentParams struct {
 type redirectResponse struct {
 	RedirectTo string `json:"redirect_to"`
 }
+
+// ConsentSession is a consent a subject has granted a client, as listed by
+// Hydra's admin API.
+type ConsentSession struct {
+	ConsentRequest ConsentSessionRequest `json:"consent_request"`
+	GrantScope     []string              `json:"grant_scope"`
+}
+
+// ConsentSessionRequest is the subset of a consent session's original request
+// that identifies the client.
+type ConsentSessionRequest struct {
+	Client OAuth2Client `json:"client"`
+}

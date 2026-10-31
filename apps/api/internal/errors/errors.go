@@ -20,6 +20,14 @@ func (e *AppError) Error() string { return e.Message }
 // Unwrap returns the internal error for use with errors.Is/As.
 func (e *AppError) Unwrap() error { return e.Internal }
 
+// Is reports whether target is an AppError with the same code, so
+// errors.Is(err, ErrNotFound) also matches the copies Wrap and WithMessage
+// make of a sentinel (they carry its code but are distinct pointers).
+func (e *AppError) Is(target error) bool {
+	t, ok := target.(*AppError)
+	return ok && e.Code == t.Code
+}
+
 // Wrap creates a new AppError with the same code/message/status but wraps an internal error.
 func Wrap(sentinel *AppError, internal error) *AppError {
 	return &AppError{
@@ -177,4 +185,14 @@ var (
 
 	// ErrInvalidReceivableKind is returned when a receivable kind is not supported.
 	ErrInvalidReceivableKind = &AppError{Code: "INVALID_RECEIVABLE_KIND", Message: "Invalid receivable kind", StatusCode: http.StatusBadRequest}
+)
+
+// OAuth client grant errors (plan 022).
+var (
+	// ErrOAuthClientNotFound is returned when the user has no active grant for an OAuth client.
+	ErrOAuthClientNotFound = &AppError{Code: "OAUTH_CLIENT_NOT_FOUND", Message: "Connected app not found", StatusCode: http.StatusNotFound}
+
+	// ErrOAuthScopeNotGranted is returned when an OAuth client's grant does not include a required scope,
+	// has been revoked, or belongs to an inactive user.
+	ErrOAuthScopeNotGranted = &AppError{Code: "OAUTH_SCOPE_NOT_GRANTED", Message: "This app is not allowed to perform this action", StatusCode: http.StatusForbidden}
 )

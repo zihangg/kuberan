@@ -43,12 +43,38 @@ type TelegramServicer interface {
 	GetUserWithAuthToken(telegramUserID int64) (*TelegramUserAuth, error)
 }
 
-// TrustedClientServicer defines the contract for managing OAuth clients that a
-// user has approved via trust-on-first-use consent.
-type TrustedClientServicer interface {
-	IsTrusted(clientID string) (bool, error)
-	Trust(clientID, name string) (*models.TrustedOAuthClient, error)
-	ListTrusted() ([]models.TrustedOAuthClient, error)
+// RecordConsentInput holds the outcome of one consent decision (plan 022).
+type RecordConsentInput struct {
+	UserID     string
+	ClientID   string
+	ClientName string
+	// Approved is the set of API scopes the user granted.
+	Approved []string
+	// Reviewed is every API scope the consent screen showed, approved or not.
+	Reviewed []string
+	// AutoAccept is the "remember this application" choice.
+	AutoAccept bool
+}
+
+// OAuthGrantServicer manages per-user, per-scope OAuth consent grants
+// (plan 022). It backs the consent bridge (auto-accept decisions), the
+// Connected apps settings (list / revoke) and the MCP server's write guard.
+type OAuthGrantServicer interface {
+	// Get returns the user's grant for clientID, including a revoked one, or
+	// ErrOAuthClientNotFound.
+	Get(userID, clientID string) (*models.OAuthClientGrant, error)
+	// RecordConsent upserts the grant for (user, client), replacing its scopes
+	// and clearing any earlier revocation.
+	RecordConsent(in RecordConsentInput) (*models.OAuthClientGrant, error)
+	// List returns the user's active (non-revoked) grants, most recent first.
+	List(userID string) ([]models.OAuthClientGrant, error)
+	// Revoke marks the user's grant for clientID revoked. It returns
+	// ErrOAuthClientNotFound when there is no active grant.
+	Revoke(userID, clientID string) error
+	// Authorize checks that the user is active and holds an active grant for
+	// clientID that includes scope, returning ErrOAuthScopeNotGranted otherwise.
+	// It records the grant's last use.
+	Authorize(userID, clientID, scope string) error
 }
 
 // AccountUpdateFields holds optional fields for updating an account.

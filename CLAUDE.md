@@ -112,7 +112,7 @@ apps/web/src/
 │   │   ├── categories/           # Category management
 │   │   ├── investments/          # Portfolio overview + [id] detail
 │   │   ├── securities/           # Securities browse + [id] detail
-│   │   └── settings/             # Settings (Telegram integration)
+│   │   └── settings/             # Settings (profile, appearance, Telegram, connected apps)
 │   └── layout.tsx                # Root layout (providers chain)
 ├── components/
 │   ├── ui/                       # ShadCN UI primitives (28 components, incl. custom stat-card, currency-input, color-palette)
@@ -121,7 +121,7 @@ apps/web/src/
 │   ├── transactions/             # Transaction dialogs (create, edit)
 │   ├── categories/               # Category dialogs (create, edit, delete)
 │   ├── investments/              # Investment action dialogs (add, buy, sell, dividend, split)
-│   ├── settings/                 # Telegram settings + setup guide
+│   ├── settings/                 # Settings sections (Telegram + setup guide, connected apps, ...)
 │   └── dashboard/                # Dashboard cards (net worth, cash flow, spending, composition)
 ├── hooks/                        # React Query hooks (one per domain, with query key factories)
 ├── providers/                    # ThemeProvider, QueryProvider, AuthProvider
@@ -194,7 +194,7 @@ Non-monetary floats that remain as float64: `Investment.Quantity`, `SplitRatio`,
 4. **Atomic operations**: All balance-affecting operations wrapped in DB transactions
 5. **Audit logging**: Sensitive operations logged to `audit_logs` table
 6. **SQL migrations over AutoMigrate**: Version-controlled, reversible schema changes
-7. **MCP auth via OAuth 2.1 (Ory Hydra)**: The MCP server is an OAuth Resource Server; Hydra owns DCR, authorize/token, and refresh rotation, reusing `UserService` for login. Flow, rationale, and interop gotchas: `docs/mcp-oauth.md`
+7. **MCP auth via OAuth 2.1 (Ory Hydra)**: The MCP server is an OAuth Resource Server; Hydra owns DCR, authorize/token, and refresh rotation, reusing `UserService` for login. Consent is per user and per scope (`oauth_client_grants`). Write tools are opt-in (`MCP_WRITE_ENABLED`, explicit consent tick, DB grant re-checked on every write). Flow, rationale, and interop gotchas: `docs/mcp-oauth.md`
 
 ## Common Commands
 
@@ -333,6 +333,10 @@ GET    /api/v1/securities
 GET    /api/v1/securities/:id
 GET    /api/v1/securities/:id/prices
 
+# Connected apps (OAuth client grants)
+GET    /api/v1/oauth/clients
+DELETE /api/v1/oauth/clients/:client_id
+
 # Telegram
 GET    /api/v1/telegram/link
 POST   /api/v1/telegram/generate-code
@@ -398,7 +402,12 @@ CORS_ORIGIN=*                    # default
 HYDRA_ISSUER_URL=http://localhost:4444   # default
 HYDRA_ADMIN_URL=http://localhost:4445    # default
 MCP_RESOURCE_URL=http://localhost:8081   # default; must match the aud in Hydra tokens
-OAUTH_SCOPES=<optional override of the default read:* scope set>
+OAUTH_SCOPES=<optional override of the default read:* scope set; write:* entries are ignored unless MCP_WRITE_ENABLED>
+MCP_WRITE_ENABLED=false          # opt-in MCP write tools + write:* scopes; set on both api and mcp
+MCP_MAX_WRITE_AMOUNT=1000000     # per-change ceiling in cents for MCP writes
+MCP_WRITE_RATE_PER_MINUTE=30     # MCP writes per (user, client)
+MCP_WRITE_RATE_PER_DAY=500
+MCP_TRUSTED_PROXY_CIDRS=         # CIDRs whose CF-Connecting-IP the mcp server trusts for audit IPs (prod: tunnel network)
 HYDRA_PINNED_CLIENT_ID=<optional pinned OAuth client>
 ```
 

@@ -122,12 +122,12 @@ func setupOAuthApp(t *testing.T) *oauthApp {
 
 	adminClient := hydra.NewAdminClient(fake.server.URL)
 	userService := services.NewUserService(db)
-	trustedClient := services.NewTrustedClientService(db)
+	grants := services.NewOAuthGrantService(db)
 	auditService := services.NewAuditService(db)
 
 	resourceURL := "https://mcp.example"
 	oauthHandler := handlers.NewOAuthHandler(
-		adminClient, userService, trustedClient, auditService,
+		adminClient, userService, grants, auditService,
 		config.DefaultOAuthScopes, resourceURL,
 	)
 	registrationHandler := handlers.NewRegistrationHandler(adminClient, auditService, config.DefaultOAuthScopes)
@@ -186,19 +186,20 @@ func TestOAuthLoginBridge(t *testing.T) {
 
 func TestOAuthConsentTOFU(t *testing.T) {
 	app := setupOAuthApp(t)
+	_, _, userID := app.registerUser(t, "consent@example.com", "SuperSecret123!")
 
 	const clientID = "claude-connector"
 	// The client requests one grantable scope, one disallowed scope, and no
 	// resource audience (as real MCP connectors do).
-	seed := func(challenge string) {
+	seed := func(challenge string, scopes ...string) {
 		app.hydra.seedConsent(challenge, hydra.ConsentRequest{
-			Subject: "user-1",
+			Subject: userID,
 			Client: hydra.OAuth2Client{
 				ClientID:     clientID,
 				ClientName:   "Claude",
 				RedirectURIs: []string{"https://claude.ai/callback"},
 			},
-			RequestedScope:               []string{"read:accounts", "admin:everything"},
+			RequestedScope:               append([]string{"read:accounts", "admin:everything"}, scopes...),
 			RequestedAccessTokenAudience: nil,
 		})
 	}
@@ -219,15 +220,15 @@ func TestOAuthConsentTOFU(t *testing.T) {
 		}
 	})
 
-	t.Run("accept with remember records trust and caps grant", func(t *testing.T) {
+	t.Run("accept with remember records the grant and caps it", func(t *testing.T) {
 		seed("consent-1")
-		body := `{"consent_challenge":"consent-1","remember_client":true}`
+		body := `{"consent_challenge":"consent-1","remember_client":true,"granted_scopes":["read:accounts","admin:everything"]}`
 		rec := app.request("POST", "/api/v1/oauth/consent/accept", body, "")
 		if rec.Code != http.StatusOK {
 			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 		}
 
-		// Granted scope is capped to the registered read:* set.
+		// Granted scope is capped to the registered set.
 		grantScope := toStringSlice(app.hydra.lastConsentAccept["grant_scope"])
 		if len(grantScope) != 1 || grantScope[0] != "read:accounts" {
 			t.Fatalf("expected grant_scope [read:accounts], got %v", grantScope)
@@ -239,21 +240,25 @@ func TestOAuthConsentTOFU(t *testing.T) {
 			t.Fatalf("expected audience [%s], got %v", app.resourceURL, grantAud)
 		}
 
-		// The client is now recorded as trusted.
-		var count int64
-		app.DB.Model(&models.TrustedOAuthClient{}).Where("client_id = ?", clientID).Count(&count)
-		if count != 1 {
-			t.Fatalf("expected client to be trusted, got %d rows", count)
+		// The grant is recorded for this user, remembered, with the capped scope.
+		var grant models.OAuthClientGrant
+		if err := app.DB.Where("user_id = ? AND client_id = ?", userID, clientID).First(&grant).Error; err != nil {
+			t.Fatalf("expected a grant row: %v", err)
 		}
-		// A trust audit entry was written.
-		var audits int64
-		app.DB.Model(&models.AuditLog{}).Where("action = ?", "OAUTH_CLIENT_TRUSTED").Count(&audits)
-		if audits != 1 {
-			t.Fatalf("expected 1 OAUTH_CLIENT_TRUSTED audit, got %d", audits)
+		if !grant.AutoAccept || grant.ApprovedScopes != "read:accounts" || grant.ReviewedScopes != "read:accounts" {
+			t.Fatalf("unexpected grant: %+v", grant)
+		}
+		// One consent audit entry records the decision, including "remember".
+		var entry models.AuditLog
+		if err := app.DB.Where("action = ?", "OAUTH_CONSENT_GRANTED").First(&entry).Error; err != nil {
+			t.Fatalf("expected an OAUTH_CONSENT_GRANTED audit: %v", err)
+		}
+		if !strings.Contains(entry.Changes, `"auto_accept":true`) {
+			t.Fatalf("expected auto_accept in the audit, got %s", entry.Changes)
 		}
 	})
 
-	t.Run("trusted client auto-accepts on next consent", func(t *testing.T) {
+	t.Run("remembered client auto-accepts on next consent", func(t *testing.T) {
 		seed("consent-2")
 		rec := app.request("GET", "/api/v1/oauth/consent?consent_challenge=consent-2", "", "")
 		if rec.Code != http.StatusOK {
@@ -261,7 +266,22 @@ func TestOAuthConsentTOFU(t *testing.T) {
 		}
 		result := parseJSON(t, rec)
 		if result["redirect_to"] == "" || result["redirect_to"] == nil {
-			t.Fatalf("trusted client must auto-redirect, got %v", result)
+			t.Fatalf("remembered client must auto-redirect, got %v", result)
+		}
+	})
+
+	t.Run("a newly requested scope brings the consent screen back", func(t *testing.T) {
+		seed("consent-3", "read:transactions")
+		rec := app.request("GET", "/api/v1/oauth/consent?consent_challenge=consent-3", "", "")
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		result := parseJSON(t, rec)
+		if _, ok := result["redirect_to"]; ok {
+			t.Fatalf("a scope the user never reviewed must not auto-accept: %v", result)
+		}
+		if got := toStringSlice(result["previously_approved"]); len(got) != 1 || got[0] != "read:accounts" {
+			t.Fatalf("expected previously_approved [read:accounts], got %v", got)
 		}
 	})
 }

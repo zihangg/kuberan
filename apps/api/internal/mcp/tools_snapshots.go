@@ -11,7 +11,7 @@ import (
 
 func (s *Server) registerSnapshotTools() {
 	s.mcp.AddTool(
-		mcp.NewTool("get_net_worth_history",
+		readTool("get_net_worth_history",
 			mcp.WithDescription("Get historical net worth snapshots showing total net worth, cash, investments, and debt over time."),
 			mcp.WithString("from_date", mcp.Required(), mcp.Description("Start date (YYYY-MM-DD)")),
 			mcp.WithString("to_date", mcp.Required(), mcp.Description("End date (YYYY-MM-DD)")),

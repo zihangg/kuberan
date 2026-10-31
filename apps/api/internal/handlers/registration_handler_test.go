@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -231,5 +232,50 @@ func TestIsValidRedirectURI(t *testing.T) {
 		if got := isValidRedirectURI(tc.uri); got != tc.want {
 			t.Errorf("isValidRedirectURI(%q) = %v, want %v", tc.uri, got, tc.want)
 		}
+	}
+}
+
+func TestRegistrationHandler_WriteScopes(t *testing.T) {
+	t.Run("registers write scopes when they are enabled", func(t *testing.T) {
+		admin := &mockHydraAdmin{}
+		handler := NewRegistrationHandler(admin, &recordingAuditService{}, testScopesWithWrite)
+
+		rec := doRequest(setupRegistrationRouter(handler), "POST", "/oauth/register",
+			`{"redirect_uris":["https://claude.ai/cb"],"scope":"read:accounts write:transactions"}`)
+
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
+		}
+		want := "read:accounts write:transactions openid offline offline_access"
+		if admin.lastCreateClient.Scope != want {
+			t.Errorf("scope = %q, want %q", admin.lastCreateClient.Scope, want)
+		}
+	})
+
+	t.Run("drops write scopes when they are disabled", func(t *testing.T) {
+		admin := &mockHydraAdmin{}
+		handler := NewRegistrationHandler(admin, &recordingAuditService{}, testScopes)
+
+		doRequest(setupRegistrationRouter(handler), "POST", "/oauth/register",
+			`{"redirect_uris":["https://claude.ai/cb"],"scope":"read:accounts write:transactions"}`)
+
+		if strings.Contains(admin.lastCreateClient.Scope, "write:") {
+			t.Errorf("write scopes must not be registrable when disabled, got %q", admin.lastCreateClient.Scope)
+		}
+	})
+}
+
+func TestRegistrationHandler_TruncatesClientName(t *testing.T) {
+	admin := &mockHydraAdmin{}
+	handler := NewRegistrationHandler(admin, &recordingAuditService{}, testScopes)
+
+	rec := doRequest(setupRegistrationRouter(handler), "POST", "/oauth/register",
+		`{"redirect_uris":["https://claude.ai/cb"],"client_name":"`+strings.Repeat("ü", 400)+`"}`)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if n := len([]rune(admin.lastCreateClient.ClientName)); n != maxClientNameLen {
+		t.Errorf("client name has %d characters, want %d", n, maxClientNameLen)
 	}
 }

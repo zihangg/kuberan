@@ -276,3 +276,32 @@ func TestHydraValidator_RefreshThrottle(t *testing.T) {
 		t.Errorf("JWKS fetched %d times, want 1 (throttled)", got)
 	}
 }
+
+// Hydra JWT access tokens carry the OAuth client in a top-level client_id
+// claim; the MCP write guard matches it against the user's consent grant.
+func TestHydraValidator_ClientID(t *testing.T) {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("generate key: %v", err)
+	}
+	srv := newJWKSServer(t, &key.PublicKey, testKid, nil)
+	v := NewHydraValidator(srv.URL, testIssuer, testAudience)
+
+	c := validClaims()
+	c["client_id"] = "claude-client"
+	claims, err := v.Validate(context.Background(), signToken(t, key, testKid, c))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if claims.ClientID != "claude-client" {
+		t.Errorf("client_id = %q, want claude-client", claims.ClientID)
+	}
+
+	claims, err = v.Validate(context.Background(), signToken(t, key, testKid, validClaims()))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if claims.ClientID != "" {
+		t.Errorf("client_id = %q, want empty when the claim is absent", claims.ClientID)
+	}
+}

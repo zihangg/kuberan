@@ -25,7 +25,7 @@ var allModels = []interface{}{
 	&models.PortfolioSnapshot{},
 	&models.AuditLog{},
 	&models.TelegramLink{},
-	&models.TrustedOAuthClient{},
+	&models.OAuthClientGrant{},
 	&models.RefreshSession{},
 	&models.TransactionAttachment{},
 	&models.TransactionRule{},

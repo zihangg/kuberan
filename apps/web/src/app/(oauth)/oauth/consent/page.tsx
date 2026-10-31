@@ -8,7 +8,10 @@ import type {
   OAuthConsentDetails,
   OAuthRedirectResponse,
 } from "@/types/api";
+import { isProtocolScope, isWriteScope, scopeLabel } from "@/lib/oauth-scopes";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 import {
   Card,
   CardContent,
@@ -17,23 +20,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-
-// Human-readable labels for the granular read:* scopes Hydra may request.
-const SCOPE_LABELS: Record<string, string> = {
-  "read:accounts": "View your accounts",
-  "read:transactions": "View your transactions",
-  "read:budgets": "View your budgets",
-  "read:categories": "View your categories",
-  "read:investments": "View your investments",
-  "read:portfolio": "View your portfolio",
-  "read:snapshots": "View your net-worth history",
-  openid: "Verify your identity",
-  offline_access: "Maintain access when you're away",
-};
-
-function scopeLabel(scope: string): string {
-  return SCOPE_LABELS[scope] ?? scope;
-}
 
 // Show the host of the client's redirect target — the anti-phishing signal.
 function redirectHost(redirectUris?: string[]): string | null {
@@ -46,6 +32,74 @@ function redirectHost(redirectUris?: string[]): string | null {
   }
 }
 
+// Read scopes start ticked; write scopes only when the user approved them for
+// this client before (plan 022: write access is always an explicit opt-in).
+function initialSelection(details: OAuthConsentDetails): Set<string> {
+  const previous = new Set(details.previously_approved ?? []);
+  return new Set(
+    (details.requested_scopes ?? []).filter(
+      (scope) =>
+        !isProtocolScope(scope) && (!isWriteScope(scope) || previous.has(scope))
+    )
+  );
+}
+
+function LabeledCheckbox({
+  id,
+  label,
+  checked,
+  disabled,
+  muted = false,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  checked: boolean;
+  disabled: boolean;
+  muted?: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <Checkbox
+        id={id}
+        checked={checked}
+        onCheckedChange={(v) => onChange(v === true)}
+        disabled={disabled}
+      />
+      <Label
+        htmlFor={id}
+        className={muted ? "text-muted-foreground font-normal" : "font-normal"}
+      >
+        {label}
+      </Label>
+    </div>
+  );
+}
+
+function ScopeCheckbox({
+  scope,
+  checked,
+  disabled,
+  onChange,
+}: {
+  scope: string;
+  checked: boolean;
+  disabled: boolean;
+  onChange: (scope: string, checked: boolean) => void;
+}) {
+  return (
+    <LabeledCheckbox
+      id={`scope-${scope.replace(/[^a-z0-9]/gi, "-")}`}
+      label={scopeLabel(scope)}
+      checked={checked}
+      disabled={disabled}
+      muted
+      onChange={(v) => onChange(scope, v)}
+    />
+  );
+}
+
 function OAuthConsent() {
   const searchParams = useSearchParams();
   const consentChallenge = searchParams.get("consent_challenge") ?? "";
@@ -54,6 +108,7 @@ function OAuthConsent() {
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [rememberClient, setRememberClient] = useState(true);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
@@ -77,6 +132,7 @@ function OAuthConsent() {
           return;
         }
         setDetails(res);
+        setSelected(initialSelection(res));
       } catch (err) {
         if (cancelled) return;
         setError(
@@ -101,6 +157,7 @@ function OAuthConsent() {
       const body: OAuthConsentAcceptRequest = {
         consent_challenge: consentChallenge,
         remember_client: rememberClient,
+        granted_scopes: Array.from(selected),
       };
       const res = await apiClient.post<OAuthRedirectResponse>(
         "/api/v1/oauth/consent/accept",
@@ -115,6 +172,15 @@ function OAuthConsent() {
       );
       setIsSubmitting(false);
     }
+  }
+
+  function toggleScope(scope: string, checked: boolean) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(scope);
+      else next.delete(scope);
+      return next;
+    });
   }
 
   async function handleDeny() {
@@ -165,6 +231,14 @@ function OAuthConsent() {
   const clientName = details?.client?.client_name || details?.client?.client_id || "An application";
   const host = redirectHost(details?.redirect_uris);
   const scopes = details?.requested_scopes ?? [];
+  const readScopes = scopes.filter((s) => !isProtocolScope(s) && !isWriteScope(s));
+  const writeScopes = scopes.filter(isWriteScope);
+  const protocolScopes = scopes.filter(isProtocolScope);
+  const grantsWrite = writeScopes.some((s) => selected.has(s));
+  // An app that asked for permissions but would get none can't do anything;
+  // Deny says that more clearly.
+  const nothingSelected =
+    readScopes.length + writeScopes.length > 0 && selected.size === 0;
 
   return (
     <Card>
@@ -189,33 +263,68 @@ function OAuthConsent() {
         )}
         <div className="flex flex-col gap-2">
           <p className="text-sm font-medium">This will allow it to:</p>
-          <ul className="flex flex-col gap-1">
-            {scopes.map((scope) => (
-              <li key={scope} className="text-muted-foreground text-sm">
-                • {scopeLabel(scope)}
-              </li>
-            ))}
-          </ul>
+          {readScopes.map((scope) => (
+            <ScopeCheckbox
+              key={scope}
+              scope={scope}
+              checked={selected.has(scope)}
+              disabled={isSubmitting}
+              onChange={toggleScope}
+            />
+          ))}
+          {protocolScopes.length > 0 && (
+            <ul className="flex flex-col gap-1">
+              {Array.from(new Set(protocolScopes.map(scopeLabel))).map((label) => (
+                <li key={label} className="text-muted-foreground text-sm">
+                  • {label}
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
-        <label className="flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            className="border-input size-4 rounded"
-            checked={rememberClient}
-            onChange={(e) => setRememberClient(e.target.checked)}
-            disabled={isSubmitting}
-          />
-          <span>Remember this application (skip this screen next time)</span>
-        </label>
+        {writeScopes.length > 0 && (
+          <div className="border-warning/40 flex flex-col gap-2 rounded-md border p-3">
+            <p className="text-sm font-medium">Allow changes</p>
+            <p className="text-muted-foreground text-xs">
+              Off unless you tick them. {clientName} will be able to change your
+              financial records. You can disconnect it in Settings at any time.
+            </p>
+            {writeScopes.map((scope) => (
+              <ScopeCheckbox
+                key={scope}
+                scope={scope}
+                checked={selected.has(scope)}
+                disabled={isSubmitting}
+                onChange={toggleScope}
+              />
+            ))}
+          </div>
+        )}
+        <LabeledCheckbox
+          id="remember-client"
+          label="Remember this application (skip this screen next time)"
+          checked={rememberClient}
+          disabled={isSubmitting}
+          onChange={setRememberClient}
+        />
+        {nothingSelected && (
+          <p className="text-muted-foreground text-xs">
+            Tick at least one permission, or choose Deny.
+          </p>
+        )}
       </CardContent>
       <CardFooter className="flex flex-col gap-2 pt-2">
         <Button
           type="button"
           className="w-full"
           onClick={handleAccept}
-          disabled={isSubmitting}
+          disabled={isSubmitting || nothingSelected}
         >
-          {isSubmitting ? "Authorizing..." : "Authorize"}
+          {isSubmitting
+            ? "Authorizing..."
+            : grantsWrite
+              ? "Authorize, including changes"
+              : "Authorize"}
         </Button>
         <Button
           type="button"

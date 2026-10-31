@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"kuberan/internal/logger"
@@ -55,8 +56,21 @@ type Config struct {
 	HydraIssuerURL      string // public issuer, e.g. https://auth.<domain>
 	HydraAdminURL       string // private admin API, e.g. http://hydra:4445
 	MCPResourceURL      string // RS resource identifier, e.g. https://mcp.<domain>
-	OAuthScopes         string // space-delimited read:* scope set
+	OAuthScopes         string // space-delimited API scope set (read:*, plus write:* when MCP writes are enabled)
 	HydraPinnedClientID string // optional pinned client (if not using TOFU)
+
+	// MCP write access (plan 022). Off by default; when off, write scopes are
+	// neither advertised, registrable nor grantable, and write tools are not
+	// registered.
+	MCPWriteEnabled       bool
+	MCPMaxWriteAmount     int64 // per-call ceiling in cents
+	MCPWriteRatePerMinute int   // per (user, client)
+	MCPWriteRatePerDay    int   // per (user, client)
+
+	// MCPTrustedProxyCIDRs lists the networks (e.g. the Docker network the
+	// Cloudflare tunnel connects from) whose CF-Connecting-IP header the MCP
+	// server trusts for audit logging. Empty means the header is ignored.
+	MCPTrustedProxyCIDRs []string
 
 	// Storage (receipt attachments). See plans/017-transaction-receipts.
 	StorageEndpoint     string // e.g. http://minio:9000 (internal only)
@@ -71,6 +85,10 @@ type Config struct {
 // DefaultOAuthScopes is the full granular read:* scope set the RS enforces.
 const DefaultOAuthScopes = "read:accounts read:transactions read:budgets " +
 	"read:categories read:investments read:portfolio read:snapshots"
+
+// DefaultOAuthWriteScopes is the write:* scope set added to OAuthScopes when
+// MCP writes are enabled (plan 022).
+const DefaultOAuthWriteScopes = "write:transactions write:categories write:budgets"
 
 var appConfig *Config
 
@@ -116,6 +134,13 @@ func Load() (*Config, error) {
 		OAuthScopes:         getEnv("OAUTH_SCOPES", DefaultOAuthScopes),
 		HydraPinnedClientID: os.Getenv("HYDRA_PINNED_CLIENT_ID"),
 
+		// MCP write access
+		MCPWriteEnabled:       getEnvBool("MCP_WRITE_ENABLED", false),
+		MCPMaxWriteAmount:     getEnvInt64("MCP_MAX_WRITE_AMOUNT", 1_000_000),
+		MCPWriteRatePerMinute: int(getEnvInt64("MCP_WRITE_RATE_PER_MINUTE", 30)),
+		MCPWriteRatePerDay:    int(getEnvInt64("MCP_WRITE_RATE_PER_DAY", 500)),
+		MCPTrustedProxyCIDRs:  splitList(os.Getenv("MCP_TRUSTED_PROXY_CIDRS")),
+
 		// Storage (receipt attachments)
 		StorageEndpoint:     os.Getenv("STORAGE_ENDPOINT"),
 		StorageBucket:       os.Getenv("STORAGE_BUCKET"),
@@ -125,6 +150,8 @@ func Load() (*Config, error) {
 		MaxUploadBytes:      getEnvInt64("MAX_UPLOAD_BYTES", 10*1024*1024),
 		MaxAttachmentsPerTx: int(getEnvInt64("MAX_ATTACHMENTS_PER_TX", 10)),
 	}
+
+	config.OAuthScopes = withWriteScopes(config.OAuthScopes, config.MCPWriteEnabled)
 
 	// Parse JWT expiration duration
 	expStr := getEnv("JWT_EXPIRES_IN", "24h")
@@ -235,4 +262,32 @@ func getEnvInt64(key string, defaultValue int64) int64 {
 		return defaultValue
 	}
 	return parsed
+}
+
+// withWriteScopes returns the scope set with write:* scopes present only when
+// MCP writes are enabled: it strips any write:* scope (e.g. one listed in an
+// OAUTH_SCOPES override) when disabled, and adds DefaultOAuthWriteScopes when
+// enabled, so the flag alone decides whether write access can be granted.
+func withWriteScopes(scopes string, writeEnabled bool) string {
+	out := make([]string, 0)
+	for _, s := range strings.Fields(scopes) {
+		if !strings.HasPrefix(s, "write:") {
+			out = append(out, s)
+		}
+	}
+	if writeEnabled {
+		out = append(out, strings.Fields(DefaultOAuthWriteScopes)...)
+	}
+	return strings.Join(out, " ")
+}
+
+// splitList splits a comma-separated environment value, dropping blanks.
+func splitList(v string) []string {
+	var out []string
+	for _, item := range strings.Split(v, ",") {
+		if item = strings.TrimSpace(item); item != "" {
+			out = append(out, item)
+		}
+	}
+	return out
 }

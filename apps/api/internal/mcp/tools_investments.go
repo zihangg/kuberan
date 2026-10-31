@@ -14,7 +14,7 @@ import (
 
 func (s *Server) registerInvestmentTools() {
 	s.mcp.AddTool(
-		mcp.NewTool("get_portfolio",
+		readTool("get_portfolio",
 			mcp.WithDescription("Get investment portfolio summary including total value, cost basis, gain/loss, breakdown by asset type, and individual holdings."),
 		),
 		s.handleGetPortfolio,

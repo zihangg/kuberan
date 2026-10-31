@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -18,7 +19,8 @@ import (
 	"kuberan/internal/services"
 )
 
-// Services bundles all service interfaces the MCP server needs.
+// Services bundles all service interfaces the MCP server needs. Audit and
+// Grants back the write tools (plan 022).
 type Services struct {
 	Users        services.UserServicer
 	Accounts     services.AccountServicer
@@ -28,16 +30,34 @@ type Services struct {
 	Investments  services.InvestmentServicer
 	Snapshots    services.PortfolioSnapshotServicer
 	Receivables  services.ReceivableServicer
+	Audit        services.AuditServicer
+	Grants       GrantAuthorizer
+}
+
+// GrantAuthorizer is the one part of services.OAuthGrantServicer the MCP
+// server needs: the per-write check that the user still grants the calling
+// client a scope. Authorize also records the grant's last use (shown as
+// "Last change" under Settings > Connected apps).
+type GrantAuthorizer interface {
+	Authorize(userID, clientID, scope string) error
 }
 
 type userIDKey struct{}
 
 type scopesKey struct{}
 
+type clientIDKey struct{}
+
+type clientIPKey struct{}
+
 // Server wraps the MCP server with Kuberan services.
 type Server struct {
 	services Services
 	mcp      *server.MCPServer
+	write    WriteConfig
+	limiter  *rateLimiter
+	// writeScopes maps each registered write tool to the scope it requires.
+	writeScopes map[string]string
 }
 
 // getUserID extracts the authenticated user ID from the context.
@@ -75,10 +95,13 @@ func requireScope(ctx context.Context, accepted ...string) *mcpgo.CallToolResult
 // makeAuthFromRequest returns an HTTP context function that extracts the Bearer
 // access token from the Authorization header, validates it against Hydra's
 // JWKS (signature, exp/nbf, issuer, audience), and stores the resulting subject
-// (Kuberan user ID) and granted scope set in the context. On any failure it
-// returns the bare context; tools then reject the call via getUserID.
-func makeAuthFromRequest(v TokenValidator) server.HTTPContextFunc {
+// (Kuberan user ID), granted scope set and OAuth client ID in the context,
+// along with the caller's IP for audit logging. On any failure it returns the
+// context without a user; tools then reject the call via getUserID.
+func makeAuthFromRequest(v TokenValidator, trustedProxies []*net.IPNet) server.HTTPContextFunc {
 	return func(ctx context.Context, r *http.Request) context.Context {
+		ctx = context.WithValue(ctx, clientIPKey{}, requestIP(r, trustedProxies))
+
 		authHeader := r.Header.Get("Authorization")
 		if authHeader == "" {
 			logger.Get().Warn("MCP auth: missing Authorization header")
@@ -98,8 +121,44 @@ func makeAuthFromRequest(v TokenValidator) server.HTTPContextFunc {
 		}
 
 		ctx = context.WithValue(ctx, userIDKey{}, claims.Subject)
+		ctx = context.WithValue(ctx, clientIDKey{}, claims.ClientID)
 		return context.WithValue(ctx, scopesKey{}, claims.Scopes)
 	}
+}
+
+// requestIP returns the caller's IP for audit logging: the TCP peer address,
+// or Cloudflare's CF-Connecting-IP when the peer is a trusted proxy (the
+// tunnel). Anyone else could set that header to forge the audited IP.
+func requestIP(r *http.Request, trustedProxies []*net.IPNet) string {
+	peer := r.RemoteAddr
+	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		peer = host
+	}
+	forwarded := strings.TrimSpace(r.Header.Get("CF-Connecting-IP"))
+	if forwarded == "" || net.ParseIP(forwarded) == nil {
+		return peer
+	}
+	if ip := net.ParseIP(peer); ip != nil {
+		for _, n := range trustedProxies {
+			if n.Contains(ip) {
+				return forwarded
+			}
+		}
+	}
+	return peer
+}
+
+// ParseTrustedProxies parses CIDRs (config.MCPTrustedProxyCIDRs) for requestIP.
+func ParseTrustedProxies(cidrs []string) ([]*net.IPNet, error) {
+	out := make([]*net.IPNet, 0, len(cidrs))
+	for _, c := range cidrs {
+		_, n, err := net.ParseCIDR(c)
+		if err != nil {
+			return nil, fmt.Errorf("invalid trusted proxy CIDR %q: %w", c, err)
+		}
+		out = append(out, n)
+	}
+	return out, nil
 }
 
 // errUnauthorized returns an MCP tool error for unauthenticated requests.
@@ -137,11 +196,9 @@ func writeUnauthorized(w http.ResponseWriter) {
 	_, _ = w.Write([]byte(`{"error":"unauthorized","error_description":"valid Bearer access token required"}`))
 }
 
-// Run creates the MCP server, registers all tools, and starts the HTTP transport.
-// oauth carries the Resource Server discovery settings advertised at the
-// RFC 9728 well-known endpoint and in WWW-Authenticate challenges. validator
-// verifies incoming Bearer access tokens against Hydra's JWKS.
-func Run(svc Services, addr string, oauth OAuthConfig, validator TokenValidator) error {
+// newServer creates the MCP server and registers its tools. Write tools are
+// registered only when write.Enabled is set (plan 022).
+func newServer(svc Services, write WriteConfig) *Server {
 	s := &Server{
 		services: svc,
 		mcp: server.NewMCPServer(
@@ -149,6 +206,9 @@ func Run(svc Services, addr string, oauth OAuthConfig, validator TokenValidator)
 			"1.0.0",
 			server.WithToolCapabilities(true),
 		),
+		write:       write,
+		limiter:     newRateLimiter(write.RatePerMinute, write.RatePerDay, time.Now),
+		writeScopes: map[string]string{},
 	}
 
 	s.registerAccountTools()
@@ -159,8 +219,23 @@ func Run(svc Services, addr string, oauth OAuthConfig, validator TokenValidator)
 	s.registerSnapshotTools()
 	s.registerReceivableTools()
 
+	if write.Enabled {
+		s.registerWriteTools()
+	}
+	return s
+}
+
+// Run creates the MCP server, registers all tools, and starts the HTTP transport.
+// oauth carries the Resource Server discovery settings advertised at the
+// RFC 9728 well-known endpoint and in WWW-Authenticate challenges. validator
+// verifies incoming Bearer access tokens against Hydra's JWKS. write controls
+// the write tools and their limits. trustedProxies are the networks whose
+// CF-Connecting-IP header is believed for audit logging.
+func Run(svc Services, addr string, oauth OAuthConfig, validator TokenValidator, write WriteConfig, trustedProxies []*net.IPNet) error {
+	s := newServer(svc, write)
+
 	mcpHandler := server.NewStreamableHTTPServer(s.mcp,
-		server.WithHTTPContextFunc(makeAuthFromRequest(validator)),
+		server.WithHTTPContextFunc(makeAuthFromRequest(validator, trustedProxies)),
 	)
 
 	// Wrap the MCP handler in our own mux so we can expose an unauthenticated

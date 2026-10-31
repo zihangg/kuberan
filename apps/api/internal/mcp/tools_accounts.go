@@ -12,7 +12,7 @@ import (
 
 func (s *Server) registerAccountTools() {
 	s.mcp.AddTool(
-		mcp.NewTool("list_accounts",
+		readTool("list_accounts",
 			mcp.WithDescription("List all financial accounts (cash, investment, credit card, debt) with current balances. Returns account names, types, balances, and currencies. Limited to the first 100 accounts."),
 		),
 		s.handleListAccounts,

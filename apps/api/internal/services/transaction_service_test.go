@@ -4,6 +4,8 @@ import (
 	"testing"
 	"time"
 
+	"gorm.io/gorm"
+
 	"kuberan/internal/models"
 	"kuberan/internal/pagination"
 	"kuberan/internal/testutil"
@@ -2177,4 +2179,127 @@ func TestGetSpendingByCategory_ExcludesZeroEffectiveTotals(t *testing.T) {
 	if top.TotalCount != 1 || len(top.Items) != 1 {
 		t.Errorf("expected total_count 1 and 1 item, got %d and %d", top.TotalCount, len(top.Items))
 	}
+}
+
+func TestTransactionCategoryOwnership(t *testing.T) {
+	setup := func(t *testing.T) (TransactionServicer, *gorm.DB, *models.User, *models.Account, *models.Category) {
+		t.Helper()
+		db := testutil.SetupTestDB(t)
+		t.Cleanup(func() { testutil.TeardownTestDB(t, db) })
+		txSvc := NewTransactionService(db, NewAccountService(db), nil)
+		user := testutil.CreateTestUser(t, db)
+		account := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 10_000)
+		other := testutil.CreateTestUser(t, db)
+		foreign := testutil.CreateTestCategory(t, db, other.ID, models.CategoryTypeExpense)
+		return txSvc, db, user, account, foreign
+	}
+	balance := func(t *testing.T, db *gorm.DB, accountID string) int64 {
+		t.Helper()
+		var a models.Account
+		if err := db.First(&a, "id = ?", accountID).Error; err != nil {
+			t.Fatal(err)
+		}
+		return a.Balance
+	}
+
+	tests := []struct {
+		name string
+		run  func(t *testing.T, svc TransactionServicer, db *gorm.DB, user *models.User, account *models.Account, foreign *models.Category) error
+		want string // error code, "" for success
+	}{
+		{
+			name: "create_with_own_category",
+			run: func(t *testing.T, svc TransactionServicer, db *gorm.DB, user *models.User, account *models.Account, _ *models.Category) error {
+				own := testutil.CreateTestCategory(t, db, user.ID, models.CategoryTypeExpense)
+				_, err := svc.CreateTransaction(user.ID, account.ID, &own.ID, models.TransactionTypeExpense, 500, "Lunch", time.Now())
+				return err
+			},
+		},
+		{
+			name: "create_with_another_users_category",
+			run: func(_ *testing.T, svc TransactionServicer, _ *gorm.DB, user *models.User, account *models.Account, foreign *models.Category) error {
+				_, err := svc.CreateTransaction(user.ID, account.ID, &foreign.ID, models.TransactionTypeExpense, 500, "Lunch", time.Now())
+				return err
+			},
+			want: "CATEGORY_NOT_FOUND",
+		},
+		{
+			name: "create_with_unknown_category",
+			run: func(_ *testing.T, svc TransactionServicer, _ *gorm.DB, user *models.User, account *models.Account, _ *models.Category) error {
+				missing := "01a00000-0000-7000-8000-000000000000"
+				_, err := svc.CreateTransaction(user.ID, account.ID, &missing, models.TransactionTypeExpense, 500, "Lunch", time.Now())
+				return err
+			},
+			want: "CATEGORY_NOT_FOUND",
+		},
+		{
+			name: "create_with_empty_category_means_none",
+			run: func(_ *testing.T, svc TransactionServicer, _ *gorm.DB, user *models.User, account *models.Account, _ *models.Category) error {
+				empty := ""
+				txn, err := svc.CreateTransaction(user.ID, account.ID, &empty, models.TransactionTypeExpense, 500, "Lunch", time.Now())
+				if err == nil && txn.CategoryID != nil {
+					t.Errorf("expected no category, got %q", *txn.CategoryID)
+				}
+				return err
+			},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			svc, db, user, account, foreign := setup(t)
+			err := tc.run(t, svc, db, user, account, foreign)
+			if tc.want == "" {
+				testutil.AssertNoError(t, err)
+				return
+			}
+			testutil.AssertAppError(t, err, tc.want)
+			var n int64
+			db.Model(&models.Transaction{}).Count(&n)
+			if n != 0 || balance(t, db, account.ID) != 10_000 {
+				t.Errorf("a rejected create must not write: %d transactions, balance %d", n, balance(t, db, account.ID))
+			}
+		})
+	}
+
+	t.Run("update_to_another_users_category_changes_nothing", func(t *testing.T) {
+		svc, db, user, account, foreign := setup(t)
+		own := testutil.CreateTestCategory(t, db, user.ID, models.CategoryTypeExpense)
+		txn, err := svc.CreateTransaction(user.ID, account.ID, &own.ID, models.TransactionTypeExpense, 500, "Lunch", time.Now())
+		testutil.AssertNoError(t, err)
+
+		newAmount := int64(900)
+		foreignID := &foreign.ID
+		_, err = svc.UpdateTransaction(user.ID, txn.ID, TransactionUpdateFields{Amount: &newAmount, CategoryID: &foreignID})
+		testutil.AssertAppError(t, err, "CATEGORY_NOT_FOUND")
+
+		var got models.Transaction
+		db.First(&got, "id = ?", txn.ID)
+		if got.CategoryID == nil || *got.CategoryID != own.ID || got.Amount != 500 {
+			t.Errorf("transaction must be unchanged, got %+v", got)
+		}
+		if b := balance(t, db, account.ID); b != 9_500 {
+			t.Errorf("balance must be unchanged at 9500, got %d", b)
+		}
+	})
+
+	t.Run("update_to_own_category_and_clear", func(t *testing.T) {
+		svc, db, user, account, _ := setup(t)
+		txn, err := svc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeExpense, 500, "Lunch", time.Now())
+		testutil.AssertNoError(t, err)
+		own := testutil.CreateTestCategory(t, db, user.ID, models.CategoryTypeExpense)
+
+		ownID := &own.ID
+		updated, err := svc.UpdateTransaction(user.ID, txn.ID, TransactionUpdateFields{CategoryID: &ownID})
+		testutil.AssertNoError(t, err)
+		if updated.CategoryID == nil || *updated.CategoryID != own.ID {
+			t.Fatalf("expected category %s, got %v", own.ID, updated.CategoryID)
+		}
+
+		var none *string
+		updated, err = svc.UpdateTransaction(user.ID, txn.ID, TransactionUpdateFields{CategoryID: &none})
+		testutil.AssertNoError(t, err)
+		if updated.CategoryID != nil {
+			t.Errorf("expected category cleared, got %v", *updated.CategoryID)
+		}
+	})
 }

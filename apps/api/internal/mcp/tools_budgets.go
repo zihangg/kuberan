@@ -12,7 +12,7 @@ import (
 
 func (s *Server) registerBudgetTools() {
 	s.mcp.AddTool(
-		mcp.NewTool("list_budgets",
+		readTool("list_budgets",
 			mcp.WithDescription("List all budgets with their category, amount, and period. Limited to the first 100 budgets."),
 			mcp.WithBoolean("active_only", mcp.Description("Only show active budgets (default true)")),
 		),
@@ -20,7 +20,7 @@ func (s *Server) registerBudgetTools() {
 	)
 
 	s.mcp.AddTool(
-		mcp.NewTool("get_budget_progress",
+		readTool("get_budget_progress",
 			mcp.WithDescription("Get spending progress against a specific budget. Shows budgeted amount, spent, remaining, and percentage used."),
 			mcp.WithString("budget_id", mcp.Required(), mcp.Description("The budget ID")),
 		),

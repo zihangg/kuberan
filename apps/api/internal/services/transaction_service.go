@@ -55,9 +55,16 @@ func (s *transactionService) CreateTransaction(
 	if date.IsZero() {
 		date = time.Now()
 	}
+	if categoryID != nil && *categoryID == "" {
+		categoryID = nil
+	}
+	if err := ensureCategoryOwned(s.db, userID, categoryID); err != nil {
+		return nil, err
+	}
 
 	// Auto-categorize via rules when the caller didn't specify a category and the
-	// transaction is a categorizable income/expense (plan 018).
+	// transaction is a categorizable income/expense (plan 018). Rule actions are
+	// validated against the user's categories when the rule is saved.
 	categoryID = resolveRuleCategory(s.ruleService, userID, categoryID, RuleInput{
 		Description: description,
 		Amount:      amount,
@@ -410,6 +417,9 @@ func (s *transactionService) UpdateTransaction(userID, transactionID string, upd
 			transaction.Date = *updates.Date
 		}
 		if updates.CategoryID != nil {
+			if err := ensureCategoryOwned(tx, userID, *updates.CategoryID); err != nil {
+				return err
+			}
 			transaction.CategoryID = *updates.CategoryID
 		}
 
@@ -867,7 +877,7 @@ func (s *transactionService) totalsByCategory(userID string, txnType models.Tran
 
 		if r.CategoryID != nil {
 			var category models.Category
-			if catErr := s.db.Where("id = ?", *r.CategoryID).First(&category).Error; catErr != nil {
+			if catErr := s.db.Where("id = ? AND user_id = ?", *r.CategoryID, userID).First(&category).Error; catErr != nil {
 				item.CategoryName = "Unknown Category"
 				item.CategoryColor = "#9CA3AF"
 			} else {
@@ -991,7 +1001,7 @@ func (s *transactionService) GetTopExpenses(userID string, from, to time.Time, l
 
 		if r.CategoryID != nil {
 			var category models.Category
-			if catErr := s.db.Where("id = ?", *r.CategoryID).First(&category).Error; catErr != nil {
+			if catErr := s.db.Where("id = ? AND user_id = ?", *r.CategoryID, userID).First(&category).Error; catErr != nil {
 				item.CategoryName = "Unknown Category"
 				item.CategoryColor = "#9CA3AF"
 			} else {

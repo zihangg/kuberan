@@ -1,0 +1,27 @@
+package services
+
+import (
+	"gorm.io/gorm"
+
+	apperrors "kuberan/internal/errors"
+	"kuberan/internal/models"
+)
+
+// ensureCategoryOwned returns ErrCategoryNotFound unless categoryID (when set)
+// is a live category owned by userID. Transactions reference categories by ID,
+// so without this check a caller could attach, and then read back the name of,
+// another user's category.
+func ensureCategoryOwned(db *gorm.DB, userID string, categoryID *string) error {
+	if categoryID == nil {
+		return nil
+	}
+	var n int64
+	if err := db.Model(&models.Category{}).
+		Where("id = ? AND user_id = ?", *categoryID, userID).Count(&n).Error; err != nil {
+		return apperrors.Wrap(apperrors.ErrInternalServer, err)
+	}
+	if n == 0 {
+		return apperrors.ErrCategoryNotFound
+	}
+	return nil
+}

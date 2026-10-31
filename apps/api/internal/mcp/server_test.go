@@ -139,7 +139,7 @@ func TestRequireBearer(t *testing.T) {
 func TestMakeAuthFromRequest(t *testing.T) {
 	t.Run("valid token sets subject and scopes", func(t *testing.T) {
 		v := fakeValidator{claims: &AccessClaims{Subject: "user-42", Scopes: []string{"read:accounts"}}}
-		fn := makeAuthFromRequest(v)
+		fn := makeAuthFromRequest(v, nil)
 
 		req := httptest.NewRequest("POST", "/mcp", nil)
 		req.Header.Set("Authorization", "Bearer sometoken")
@@ -154,8 +154,51 @@ func TestMakeAuthFromRequest(t *testing.T) {
 		}
 	})
 
+	t.Run("valid token sets client ID and caller IP", func(t *testing.T) {
+		v := fakeValidator{claims: &AccessClaims{Subject: "user-42", ClientID: "claude-client"}}
+		fn := makeAuthFromRequest(v, nil)
+
+		req := httptest.NewRequest("POST", "/mcp", http.NoBody)
+		req.RemoteAddr = "192.0.2.10:54321"
+		req.Header.Set("Authorization", "Bearer sometoken")
+		ctx := fn(context.Background(), req)
+
+		if got, _ := ctx.Value(clientIDKey{}).(string); got != "claude-client" {
+			t.Errorf("client ID = %q, want claude-client", got)
+		}
+		if got, _ := ctx.Value(clientIPKey{}).(string); got != "192.0.2.10" {
+			t.Errorf("IP = %q, want the peer address", got)
+		}
+	})
+
+	t.Run("CF-Connecting-IP is believed only from a trusted proxy", func(t *testing.T) {
+		trusted, err := ParseTrustedProxies([]string{"172.16.0.0/12"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		cases := []struct{ peer, header, want string }{
+			{"172.18.0.5:443", "198.51.100.4", "198.51.100.4"}, // via the tunnel
+			{"203.0.113.9:443", "198.51.100.4", "203.0.113.9"}, // forged by a direct caller
+			{"172.18.0.5:443", "not-an-ip", "172.18.0.5"},      // garbage header
+			{"172.18.0.5:443", "", "172.18.0.5"},
+		}
+		for _, tc := range cases {
+			req := httptest.NewRequest("POST", "/mcp", http.NoBody)
+			req.RemoteAddr = tc.peer
+			if tc.header != "" {
+				req.Header.Set("CF-Connecting-IP", tc.header)
+			}
+			if got := requestIP(req, trusted); got != tc.want {
+				t.Errorf("peer %s header %q: IP = %q, want %q", tc.peer, tc.header, got, tc.want)
+			}
+		}
+		if _, err := ParseTrustedProxies([]string{"nope"}); err == nil {
+			t.Error("an invalid CIDR must be rejected")
+		}
+	})
+
 	t.Run("missing header yields no user", func(t *testing.T) {
-		fn := makeAuthFromRequest(fakeValidator{})
+		fn := makeAuthFromRequest(fakeValidator{}, nil)
 		req := httptest.NewRequest("POST", "/mcp", nil)
 		ctx := fn(context.Background(), req)
 		if _, err := getUserID(ctx); err == nil {
@@ -164,7 +207,7 @@ func TestMakeAuthFromRequest(t *testing.T) {
 	})
 
 	t.Run("malformed header yields no user", func(t *testing.T) {
-		fn := makeAuthFromRequest(fakeValidator{claims: &AccessClaims{Subject: "x"}})
+		fn := makeAuthFromRequest(fakeValidator{claims: &AccessClaims{Subject: "x"}}, nil)
 		req := httptest.NewRequest("POST", "/mcp", nil)
 		req.Header.Set("Authorization", "Basic abc")
 		ctx := fn(context.Background(), req)
@@ -174,7 +217,7 @@ func TestMakeAuthFromRequest(t *testing.T) {
 	})
 
 	t.Run("rejected token yields no user", func(t *testing.T) {
-		fn := makeAuthFromRequest(fakeValidator{err: errors.New("bad token")})
+		fn := makeAuthFromRequest(fakeValidator{err: errors.New("bad token")}, nil)
 		req := httptest.NewRequest("POST", "/mcp", nil)
 		req.Header.Set("Authorization", "Bearer sometoken")
 		ctx := fn(context.Background(), req)
