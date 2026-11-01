@@ -135,7 +135,7 @@ services:
 
   # One-shot: create/upgrade Hydra's schema in the dedicated `hydra` database.
   hydra-migrate:
-    image: oryd/hydra:v25.4.0
+    image: oryd/hydra:v26.2.0
     command: migrate sql -e --yes
     environment:
       - DSN=postgres://kuberan:kuberan@postgres:5432/hydra?sslmode=disable
@@ -148,7 +148,7 @@ services:
   # Public API (:4444) is exposed; the admin API (:4445) MUST stay on the private
   # Docker network and is never published.
   hydra:
-    image: oryd/hydra:v25.4.0
+    image: oryd/hydra:v26.2.0
     command: serve all --dev --config /etc/config/hydra/hydra.yml
     ports:
       - "4444:4444" # public: authorize/token/discovery/DCR
@@ -225,7 +225,7 @@ services:
     restart: "no"
 
   postgres:
-    image: postgres:16-alpine
+    image: postgres:18-alpine
     container_name: kuberan-postgres
     # Bootstrap superuser is `postgres`; apps/api/dev/init.sql creates the
     # non-superuser `kuberan` role that owns the kuberan and hydra databases.
