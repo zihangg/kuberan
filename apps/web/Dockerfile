@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # ---- Dependencies ----
-FROM node:22-alpine AS deps
+FROM node:26-alpine AS deps
 RUN corepack enable
 WORKDIR /app
 
@@ -11,7 +11,7 @@ RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
     pnpm install --frozen-lockfile --store-dir /pnpm/store
 
 # ---- Builder ----
-FROM node:22-alpine AS builder
+FROM node:26-alpine AS builder
 RUN corepack enable
 WORKDIR /app
 
@@ -27,7 +27,7 @@ ENV NEXT_PUBLIC_BOT_USERNAME=$NEXT_PUBLIC_BOT_USERNAME
 RUN pnpm build
 
 # ---- Runner ----
-FROM node:22-alpine AS runner
+FROM node:26-alpine AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production
