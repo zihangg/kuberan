@@ -210,7 +210,7 @@ services:
   # HYDRA_DSN points at the same Postgres/Supabase instance, own database.
   hydra-migrate:
     <<: *hardened
-    image: oryd/hydra:v25.4.0
+    image: oryd/hydra:v26.2.0
     command: migrate sql -e --yes
     read_only: true
     tmpfs: *tmpfs
@@ -234,7 +234,7 @@ services:
   # hydra-admin network (SERVE_ADMIN_HOST), which only the api joins.
   hydra:
     <<: *hardened
-    image: oryd/hydra:v25.4.0
+    image: oryd/hydra:v26.2.0
     command: serve all --config /etc/config/hydra/hydra.yml
     read_only: true
     tmpfs: *tmpfs
