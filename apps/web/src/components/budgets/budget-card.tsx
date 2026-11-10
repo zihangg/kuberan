@@ -8,9 +8,12 @@ import { BudgetPaceBar } from "./budget-pace-bar";
 import { BudgetStatusChip } from "./budget-status-chip";
 import {
   budgetStatus,
+  paceStanding,
+  periodDay,
   periodDaysLeft,
   periodElapsedFraction,
 } from "@/lib/budget-pace";
+import { cn } from "@/lib/utils";
 import type { Budget, BudgetProgress } from "@/types/models";
 
 /**
@@ -41,6 +44,8 @@ export function BudgetCard({
     remaining > 0 && daysLeft > 0 ? Math.floor(remaining / daysLeft) : null;
   const name = budget.category?.name ?? budget.name;
   const dayWord = daysLeft === 1 ? "day" : "days";
+  const { day, days } = periodDay(budget.period, now);
+  const pace = paceStanding(budget.amount, spent, elapsed);
 
   return (
     <div className="bg-card hover:border-input relative flex flex-col gap-3 rounded-card border p-4 transition-colors">
@@ -84,6 +89,20 @@ export function BudgetCard({
         status={status}
         thick
         label={`${name}: ${Math.round(percentage)}% of budget used, ${Math.round(elapsed * 100)}% of the ${unit} gone`}
+        tip={
+          <>
+            <p>
+              The line is an even pace: what you&apos;d have spent by today
+              (day {day} of {days}) spending the budget evenly.
+            </p>
+            <p className="mt-1 tabular-nums">
+              Even pace:{" "}
+              <Money amount={pace.expected} currency={currency} sign="never" />
+              {" · "}Spent:{" "}
+              <Money amount={spent} currency={currency} sign="never" />
+            </p>
+          </>
+        }
       />
 
       <p className="text-muted-foreground text-xs">
@@ -108,6 +127,29 @@ export function BudgetCard({
           </>
         )}
       </p>
+      {remaining >= 0 && (
+        <p
+          className={cn(
+            "-mt-2 text-xs",
+            pace.kind === "ahead"
+              ? "text-warning-text"
+              : pace.kind === "behind"
+                ? "text-positive-text"
+                : "text-muted-foreground"
+          )}
+        >
+          {pace.kind === "on" ? (
+            "On an even pace"
+          ) : (
+            <>
+              <Money amount={pace.amount} currency={currency} sign="never" />
+              {pace.kind === "ahead"
+                ? " ahead of an even pace"
+                : " under an even pace"}
+            </>
+          )}
+        </p>
+      )}
       <FxNotice fxMissing={progress?.fx_missing} variant="inline" />
     </div>
   );

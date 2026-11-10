@@ -4,6 +4,8 @@ import {
   paceDelta,
   periodDaysLeft,
   periodElapsedFraction,
+  paceStanding,
+  periodDay,
 } from "./budget-pace";
 
 describe("periodElapsedFraction", () => {
@@ -48,5 +50,45 @@ describe("paceDelta", () => {
   it("is spent minus the even-pace amount", () => {
     expect(paceDelta(100000, 60000, 0.5)).toBe(10000);
     expect(paceDelta(100000, 30000, 0.5)).toBe(-20000);
+  });
+});
+
+describe("paceStanding", () => {
+  // Day 10 of 30: an even pace has spent a third of the budget.
+  const elapsed = 10 / 30;
+
+  it("is ahead when spending runs faster than an even pace", () => {
+    // Supplements: RM 184.60 of RM 250.00 by day 10.
+    expect(paceStanding(25000, 18460, elapsed)).toEqual({
+      kind: "ahead",
+      amount: 10127,
+      expected: 8333,
+    });
+  });
+
+  it("is behind when spending runs slower", () => {
+    // Utilities: RM 59.00 of RM 450.00 by day 10.
+    expect(paceStanding(45000, 5900, elapsed)).toEqual({
+      kind: "behind",
+      amount: 9100,
+      expected: 15000,
+    });
+  });
+
+  it("counts within 2% of the budget as on pace", () => {
+    expect(paceStanding(30000, 10300, elapsed).kind).toBe("on");
+    expect(paceStanding(30000, 9700, elapsed).kind).toBe("on");
+  });
+});
+
+describe("periodDay", () => {
+  it("counts days of the month", () => {
+    expect(periodDay("monthly", new Date(2026, 10, 10))).toEqual({ day: 10, days: 30 });
+    expect(periodDay("monthly", new Date(2026, 1, 28))).toEqual({ day: 28, days: 28 });
+  });
+
+  it("counts days of the year", () => {
+    expect(periodDay("yearly", new Date(2026, 0, 1))).toEqual({ day: 1, days: 365 });
+    expect(periodDay("yearly", new Date(2028, 11, 31))).toEqual({ day: 366, days: 366 });
   });
 });

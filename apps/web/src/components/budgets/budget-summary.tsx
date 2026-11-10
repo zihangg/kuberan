@@ -3,7 +3,12 @@
 import { Badge } from "@/components/ui/badge";
 import { Money } from "@/components/ui/money";
 import { BudgetPaceBar } from "./budget-pace-bar";
-import { budgetStatus, periodElapsedFraction } from "@/lib/budget-pace";
+import {
+  budgetStatus,
+  paceStanding,
+  periodDay,
+  periodElapsedFraction,
+} from "@/lib/budget-pace";
 import type { Budget, BudgetProgress } from "@/types/models";
 
 export interface CurrencyTotals {
@@ -70,6 +75,7 @@ export function BudgetSummary({
   now: Date;
 }) {
   const elapsed = periodElapsedFraction("monthly", now);
+  const { day, days } = periodDay("monthly", now);
   return (
     <div className="bg-card space-y-4 rounded-card border p-4 md:p-5">
       {totals.map((t) => {
@@ -118,7 +124,32 @@ export function BudgetSummary({
               status={status}
               thick
               label={`Spent ${Math.round(pct)}% of everything budgeted in ${t.currency}`}
+              tip={
+                <>
+                  <p>
+                    The line is an even pace: what you&apos;d have spent by
+                    today (day {day} of {days}) spending every budget evenly.
+                  </p>
+                  <p className="mt-1 tabular-nums">
+                    Even pace:{" "}
+                    <Money
+                      amount={paceStanding(t.budgeted, t.spent, elapsed).expected}
+                      currency={t.currency}
+                      sign="never"
+                    />
+                    {" · "}Spent:{" "}
+                    <Money amount={t.spent} currency={t.currency} sign="never" />
+                  </p>
+                </>
+              }
             />
+            <p className="text-muted-foreground mt-1.5 flex items-center gap-1.5 text-xs">
+              <i
+                aria-hidden
+                className="bg-foreground/70 inline-block h-3 w-0.5 rounded-full"
+              />
+              Even pace by today · day {day} of {days}
+            </p>
           </div>
         );
       })}

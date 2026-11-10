@@ -60,3 +60,51 @@ export function paceDelta(
 ): number {
   return Math.round(spent - budgeted * elapsed);
 }
+
+/** Which day of the budget's period today is, and how many days it has. */
+export function periodDay(
+  period: BudgetPeriod,
+  now: Date = new Date()
+): { day: number; days: number } {
+  const year = now.getFullYear();
+  if (period === "monthly") {
+    return {
+      day: now.getDate(),
+      days: new Date(year, now.getMonth() + 1, 0).getDate(),
+    };
+  }
+  const start = Date.UTC(year, 0, 1);
+  const today = Date.UTC(year, now.getMonth(), now.getDate());
+  return {
+    day: Math.round((today - start) / 86_400_000) + 1,
+    days: (Date.UTC(year + 1, 0, 1) - start) / 86_400_000,
+  };
+}
+
+/** Where spending stands against an even pace through the period. */
+export interface PaceStanding {
+  /** "ahead" = spending faster than an even pace; "behind" = slower. */
+  kind: "ahead" | "behind" | "on";
+  /** How far from an even pace, in cents (always >= 0). */
+  amount: number;
+  /** What an even pace would have spent by today, in cents. */
+  expected: number;
+}
+
+/**
+ * Compares spending with an even pace. Within 2% of the budget counts as
+ * "on" pace, so a few cents either way don't flip the wording.
+ */
+export function paceStanding(
+  budgeted: number,
+  spent: number,
+  elapsed: number
+): PaceStanding {
+  const expected = Math.round(budgeted * elapsed);
+  const delta = paceDelta(budgeted, spent, elapsed);
+  const tolerance = Math.round(budgeted * 0.02);
+  if (Math.abs(delta) <= tolerance) {
+    return { kind: "on", amount: Math.abs(delta), expected };
+  }
+  return { kind: delta > 0 ? "ahead" : "behind", amount: Math.abs(delta), expected };
+}
