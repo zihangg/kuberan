@@ -13,7 +13,6 @@ import { findProgress } from "@/components/budgets/budget-visuals";
 import { BudgetCard } from "@/components/budgets/budget-card";
 import {
   BudgetSummary,
-  summarySentence,
   totalsByCurrency,
 } from "@/components/budgets/budget-summary";
 import { CreateBudgetDialog } from "@/components/budgets/create-budget-dialog";
@@ -90,10 +89,6 @@ export default function BudgetsPage() {
     [progressList, activeBudgets]
   );
   const totals = useMemo(() => totalsByCurrency(activeProgress), [activeProgress]);
-  const sentence = useMemo(
-    () => summarySentence(activeBudgets, activeProgress),
-    [activeBudgets, activeProgress]
-  );
 
   // Most pressing first: highest share of the budget used.
   const sorted = useMemo(
@@ -163,7 +158,7 @@ export default function BudgetsPage() {
       ) : (
         <>
           {totals.length > 0 && (
-            <BudgetSummary totals={totals} sentence={sentence} now={now} />
+            <BudgetSummary totals={totals} now={now} />
           )}
 
           {sorted.length > 0 && (

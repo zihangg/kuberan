@@ -61,26 +61,6 @@ export function paceDelta(
   return Math.round(spent - budgeted * elapsed);
 }
 
-/** Which day of the budget's period today is, and how many days it has. */
-export function periodDay(
-  period: BudgetPeriod,
-  now: Date = new Date()
-): { day: number; days: number } {
-  const year = now.getFullYear();
-  if (period === "monthly") {
-    return {
-      day: now.getDate(),
-      days: new Date(year, now.getMonth() + 1, 0).getDate(),
-    };
-  }
-  const start = Date.UTC(year, 0, 1);
-  const today = Date.UTC(year, now.getMonth(), now.getDate());
-  return {
-    day: Math.round((today - start) / 86_400_000) + 1,
-    days: (Date.UTC(year + 1, 0, 1) - start) / 86_400_000,
-  };
-}
-
 /** Where spending stands against an even pace through the period. */
 export interface PaceStanding {
   /** "ahead" = spending faster than an even pace; "behind" = slower. */

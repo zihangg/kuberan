@@ -5,7 +5,6 @@ import {
   periodDaysLeft,
   periodElapsedFraction,
   paceStanding,
-  periodDay,
 } from "./budget-pace";
 
 describe("periodElapsedFraction", () => {
@@ -78,17 +77,5 @@ describe("paceStanding", () => {
   it("counts within 2% of the budget as on pace", () => {
     expect(paceStanding(30000, 10300, elapsed).kind).toBe("on");
     expect(paceStanding(30000, 9700, elapsed).kind).toBe("on");
-  });
-});
-
-describe("periodDay", () => {
-  it("counts days of the month", () => {
-    expect(periodDay("monthly", new Date(2026, 10, 10))).toEqual({ day: 10, days: 30 });
-    expect(periodDay("monthly", new Date(2026, 1, 28))).toEqual({ day: 28, days: 28 });
-  });
-
-  it("counts days of the year", () => {
-    expect(periodDay("yearly", new Date(2026, 0, 1))).toEqual({ day: 1, days: 365 });
-    expect(periodDay("yearly", new Date(2028, 11, 31))).toEqual({ day: 366, days: 366 });
   });
 });

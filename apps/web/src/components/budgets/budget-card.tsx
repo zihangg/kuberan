@@ -9,11 +9,9 @@ import { BudgetStatusChip } from "./budget-status-chip";
 import {
   budgetStatus,
   paceStanding,
-  periodDay,
   periodDaysLeft,
   periodElapsedFraction,
 } from "@/lib/budget-pace";
-import { cn } from "@/lib/utils";
 import type { Budget, BudgetProgress } from "@/types/models";
 
 /**
@@ -43,8 +41,6 @@ export function BudgetCard({
   const perDay =
     remaining > 0 && daysLeft > 0 ? Math.floor(remaining / daysLeft) : null;
   const name = budget.category?.name ?? budget.name;
-  const dayWord = daysLeft === 1 ? "day" : "days";
-  const { day, days } = periodDay(budget.period, now);
   const pace = paceStanding(budget.amount, spent, elapsed);
 
   return (
@@ -90,18 +86,12 @@ export function BudgetCard({
         thick
         label={`${name}: ${Math.round(percentage)}% of budget used, ${Math.round(elapsed * 100)}% of the ${unit} gone`}
         tip={
-          <>
-            <p>
-              The line is an even pace: what you&apos;d have spent by today
-              (day {day} of {days}) spending the budget evenly.
-            </p>
-            <p className="mt-1 tabular-nums">
-              Even pace:{" "}
-              <Money amount={pace.expected} currency={currency} sign="never" />
-              {" · "}Spent:{" "}
-              <Money amount={spent} currency={currency} sign="never" />
-            </p>
-          </>
+          <span className="tabular-nums">
+            Even pace today{" "}
+            <Money amount={pace.expected} currency={currency} sign="never" />
+            {" · "}Spent{" "}
+            <Money amount={spent} currency={currency} sign="never" />
+          </span>
         }
       />
 
@@ -111,45 +101,20 @@ export function BudgetCard({
             <span className="text-negative">
               <Money amount={-remaining} currency={currency} sign="never" /> over
             </span>
-            {daysLeft > 0 ? ` · ${daysLeft} ${dayWord} left` : " · last day"}
           </>
         ) : (
           <>
             <Money amount={remaining} currency={currency} sign="never" /> left
             {perDay !== null && (
               <>
-                {" · about "}
+                {" · "}
                 <Money amount={perDay} currency={currency} sign="never" />
-                {` a day for the last ${daysLeft} ${dayWord}`}
+                /day
               </>
             )}
-            {daysLeft === 0 && " · last day"}
           </>
         )}
       </p>
-      {remaining >= 0 && (
-        <p
-          className={cn(
-            "-mt-2 text-xs",
-            pace.kind === "ahead"
-              ? "text-warning-text"
-              : pace.kind === "behind"
-                ? "text-positive-text"
-                : "text-muted-foreground"
-          )}
-        >
-          {pace.kind === "on" ? (
-            "On an even pace"
-          ) : (
-            <>
-              <Money amount={pace.amount} currency={currency} sign="never" />
-              {pace.kind === "ahead"
-                ? " ahead of an even pace"
-                : " under an even pace"}
-            </>
-          )}
-        </p>
-      )}
       <FxNotice fxMissing={progress?.fx_missing} variant="inline" />
     </div>
   );

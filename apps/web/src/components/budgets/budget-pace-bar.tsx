@@ -21,6 +21,10 @@ const STATUS_FILL: Record<BudgetStatus, string> = {
  * would be by now. The fill is capped at 100%; `color` overrides the
  * on-track fill (e.g. the category colour).
  *
+ * When spending runs ahead of an even pace (on-track budgets only), the part
+ * of the fill past the marker turns amber, so the bar says it without words.
+ * `markerLabel` prints a one-word caption under the marker.
+ *
  * With `tip`, hovering or focusing the bar shows it in a tooltip. The trigger
  * is lifted above a card's stretched click target (budget cards make the whole
  * card a button) and has a taller invisible hit area, so it is easy to reach.
@@ -33,6 +37,7 @@ export function BudgetPaceBar({
   thick,
   label,
   tip,
+  markerLabel,
   className,
 }: {
   /** spent / budgeted * 100, may exceed 100. */
@@ -46,10 +51,24 @@ export function BudgetPaceBar({
   label: string;
   /** Tooltip content explaining the bar and its pace marker. */
   tip?: ReactNode;
+  /** A short caption under the marker (e.g. "Today"). */
+  markerLabel?: string;
   className?: string;
 }) {
   const width = Math.min(Math.max(percentage, 0), 100);
-  const fill = status === "on_track" && color ? color : STATUS_FILL[status];
+  const base = status === "on_track" && color ? color : STATUS_FILL[status];
+  const markerPct =
+    elapsed === undefined ? null : Math.min(Math.max(elapsed, 0), 1) * 100;
+  // Ahead of an even pace (by more than 2 points): colour the overshoot.
+  const ahead =
+    status === "on_track" && markerPct !== null && width > markerPct + 2;
+  const stop = ahead && markerPct !== null ? (markerPct / width) * 100 : 0;
+  const fillStyle = ahead
+    ? {
+        width: `${width}%`,
+        background: `linear-gradient(to right, ${base} ${stop}%, var(--warning) ${stop}%)`,
+      }
+    : { width: `${width}%`, backgroundColor: base };
   const bar = (
     <div
       role="progressbar"
@@ -65,16 +84,23 @@ export function BudgetPaceBar({
     >
       <div
         className="h-full rounded-full transition-[width]"
-        style={{ width: `${width}%`, backgroundColor: fill }}
+        style={fillStyle}
       />
       {elapsed !== undefined && (
         <span
           aria-hidden
           className="bg-foreground/70 absolute top-[-3px] bottom-[-3px] w-0.5 rounded-full"
-          style={{
-            left: `calc(${Math.min(Math.max(elapsed, 0), 1) * 100}% - 1px)`,
-          }}
+          style={{ left: `calc(${markerPct}% - 1px)` }}
         />
+      )}
+      {markerLabel && markerPct !== null && (
+        <span
+          aria-hidden
+          className="text-muted-foreground absolute top-full mt-1.5 -translate-x-1/2 text-[10px] leading-none whitespace-nowrap"
+          style={{ left: `${markerPct}%` }}
+        >
+          {markerLabel}
+        </span>
       )}
     </div>
   );
