@@ -60,6 +60,9 @@ type Account struct {
 	// For fixed deposit accounts (also reuses InterestRate for the annual rate)
 	FixedDeposit *FixedDepositDetails `gorm:"foreignKey:AccountID" json:"fixed_deposit,omitempty"`
 
+	// For credit card accounts: the annual fee and its waiver condition (plan 025).
+	AnnualFee *CardAnnualFee `gorm:"foreignKey:AccountID" json:"annual_fee,omitempty"`
+
 	// Response-only base-currency view (plan 024, phase 4), populated by the
 	// account list/get endpoints. BalanceBase is omitted when no FX rate exists.
 	BalanceBase *int64 `gorm:"-" json:"balance_base,omitempty"` // Balance converted to the user's base currency now
