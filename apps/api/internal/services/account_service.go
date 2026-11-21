@@ -331,7 +331,7 @@ func (s *accountService) GetUserAccounts(userID string, page pagination.PageRequ
 	}
 
 	var accounts []models.Account
-	if err := base.Preload("FixedDeposit").Order("is_pinned DESC, name ASC").Scopes(pagination.Paginate(page)).Find(&accounts).Error; err != nil {
+	if err := base.Preload("FixedDeposit").Preload("AnnualFee").Order("is_pinned DESC, name ASC").Scopes(pagination.Paginate(page)).Find(&accounts).Error; err != nil {
 		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
 
@@ -362,7 +362,7 @@ func (s *accountService) GetAccountByIDIncludingInactive(userID, accountID strin
 
 func (s *accountService) loadAccount(userID, accountID string, includeInactive bool) (*models.Account, error) {
 	var account models.Account
-	q := s.db.Preload("FixedDeposit").Where("id = ? AND user_id = ?", accountID, userID)
+	q := s.db.Preload("FixedDeposit").Preload("AnnualFee").Where("id = ? AND user_id = ?", accountID, userID)
 	if !includeInactive {
 		q = q.Where("is_active = ?", true)
 	}

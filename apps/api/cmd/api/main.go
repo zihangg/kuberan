@@ -233,6 +233,7 @@ func run() error {
 		FixedDepositPipeline: fdPipelineHandler,
 		Telegram:             telegramHandler,
 		Reminder:             handlers.NewReminderHandler(reminderService, auditService),
+		CardFee:              handlers.NewCardFeeHandler(services.NewCardFeeService(db), auditService),
 		FX:                   fxHandler,
 		Import:               importHandler,
 		CSVImport:            csvImportHandler,

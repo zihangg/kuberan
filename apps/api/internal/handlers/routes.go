@@ -34,6 +34,7 @@ type Routes struct {
 	AccountHistory       *AccountHistoryHandler
 	Analytics            *AnalyticsHandler
 	Reminder             *ReminderHandler
+	CardFee              *CardFeeHandler
 	CSVImport            *CSVImportHandler
 	Demo                 *DemoHandler
 
@@ -241,6 +242,9 @@ func registerAccountRoutes(protected *gin.RouterGroup, h Routes) {
 	accounts.GET("/:id/transactions", h.Transaction.GetAccountTransactions)
 	accounts.GET("/:id/investments", h.Investment.GetAccountInvestments)
 	accounts.POST("/:id/fixed-deposit/close", h.Account.CloseFixedDeposit)
+	accounts.PUT("/:id/annual-fee", h.CardFee.Set)
+	accounts.DELETE("/:id/annual-fee", h.CardFee.Delete)
+	accounts.GET("/:id/fee-waiver", h.CardFee.Summary)
 }
 
 // registerTransactionRoutes registers the /transactions tree, including the
