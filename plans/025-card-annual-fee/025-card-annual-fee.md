@@ -66,6 +66,10 @@ CREATE TABLE card_annual_fees (
   reminder plan's start date for the next occurrence (so a sent pace reminder plans the *following* window):
   - `card_year`: `[nextFee − 1 year + 1 day, nextFee]`. The deadline is the fee date.
   - `calendar_year`: `[1 Jan, 31 Dec]` of `from`'s year. The deadline is 31 Dec.
+- `FeeDecidingWindow(fee, feeDate)`: the window that decides the fee charged on `feeDate`, used by the
+  `card_annual_fee` reminder. Spend in calendar year Y waives the fee charged in Y+1, so for `calendar_year` it is
+  the previous calendar year (a fee on 31 Dec uses its own year); for `card_year` it is the window ending on the
+  fee date. Progress, the web bar and the pace reminder keep using the current window.
 - Transactions are matched on `date >= start AND date < end + 1 day` (UTC).
 
 ## Waiver progress (`GET /api/v1/accounts/:id/fee-waiver`)
