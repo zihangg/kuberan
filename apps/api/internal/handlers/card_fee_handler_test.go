@@ -58,12 +58,12 @@ func TestCardFeeHandler_Set(t *testing.T) {
 			gotUser, gotAcct, gotIn = u, a, in
 			return &models.CardAnnualFee{AccountID: a, Amount: in.Amount, FeeMonth: in.Month, FeeDay: in.Day, WaiverType: in.WaiverType, WaiverSpend: in.WaiverSpend, WaiverWindow: in.WaiverWindow}, nil
 		}}, &mockAuditService{})
-		rec := doRequest(setupCardFeeRouter(h), "PUT", "/accounts/acct-1/annual-fee",
+		rec := doRequest(setupCardFeeRouter(h), "PUT", "/accounts/11111111-1111-4111-8111-111111111111/annual-fee",
 			`{"amount":25000,"month":3,"day":15,"waiver_type":"spend","waiver_spend":1200000}`)
 		if rec.Code != http.StatusOK {
 			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 		}
-		if gotUser != "u1" || gotAcct != "acct-1" {
+		if gotUser != "u1" || gotAcct != "11111111-1111-4111-8111-111111111111" {
 			t.Fatalf("service got user=%q account=%q", gotUser, gotAcct)
 		}
 		if gotIn.Amount != 25000 || gotIn.Month != 3 || gotIn.Day == nil || *gotIn.Day != 15 {
@@ -83,21 +83,21 @@ func TestCardFeeHandler_Set(t *testing.T) {
 			got = in.WaiverWindow
 			return &models.CardAnnualFee{}, nil
 		}}, &mockAuditService{})
-		rec := doRequest(setupCardFeeRouter(h), "PUT", "/accounts/a/annual-fee", `{"amount":100,"month":1,"waiver_window":"calendar_year"}`)
+		rec := doRequest(setupCardFeeRouter(h), "PUT", "/accounts/11111111-1111-4111-8111-111111111111/annual-fee", `{"amount":100,"month":1,"waiver_window":"calendar_year"}`)
 		if rec.Code != http.StatusOK || got != models.WaiverWindowCalendarYear {
 			t.Fatalf("expected 200 and calendar_year, got %d window=%q", rec.Code, got)
 		}
 	})
 	t.Run("month 0 is rejected", func(t *testing.T) {
 		h := NewCardFeeHandler(&mockCardFeeService{}, &mockAuditService{})
-		rec := doRequest(setupCardFeeRouter(h), "PUT", "/accounts/a/annual-fee", `{"amount":100,"month":0}`)
+		rec := doRequest(setupCardFeeRouter(h), "PUT", "/accounts/11111111-1111-4111-8111-111111111111/annual-fee", `{"amount":100,"month":0}`)
 		if rec.Code != http.StatusBadRequest {
 			t.Fatalf("expected 400, got %d", rec.Code)
 		}
 	})
 	t.Run("unknown window is rejected", func(t *testing.T) {
 		h := NewCardFeeHandler(&mockCardFeeService{}, &mockAuditService{})
-		rec := doRequest(setupCardFeeRouter(h), "PUT", "/accounts/a/annual-fee", `{"amount":100,"month":1,"waiver_window":"weekly"}`)
+		rec := doRequest(setupCardFeeRouter(h), "PUT", "/accounts/11111111-1111-4111-8111-111111111111/annual-fee", `{"amount":100,"month":1,"waiver_window":"weekly"}`)
 		if rec.Code != http.StatusBadRequest {
 			t.Fatalf("expected 400, got %d", rec.Code)
 		}
@@ -106,7 +106,7 @@ func TestCardFeeHandler_Set(t *testing.T) {
 		h := NewCardFeeHandler(&mockCardFeeService{setFn: func(string, string, services.CardAnnualFeeInput) (*models.CardAnnualFee, error) {
 			return nil, apperrors.ErrInvalidAccountType
 		}}, &mockAuditService{})
-		rec := doRequest(setupCardFeeRouter(h), "PUT", "/accounts/a/annual-fee", `{"amount":100,"month":1}`)
+		rec := doRequest(setupCardFeeRouter(h), "PUT", "/accounts/11111111-1111-4111-8111-111111111111/annual-fee", `{"amount":100,"month":1}`)
 		if rec.Code != http.StatusBadRequest {
 			t.Fatalf("expected 400, got %d", rec.Code)
 		}
@@ -119,9 +119,9 @@ func TestCardFeeHandler_Set(t *testing.T) {
 func TestCardFeeHandler_Delete(t *testing.T) {
 	var gotAcct string
 	h := NewCardFeeHandler(&mockCardFeeService{deleteFn: func(_, a string) error { gotAcct = a; return nil }}, &mockAuditService{})
-	rec := doRequest(setupCardFeeRouter(h), "DELETE", "/accounts/acct-1/annual-fee", "")
-	if rec.Code != http.StatusNoContent || gotAcct != "acct-1" {
-		t.Fatalf("expected 204 for acct-1, got %d account=%q", rec.Code, gotAcct)
+	rec := doRequest(setupCardFeeRouter(h), "DELETE", "/accounts/11111111-1111-4111-8111-111111111111/annual-fee", "")
+	if rec.Code != http.StatusNoContent || gotAcct != "11111111-1111-4111-8111-111111111111" {
+		t.Fatalf("expected 204 for 11111111-1111-4111-8111-111111111111, got %d account=%q", rec.Code, gotAcct)
 	}
 	if rec.Body.Len() != 0 {
 		t.Fatalf("expected empty body, got %q", rec.Body.String())
@@ -137,7 +137,7 @@ func TestCardFeeHandler_Summary(t *testing.T) {
 				Waiver:   &services.FeeWaiverProgress{Type: "spend", Window: "card_year", Status: "behind"},
 			}, nil
 		}}, &mockAuditService{})
-		rec := doRequest(setupCardFeeRouter(h), "GET", "/accounts/acct-1/fee-waiver", "")
+		rec := doRequest(setupCardFeeRouter(h), "GET", "/accounts/11111111-1111-4111-8111-111111111111/fee-waiver", "")
 		if rec.Code != http.StatusOK {
 			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 		}
@@ -156,7 +156,7 @@ func TestCardFeeHandler_Summary(t *testing.T) {
 		h := NewCardFeeHandler(&mockCardFeeService{summaryFn: func(_, _ string) (*services.CardFeeSummary, error) {
 			return &services.CardFeeSummary{Currency: "MYR"}, nil
 		}}, &mockAuditService{})
-		rec := doRequest(setupCardFeeRouter(h), "GET", "/accounts/a/fee-waiver", "")
+		rec := doRequest(setupCardFeeRouter(h), "GET", "/accounts/11111111-1111-4111-8111-111111111111/fee-waiver", "")
 		if rec.Code != http.StatusOK {
 			t.Fatalf("expected 200, got %d", rec.Code)
 		}
@@ -171,7 +171,7 @@ func TestCardFeeHandler_Summary(t *testing.T) {
 		h := NewCardFeeHandler(&mockCardFeeService{summaryFn: func(_, _ string) (*services.CardFeeSummary, error) {
 			return nil, apperrors.ErrAccountNotFound
 		}}, &mockAuditService{})
-		rec := doRequest(setupCardFeeRouter(h), "GET", "/accounts/nope/fee-waiver", "")
+		rec := doRequest(setupCardFeeRouter(h), "GET", "/accounts/11111111-1111-4111-8111-111111111111/fee-waiver", "")
 		if rec.Code != http.StatusNotFound {
 			t.Fatalf("expected 404, got %d", rec.Code)
 		}
@@ -179,4 +179,37 @@ func TestCardFeeHandler_Summary(t *testing.T) {
 			t.Fatalf("expected ACCOUNT_NOT_FOUND, got %v", code)
 		}
 	})
+}
+
+func TestCardFeeHandler_RejectsMalformedAccountID(t *testing.T) {
+	called := false
+	h := NewCardFeeHandler(&mockCardFeeService{
+		setFn: func(string, string, services.CardAnnualFeeInput) (*models.CardAnnualFee, error) {
+			called = true
+			return &models.CardAnnualFee{}, nil
+		},
+		deleteFn: func(string, string) error { called = true; return nil },
+		summaryFn: func(string, string) (*services.CardFeeSummary, error) {
+			called = true
+			return &services.CardFeeSummary{}, nil
+		},
+	}, &mockAuditService{})
+	r := setupCardFeeRouter(h)
+	cases := []struct{ method, path, body string }{
+		{"PUT", "/accounts/not-a-uuid/annual-fee", `{"amount":100,"month":1}`},
+		{"DELETE", "/accounts/not-a-uuid/annual-fee", ""},
+		{"GET", "/accounts/not-a-uuid/fee-waiver", ""},
+	}
+	for _, tc := range cases {
+		rec := doRequest(r, tc.method, tc.path, tc.body)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("%s %s: expected 400, got %d", tc.method, tc.path, rec.Code)
+		}
+		if code := parseJSON(t, rec)["error"].(map[string]interface{})["code"]; code != "INVALID_INPUT" {
+			t.Fatalf("%s %s: expected INVALID_INPUT, got %v", tc.method, tc.path, code)
+		}
+	}
+	if called {
+		t.Fatal("service must not be called for a malformed id")
+	}
 }

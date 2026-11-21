@@ -35,7 +35,6 @@ var allModels = []interface{}{
 	&models.TransactionRuleAction{},
 	&models.FixedDepositDetails{},
 	&models.CardAnnualFee{},
-	&models.CardAnnualFee{},
 	&models.Receivable{},
 	&models.ReceivableSettlement{},
 	&models.BackupRun{},

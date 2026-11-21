@@ -27,7 +27,7 @@ func NewCardFeeHandler(cardFeeService services.CardFeeServicer, auditService ser
 // SetCardAnnualFeeRequest sets or replaces a card's annual fee. Amounts are
 // cents in the card's currency; the service validates the rest.
 type SetCardAnnualFeeRequest struct {
-	Amount       int64   `json:"amount" binding:"gte=0"`
+	Amount       int64   `json:"amount" binding:"required,gte=1"`
 	Month        int     `json:"month" binding:"required,gte=1,lte=12"`
 	Day          *int    `json:"day" binding:"omitempty,gte=1,lte=31"`
 	WaiverType   *string `json:"waiver_type" binding:"omitempty,oneof=spend swipes spend_or_swipes"`
@@ -76,7 +76,11 @@ func (h *CardFeeHandler) Set(c *gin.Context) {
 	if in.WaiverWindow == "" {
 		in.WaiverWindow = models.WaiverWindowCardYear
 	}
-	accountID := c.Param("id")
+	accountID, err := parsePathID(c, "id")
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
 	fee, err := h.cardFeeService.Set(userID, accountID, in, h.now())
 	if err != nil {
 		respondWithError(c, err)
@@ -102,7 +106,11 @@ func (h *CardFeeHandler) Delete(c *gin.Context) {
 		respondWithError(c, err)
 		return
 	}
-	accountID := c.Param("id")
+	accountID, err := parsePathID(c, "id")
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
 	if err := h.cardFeeService.Delete(userID, accountID, h.now()); err != nil {
 		respondWithError(c, err)
 		return
@@ -128,7 +136,12 @@ func (h *CardFeeHandler) Summary(c *gin.Context) {
 		respondWithError(c, err)
 		return
 	}
-	summary, err := h.cardFeeService.Summary(userID, c.Param("id"), h.now())
+	accountID, err := parsePathID(c, "id")
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+	summary, err := h.cardFeeService.Summary(userID, accountID, h.now())
 	if err != nil {
 		respondWithError(c, err)
 		return
