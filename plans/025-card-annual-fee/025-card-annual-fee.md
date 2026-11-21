@@ -1,6 +1,6 @@
 # Plan 025 — Credit card annual fees and fee waivers
 
-**Status: agreed, not started.** Decisions recorded at the end.
+**Status: agreed, not started.** Decisions recorded at the end; task plan in [`implementation-plan.md`](implementation-plan.md).
 
 ## Goal
 
@@ -37,7 +37,7 @@ CREATE TABLE card_annual_fees (
     created_at, updated_at, deleted_at ...,
     account_id UUID NOT NULL UNIQUE REFERENCES accounts(id) ON DELETE CASCADE,
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    amount BIGINT NOT NULL CHECK (amount >= 0),          -- cents, card currency
+    amount BIGINT NOT NULL CHECK (amount > 0),           -- cents, card currency (a free card has no row)
     fee_month SMALLINT NOT NULL CHECK (fee_month BETWEEN 1 AND 12),
     fee_day SMALLINT CHECK (fee_day BETWEEN 1 AND 31),   -- NULL = "sometime in the month" (use the 1st)
     waiver_type VARCHAR(16) CHECK (waiver_type IN ('spend', 'swipes', 'spend_or_swipes')),  -- NULL = no waiver
@@ -51,7 +51,10 @@ CREATE TABLE card_annual_fees (
 - `telegram_links.remind_annual_fee BOOLEAN NOT NULL DEFAULT TRUE` (one switch covers both new kinds; each card
   still has its own per-kind switch).
 - Down migration drops the table and column and restores the old CHECK (deleting rows of the new kinds first).
-- Validation (service): credit cards only (`ACCOUNT_TYPE_MISMATCH` otherwise); `waiver_spend` required for
+- Removing a fee **hard-deletes** its row (`Unscoped`): `account_id` is `UNIQUE`, so a soft-deleted row would block
+  adding a fee to the same card again.
+- The model is registered in `internal/testutil/database.go` (`allModels`), since service tests use AutoMigrate.
+- Validation (service): credit cards only (`INVALID_ACCOUNT_TYPE` otherwise); `waiver_spend` required for
   `spend` / `spend_or_swipes`, `waiver_swipes` for `swipes` / `spend_or_swipes`, neither allowed without a type.
 
 ## Dates and the waiver window (pure functions, `services/card_fee.go`)
@@ -59,9 +62,11 @@ CREATE TABLE card_annual_fees (
 - `NextFeeDate(month, day *int, from)`: the next date on or after `from` that falls on `month`/`day`, clamping
   to the month's last day (29 Feb → 28 Feb in non-leap years). With no day, the 1st; the UI and bot then say
   "in March" rather than "on 1 Mar".
-- `WaiverWindow(fee, now) (start, end)`:
-  - `card_year`: `(nextFee − 1 year, nextFee]`. The deadline is the fee date.
-  - `calendar_year`: `[1 Jan, 31 Dec]` of `now`'s year. The deadline is 31 Dec.
+- `WaiverWindow(fee, from) (start, end)`, both inclusive UTC dates; `from` is "now" for progress and the
+  reminder plan's start date for the next occurrence (so a sent pace reminder plans the *following* window):
+  - `card_year`: `[nextFee − 1 year + 1 day, nextFee]`. The deadline is the fee date.
+  - `calendar_year`: `[1 Jan, 31 Dec]` of `from`'s year. The deadline is 31 Dec.
+- Transactions are matched on `date >= start AND date < end + 1 day` (UTC).
 
 ## Waiver progress (`GET /api/v1/accounts/:id/fee-waiver`)
 
@@ -70,10 +75,11 @@ Computed in SQL over the card's own transactions in the window (card currency, s
 - **Spend** = Σ `expense` amounts. Credits on the card (`income`: refunds or cashback) are ignored, since banks
   don't subtract cashback; a refunded purchase therefore still counts.
 - **Swipes** = count of `expense` rows.
-- Excluded automatically by type: `transfer` (card payments), `opening_balance`, `investment`, soft-deleted rows.
-- Excluded by description: the fee itself (`annual fee`, `yuran tahunan`, case-insensitive), so a charged fee
-  doesn't count towards its own waiver.
-- Shared expenses count in full (the bank sees the whole charge); receivables settled later don't reduce it.
+- Excluded automatically by type: `transfer` (card payments), `opening_balance`, `investment`, `reimbursement`,
+  soft-deleted rows.
+- Excluded by description: the fee itself (`annual fee`, `yuran tahunan`, case-insensitive, via
+  `LOWER(description) LIKE`, which works on both Postgres and the SQLite tests), from spend **and** swipes.
+- Shared expenses count in full (`amount`, not `personal_amount`: the bank sees the whole charge).
 
 Response:
 
@@ -102,9 +108,10 @@ Response:
 
 ## API surface
 
-- `POST /accounts/credit-card` and `PATCH /accounts/:id` accept an optional `annual_fee` object
-  (`{amount, month, day?, waiver_type?, waiver_spend?, waiver_swipes?, waiver_window?}`); `"annual_fee": null` on
-  PATCH removes it. Saving it calls `SyncAccount` (already done after every account update).
+- `PUT /accounts/:id/annual-fee` sets or replaces the fee (`{amount, month, day?, waiver_type?, waiver_spend?,
+  waiver_swipes?, waiver_window?}`) and `DELETE /accounts/:id/annual-fee` removes it. Both re-sync the card's
+  reminders in the same DB transaction. (A dedicated resource rather than a field on `PUT /accounts/:id`: that
+  request uses pointer fields, which can't tell "omitted" from `null`, and the create dialog doesn't need it.)
 - `GET /accounts/:id` and `GET /accounts` preload and return `annual_fee`.
 - `PUT /telegram/reminder-settings` accepts `annual_fee` (bool); `GET /telegram/link` returns it.
 - Swagger regenerated; route list in `CLAUDE.md` updated.
@@ -120,8 +127,10 @@ Response:
    `MarkSent`, the next plan starts the day after, which is next year's date. Never skipped for a zero balance.
 3. **`fee_waiver_pace`.** Only when a waiver condition exists. `due_on` = window end, sendable from 90 days before.
    `Due()` evaluates the progress at poll time and returns it only when the status is `behind`. A card that is
-   on track is left unsent and checked again on the next poll, so it fires on the first day it falls behind within
-   the last 90 days. At most once per window; `rollStale` moves it to the next window after the deadline.
+   on track is left unsent and its `remind_at` moves to the next day at 01:00 UTC, so it is checked once a day
+   (not on every 5-minute poll) and withheld rows never fill `Due()`'s 100-row batch ahead of real reminders. It
+   fires on the first day the card is behind within the last 90 days, at most once per window; `rollStale` moves
+   it to the next window after the deadline.
 4. `kindEnabledOnLink`: both new kinds → `RemindAnnualFee`. `isRecurringReminder` covers both (their next
    occurrence comes from the plan, not from "+1 month").
 5. `DueReminder` gains `annual_fee` (cents) and `waiver` (the progress object above) for the bot to word messages.
@@ -133,13 +142,16 @@ Response:
 - No waiver condition: the fee plus "You spent MYR x on this card in the last 12 months."
 - `fee_waiver_pace`: shortfall, days left, per-month figure.
 - "in March" wording when the fee day is unknown. Tests in `tests/test_reminders.py`.
-- The card detail in `handlers/accounts.py` adds one waiver progress line (new `api_client.get_fee_waiver`).
+- (The bot has no per-card detail command, only the `/accounts` list, so no progress line is added there.)
 
 ## Web
 
 - `types/models.ts`: `CardAnnualFee`, `FeeWaiverProgress`; `ReminderKind` gains the two kinds.
 - `hooks/use-accounts.ts`: `useFeeWaiver(accountId)` with its own key in the factory; invalidated by transaction
   mutations that touch the account and by account updates.
+- `GET /reminders?ref_id=` now returns several kinds for one card, and `ReminderControl` picks the soonest
+  (`pickReminder`), so it would show the fee reminder as the payment reminder. `pickReminder` takes a kind filter;
+  `ReminderControl` passes `card_due` / `loan_due`, the fee control `card_annual_fee`.
 - `lib/reminders.ts`: lead days (30 / 90) and labels; `lib/card-fee.ts`: pure helpers (fee date label, status
   copy, progress fraction) with Vitest tests.
 - `components/accounts/annual-fee-control.tsx` on `credit-card-view.tsx`, under `ReminderControl`:
@@ -149,12 +161,14 @@ Response:
 - `components/accounts/fee-waiver-progress.tsx`: progress bar(s), status chip (Met / On track / Behind),
   "spend about MYR x/month to qualify", info tooltip: "Based on the transactions recorded on this card. Banks
   often exclude some spending (e-wallet top-ups, insurance, government payments)."
-- `components/settings/telegram-settings.tsx`: "Annual fees" switch.
+- `components/settings/telegram-settings.tsx`: "Annual fees" switch (`remind_annual_fee`), added to its own
+  switch list (it isn't one-to-one with a reminder kind).
 - Uses palette tokens (`pos` / `neg` / `accent`) only; checked light/dark at 1440 and 390.
 
 ## Also touched
 
-- **MCP**: the account read tool includes the fee and waiver progress (`MYR` code formatting). No new write tool.
+- **MCP**: `list_accounts` (the only account tool) adds one line under each card with a fee: the fee, next date
+  and waiver progress (`MYR` code formatting). No new write tool.
 - **Demo** (`demo_service.go`): the sample card gets an annual fee with a spend waiver; its row is listed in
   `demo_rows` so `DELETE /demo` removes it.
 - **Export**: `accounts.csv` gains the fee and waiver columns.
@@ -169,20 +183,17 @@ Response:
   removing the fee deletes only its rows; yearly recurrence after `MarkSent`; per-kind on/off carries over;
   zero balance still sends the fee reminder; pace reminder withheld while on track, sent once behind, once per
   window; Telegram switch respected.
-- Handlers: create / patch / clear `annual_fee`, non-card rejected, fee-waiver endpoint 200 / 404.
+- Handlers: `PUT` / `DELETE /accounts/:id/annual-fee` (set, replace, remove then re-add, non-card rejected,
+  another user's card 404), fee-waiver endpoint 200 / 404.
+- Web: `ReminderControl` keeps showing the payment reminder when a sooner fee reminder exists.
 - Integration: create card → add fee + waiver → add transactions → progress → due reminders.
 - Bot: message wording for each case. Web: Vitest for `lib/card-fee.ts`.
 - Gate: `./scripts/check-go.sh apps/api`, bot `pytest`, web `pnpm lint`, `tsc`, `pnpm test`, `pnpm build`.
 
 ## Delivery
 
-One branch, one commit per phase, each green on its own:
-
-1. Migration, model, validation, create/patch/get, progress endpoint + tests.
-2. Reminder refactor (per kind) + the two new kinds + Telegram switch + tests.
-3. Bot messages and card detail line.
-4. Web: types, hooks, fee control, progress, settings switch.
-5. MCP, demo data, export, docs.
+Task-by-task in [`implementation-plan.md`](implementation-plan.md): one branch, one commit per task, each green
+on its own.
 
 ## Decisions (agreed)
 
