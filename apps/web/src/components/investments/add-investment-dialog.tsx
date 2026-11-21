@@ -14,6 +14,7 @@ import { useSecurities } from "@/hooks/use-securities";
 import { useBaseCurrency } from "@/hooks/use-profile";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DateInput } from "@/components/ui/date-input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
@@ -303,11 +304,10 @@ export function AddInvestmentDialog({
           {/* Date */}
           <div className="flex flex-col gap-2">
             <Label htmlFor="inv-date">Date</Label>
-            <Input
+            <DateInput
               id="inv-date"
-              type="date"
               value={date}
-              onChange={(e) => setDate(e.target.value)}
+              onChange={setDate}
               disabled={isSubmitting}
             />
           </div>

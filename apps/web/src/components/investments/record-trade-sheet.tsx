@@ -32,6 +32,7 @@ import {
 import { Money } from "@/components/ui/money";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DateInput } from "@/components/ui/date-input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { CurrencyInput } from "@/components/ui/currency-input";
@@ -556,11 +557,10 @@ function TradeForm({
 
         <div className="flex flex-col gap-2">
           <Label htmlFor="trade-date">Date</Label>
-          <Input
+          <DateInput
             id="trade-date"
-            type="date"
             value={date}
-            onChange={(e) => setDate(e.target.value)}
+            onChange={setDate}
             disabled={isSubmitting}
           />
         </div>

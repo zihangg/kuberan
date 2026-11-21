@@ -13,6 +13,7 @@ import {
 } from "@/hooks/use-accounts";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DateInput } from "@/components/ui/date-input";
 import { Label } from "@/components/ui/label";
 import { useBaseCurrency } from "@/hooks/use-profile";
 import { REPORTING_CURRENCIES } from "@/lib/currencies";
@@ -1006,21 +1007,19 @@ export function CreateAccountDialog({
               </div>
               <div className="flex flex-col gap-2">
                 <Label htmlFor="fd-start-date">Start Date</Label>
-                <Input
+                <DateInput
                   id="fd-start-date"
-                  type="date"
                   value={fdStartDate}
-                  onChange={(e) => setFdStartDate(e.target.value)}
+                  onChange={setFdStartDate}
                   disabled={isSubmitting}
                 />
               </div>
               <div className="flex flex-col gap-2">
                 <Label htmlFor="fd-maturity-date">Maturity Date</Label>
-                <Input
+                <DateInput
                   id="fd-maturity-date"
-                  type="date"
                   value={fdMaturityDate}
-                  onChange={(e) => setFdMaturityDate(e.target.value)}
+                  onChange={setFdMaturityDate}
                   disabled={isSubmitting}
                 />
               </div>

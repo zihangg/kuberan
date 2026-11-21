@@ -15,6 +15,7 @@ import {
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DateInput } from "@/components/ui/date-input";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ToggleChip } from "@/components/ui/toggle-chip";
@@ -231,22 +232,20 @@ export function TransactionsFilterBar({
                 <Label htmlFor="tx-filter-from" className="text-xs">
                   From
                 </Label>
-                <Input
+                <DateInput
                   id="tx-filter-from"
-                  type="date"
                   value={state.from}
-                  onChange={(e) => onChange({ from: e.target.value, page: 1 })}
+                  onChange={(v) => onChange({ from: v, page: 1 })}
                 />
               </div>
               <div className="grid gap-1">
                 <Label htmlFor="tx-filter-to" className="text-xs">
                   To
                 </Label>
-                <Input
+                <DateInput
                   id="tx-filter-to"
-                  type="date"
                   value={state.to}
-                  onChange={(e) => onChange({ to: e.target.value, page: 1 })}
+                  onChange={(v) => onChange({ to: v, page: 1 })}
                 />
               </div>
             </div>
