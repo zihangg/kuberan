@@ -130,6 +130,7 @@ func newE2E(t *testing.T, opts e2eOptions) *e2eEnv {
 		Snapshots:    services.NewPortfolioSnapshotService(db, fxService),
 		Receivables:  services.NewReceivableService(db, accounts, rules, services.WithReceivableFXService(fxService)),
 		FX:           fxService,
+		CardFees:     services.NewCardFeeService(db),
 		Audit:        services.NewAuditService(db),
 		Grants:       grants,
 	}

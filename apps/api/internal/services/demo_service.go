@@ -32,6 +32,7 @@ const (
 	demoTableConditions   = "transaction_rule_conditions"
 	demoTableActions      = "transaction_rule_actions"
 	demoTableFixedDeposit = "fixed_deposit_details"
+	demoTableCardFees     = "card_annual_fees"
 )
 
 // demoDeleteOrder lists the demo tables children first, so a removal never
@@ -40,7 +41,7 @@ var demoDeleteOrder = []string{
 	demoTableSettlements, demoTableReceivables, demoTableTransactions,
 	demoTableInvTx, demoTableInvestments, demoTableBudgets,
 	demoTableActions, demoTableConditions, demoTableRules,
-	demoTableFixedDeposit, demoTableAccounts, demoTableCategories, demoTableSecurities,
+	demoTableFixedDeposit, demoTableCardFees, demoTableAccounts, demoTableCategories, demoTableSecurities,
 }
 
 // demoDeleteChunk bounds the ids in one DELETE ... IN (...) statement.
@@ -354,7 +355,7 @@ func (s *demoService) detachRealRows(tx *gorm.DB, userID string) error {
 var demoUserScoped = map[string]bool{
 	demoTableAccounts: true, demoTableCategories: true, demoTableTransactions: true,
 	demoTableBudgets: true, demoTableReceivables: true, demoTableRules: true,
-	demoTableSettlements: true,
+	demoTableSettlements: true, demoTableCardFees: true,
 }
 
 // deleteDemoTable hard-deletes the given ids from table and returns how many
@@ -632,6 +633,20 @@ func (b *demoBuilder) createAccounts(today time.Time, withFX bool) error {
 			}
 		}
 	}
+
+	// The card carries an annual fee with a spend waiver. Removal deletes it
+	// (hard) before the account it references.
+	amex := b.accts[demoAcctAmex]
+	feeDay, feeSpend, feeWaiver := 15, cents(12000), models.WaiverTypeSpend
+	fee := &models.CardAnnualFee{
+		AccountID: amex.ID, UserID: b.userID, Amount: cents(250),
+		FeeMonth: int(today.AddDate(0, 4, 0).Month()), FeeDay: &feeDay,
+		WaiverType: &feeWaiver, WaiverSpend: &feeSpend, WaiverWindow: models.WaiverWindowCardYear,
+	}
+	if err := b.db.Create(fee).Error; err != nil {
+		return b.fail(err)
+	}
+	b.rec.add(demoTableCardFees, fee.ID)
 
 	// The fixed deposit is funded from savings, like CreateFixedDepositAccount.
 	const fdPrincipal = int64(2000000)

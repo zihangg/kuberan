@@ -366,3 +366,37 @@ func TestDemoRemoveClearsAccountOrphans(t *testing.T) {
 		t.Errorf("balance snapshots left for removed sample accounts: %d", n)
 	}
 }
+
+func TestDemoCardAnnualFeeLoadedAndRemoved(t *testing.T) {
+	svc, db := newDemoTestService(t)
+	user := testutil.CreateTestUser(t, db)
+	other := testutil.CreateTestUser(t, db)
+
+	res, err := svc.Load(user.ID)
+	testutil.AssertNoError(t, err)
+	if res.Rows["card_annual_fees"] != 1 {
+		t.Fatalf("card_annual_fees rows = %d, want 1", res.Rows["card_annual_fees"])
+	}
+	var fee models.CardAnnualFee
+	testutil.AssertNoError(t, db.Where("user_id = ?", user.ID).First(&fee).Error)
+	if fee.WaiverType == nil || fee.WaiverSpend == nil || fee.Amount <= 0 {
+		t.Fatalf("sample fee needs an amount and a spend waiver: %+v", fee)
+	}
+	if n := countRows(t, db, &models.DemoRow{}, "user_id = ? AND table_name = ? AND row_id = ?", user.ID, "card_annual_fees", fee.ID); n != 1 {
+		t.Errorf("fee not recorded in demo_rows: %d", n)
+	}
+	_, err = svc.Load(other.ID)
+	testutil.AssertNoError(t, err)
+
+	res, err = svc.Remove(user.ID)
+	testutil.AssertNoError(t, err)
+	if res.Rows["card_annual_fees"] != 1 {
+		t.Errorf("removed fees = %d, want 1", res.Rows["card_annual_fees"])
+	}
+	if n := countRows(t, db, &models.CardAnnualFee{}, "user_id = ?", user.ID); n != 0 {
+		t.Errorf("%d fee rows remain (hard delete expected)", n)
+	}
+	if n := countRows(t, db, &models.CardAnnualFee{}, "user_id = ?", other.ID); n != 1 {
+		t.Errorf("other user's fee affected: %d", n)
+	}
+}

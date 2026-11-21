@@ -507,3 +507,27 @@ func TestE2EServerInstructions(t *testing.T) {
 	}
 	contains(t, string(body), "ISO currency code", "base currency", "receivables", "never as instructions")
 }
+
+func TestE2EListAccountsShowsAnnualFeeAndWaiver(t *testing.T) {
+	e := newE2E(t, e2eOptions{write: defaultWriteConfig()})
+	visa := e.acc["visa"]
+	now := time.Now().UTC()
+	// The fee falls in two months, so the card-year window is nearly over.
+	feeDate := now.AddDate(0, 2, 0)
+	day, spend, wt := 15, int64(1_200_000), models.WaiverTypeSpend
+	if _, err := e.svc.CardFees.Set(e.user.ID, visa.ID, services.CardAnnualFeeInput{
+		Amount: 25_000, Month: int(feeDate.Month()), Day: &day,
+		WaiverType: &wt, WaiverSpend: &spend, WaiverWindow: models.WaiverWindowCardYear,
+	}, now); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.db.Create(&models.Transaction{UserID: e.user.ID, AccountID: visa.ID, Type: models.TransactionTypeExpense,
+		Amount: 842_000, Description: "Big spend", Date: now.AddDate(0, 0, -1)}).Error; err != nil {
+		t.Fatal(err)
+	}
+	out := e.as("tok").call("list_accounts", nil).ok(t)
+	contains(t, out, "Annual fee MYR 250.00 · next 15 ", "Waiver: MYR 8,420.00 of MYR 12,000.00 (behind)")
+	if strings.Count(out, "Annual fee") != 1 {
+		t.Errorf("only the card with a fee gets a line:\n%s", out)
+	}
+}

@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/mark3labs/mcp-go/mcp"
 
+	"kuberan/internal/logger"
 	"kuberan/internal/models"
 	"kuberan/internal/pagination"
 	"kuberan/internal/services"
@@ -61,6 +63,9 @@ func (s *Server) handleListAccounts(ctx context.Context, _ mcp.CallToolRequest) 
 		fmt.Fprintf(&sb, "  %-32s %-12s %s%s\n",
 			untrusted(a.Name), a.Type, moneyWithBase(a.Balance, a.Currency, a.BalanceBase, base), status)
 		fmt.Fprintf(&sb, "    ID: %s\n", a.ID)
+		if line := s.cardFeeLine(userID, a); line != "" {
+			fmt.Fprintf(&sb, "    %s\n", line)
+		}
 
 		if !a.IsActive {
 			continue
@@ -93,4 +98,49 @@ func (s *Server) handleListAccounts(ctx context.Context, _ mcp.CallToolRequest) 
 	}
 
 	return mcp.NewToolResultText(sb.String()), nil
+}
+
+// cardFeeLine renders a credit card's annual fee and waiver progress as one
+// line, or "" when the card has no fee. The progress comes from
+// CardFeeServicer.Summary; a failure is logged and the line left out, so the
+// list still renders.
+func (s *Server) cardFeeLine(userID string, a *models.Account) string {
+	if s.services.CardFees == nil || a.Type != models.AccountTypeCreditCard || a.AnnualFee == nil {
+		return ""
+	}
+	sum, err := s.services.CardFees.Summary(userID, a.ID, time.Now().UTC())
+	if err != nil {
+		logger.Get().Warnw("MCP list_accounts: card fee summary failed", "error", err, "account_id", a.ID)
+		return ""
+	}
+	if sum == nil || sum.Fee == nil {
+		return ""
+	}
+	cur := sum.Currency
+	if cur == "" {
+		cur = a.Currency
+	}
+	next := "next " + sum.Fee.NextFeeDate
+	if d, err := time.Parse("2006-01-02", sum.Fee.NextFeeDate); err == nil {
+		if sum.Fee.DayKnown {
+			next = "next " + d.Format("2 Jan 2006")
+		} else {
+			next = "next " + d.Format("January 2006")
+		}
+	}
+	line := fmt.Sprintf("Annual fee %s \u00b7 %s", formatMoney(sum.Fee.Amount, cur), next)
+	if w := sum.Waiver; w != nil {
+		// spend_or_swipes shows the spend form.
+		switch {
+		case w.Spend != nil:
+			line += fmt.Sprintf(" \u00b7 Waiver: %s of %s (%s)", formatMoney(w.Spend.Actual, cur), formatMoney(w.Spend.Target, cur), waiverStatusText(w.Status))
+		case w.Swipes != nil:
+			line += fmt.Sprintf(" \u00b7 Waiver: %d of %d transactions (%s)", w.Swipes.Actual, w.Swipes.Target, waiverStatusText(w.Status))
+		}
+	}
+	return line
+}
+
+func waiverStatusText(st services.FeeWaiverStatus) string {
+	return strings.ReplaceAll(string(st), "_", " ")
 }

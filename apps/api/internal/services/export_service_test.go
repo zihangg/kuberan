@@ -380,3 +380,47 @@ func TestSystemStatusService(t *testing.T) {
 	eq("latest_snapshot_at", st.LatestSnapshotAt, t1)
 	eq("last_backup_at", st.LastBackupAt, t1.Add(time.Minute)) // the failed run does not count
 }
+
+func TestExportService_AccountsCarryAnnualFee(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	t.Cleanup(func() { testutil.TeardownTestDB(t, db) })
+	user := testutil.CreateTestUser(t, db)
+	withFee := &models.Account{UserID: user.ID, Name: "Visa", Type: models.AccountTypeCreditCard, Currency: "MYR", IsActive: true}
+	noFee := &models.Account{UserID: user.ID, Name: "Cash", Type: models.AccountTypeCash, Currency: "MYR", IsActive: true}
+	for _, a := range []*models.Account{withFee, noFee} {
+		if err := db.Create(a).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	day, spend, wt := 15, int64(1200000), models.WaiverTypeSpend
+	if err := db.Create(&models.CardAnnualFee{AccountID: withFee.ID, UserID: user.ID, Amount: 25000, FeeMonth: 3, FeeDay: &day,
+		WaiverType: &wt, WaiverSpend: &spend, WaiverWindow: models.WaiverWindowCardYear}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	var buf bytes.Buffer
+	if err := NewExportService(db).WriteExport(user.ID, &buf); err != nil {
+		t.Fatalf("WriteExport: %v", err)
+	}
+	accts := readExportZip(t, buf.Bytes())["accounts.csv"]
+	header := strings.Join(accts[0], ",")
+	if !strings.Contains(header, "annual_fee,annual_fee_month,annual_fee_day,waiver_type,waiver_spend,waiver_swipes,waiver_window") {
+		t.Fatalf("header lacks fee columns: %s", header)
+	}
+	for i := 1; i < len(accts); i++ {
+		want := map[string]string{}
+		if col(t, accts, i, "id") == withFee.ID {
+			want = map[string]string{"annual_fee": "25000", "annual_fee_month": "3", "annual_fee_day": "15",
+				"waiver_type": "spend", "waiver_spend": "1200000", "waiver_swipes": "", "waiver_window": "card_year"}
+		} else {
+			for _, c := range []string{"annual_fee", "annual_fee_month", "annual_fee_day", "waiver_type", "waiver_spend", "waiver_swipes", "waiver_window"} {
+				want[c] = ""
+			}
+		}
+		for c, v := range want {
+			if got := col(t, accts, i, c); got != v {
+				t.Errorf("row %d %s = %q, want %q", i, c, got, v)
+			}
+		}
+	}
+}

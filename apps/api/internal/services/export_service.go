@@ -210,7 +210,7 @@ func exportText(s string) string {
 
 func (s *exportService) loadAccounts(userID string) ([]models.Account, error) {
 	var accounts []models.Account
-	if err := s.db.Unscoped().Where("user_id = ?", userID).Order("id").Find(&accounts).Error; err != nil {
+	if err := s.db.Unscoped().Where("user_id = ?", userID).Preload("AnnualFee").Order("id").Find(&accounts).Error; err != nil {
 		return nil, fmt.Errorf("load accounts for export: %w", err)
 	}
 	return accounts, nil
@@ -247,16 +247,19 @@ var accountsHeader = []string{
 	"id", "name", "type", "description", "currency", "balance", "balance_formatted",
 	"is_active", "is_pinned", "broker", "account_number", "interest_rate",
 	"due_date", "credit_limit", "credit_limit_formatted",
+	"annual_fee", "annual_fee_month", "annual_fee_day", "waiver_type", "waiver_spend", "waiver_swipes", "waiver_window",
 	"created_at", "updated_at", "deleted_at",
 }
 
 func (s *exportService) accountRows(accounts []models.Account, emit exportEmit) error {
 	for i := range accounts {
 		a := &accounts[i]
+		fee := exportCardFee(a.AnnualFee)
 		if err := emit(a.ID, exportText(a.Name), string(a.Type), exportText(a.Description), a.Currency,
 			exportInt(a.Balance), exportCents(a.Balance),
 			exportBool(a.IsActive), exportBool(a.IsPinned), exportText(a.Broker), exportText(a.AccountNumber),
 			exportFloat(a.InterestRate), exportTime(a.DueDate), exportInt(a.CreditLimit), exportCents(a.CreditLimit),
+			fee[0], fee[1], fee[2], fee[3], fee[4], fee[5], fee[6],
 			exportTime(a.CreatedAt), exportTime(a.UpdatedAt), exportDeleted(a.DeletedAt)); err != nil {
 			return err
 		}
@@ -267,6 +270,30 @@ func (s *exportService) accountRows(accounts []models.Account, emit exportEmit) 
 var categoriesHeader = []string{
 	"id", "name", "type", "description", "icon", "color", "parent_id",
 	"created_at", "updated_at", "deleted_at",
+}
+
+// exportCardFee renders a card's annual fee as the seven fee columns, all empty
+// when the account has none. Amounts are cents integers, like the other money
+// columns' raw form.
+func exportCardFee(f *models.CardAnnualFee) [7]string {
+	var out [7]string
+	if f == nil {
+		return out
+	}
+	out[0] = exportInt(f.Amount)
+	out[1] = strconv.Itoa(f.FeeMonth)
+	if f.FeeDay != nil {
+		out[2] = strconv.Itoa(*f.FeeDay)
+	}
+	if f.WaiverType != nil {
+		out[3] = string(*f.WaiverType)
+	}
+	out[4] = exportOptInt(f.WaiverSpend)
+	if f.WaiverSwipes != nil {
+		out[5] = strconv.Itoa(*f.WaiverSwipes)
+	}
+	out[6] = string(f.WaiverWindow)
+	return out
 }
 
 func (s *exportService) categoryRows(userID string, emit exportEmit) error {
