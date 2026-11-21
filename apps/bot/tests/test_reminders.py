@@ -192,10 +192,54 @@ def test_annual_fee_message_swipes_only_and_both():
     swipes = {"target": 12, "actual": 9, "remaining": 3}
     only = {**WAIVER, "type": "swipes", "spend": None, "swipes": swipes, "per_month_needed": None}
     msg = reminders.format_reminder_message({**FEE, "fee_waiver": only}, TODAY)
-    assert "3 more transactions" in msg and "RM 3,580.00" not in msg
+    assert "RM 3,580.00" not in msg
+    assert ("Make 3 more transactions before 15 Mar 2027, call the bank to ask for a waiver, or cancel."
+            in msg)
+    assert "Spend it" not in msg
     both = {**WAIVER, "type": "spend_or_swipes", "swipes": swipes}
     msg = reminders.format_reminder_message({**FEE, "fee_waiver": both}, TODAY)
     assert "RM 3,580.00 more, or 3 more transactions" in msg
+    assert "Spend it or make them, call the bank to ask for a waiver, or cancel." in msg
+
+
+def test_annual_fee_message_spend_only_says_spend_it():
+    msg = reminders.format_reminder_message({**FEE, "fee_waiver": WAIVER}, TODAY)
+    assert "Spend it, call the bank to ask for a waiver, or cancel." in msg
+
+
+CAL_FEE_TODAY = date(2027, 2, 13)
+CAL_WAIVER = {
+    "type": "spend", "window": "calendar_year", "window_start": "2026-01-01", "window_end": "2026-12-31",
+    "spend": {"target": 1200000, "actual": 842000, "remaining": 358000}, "swipes": None,
+    "status": "behind", "per_month_needed": None, "days_left": 0,
+}
+
+
+def test_annual_fee_message_calendar_year_met():
+    met = {**CAL_WAIVER, "status": "met", "spend": {"target": 1200000, "actual": 1250000, "remaining": 0}}
+    msg = reminders.format_reminder_message({**FEE, "fee_waiver": met}, CAL_FEE_TODAY)
+    assert "Waiver met — check the fee isn't charged on your statement." in msg
+
+
+def test_annual_fee_message_calendar_year_missed():
+    msg = reminders.format_reminder_message({**FEE, "fee_waiver": CAL_WAIVER}, CAL_FEE_TODAY)
+    assert ("Waiver target missed (RM 3,580.00 short in 2026). "
+            "Call the bank to ask for a waiver, or cancel.") in msg
+    assert "before" not in msg and "31 Dec" not in msg and "Spend it" not in msg
+
+
+def test_annual_fee_message_calendar_year_missed_swipes():
+    swipes = {**CAL_WAIVER, "type": "swipes", "spend": None, "swipes": {"target": 12, "actual": 9, "remaining": 3}}
+    msg = reminders.format_reminder_message({**FEE, "fee_waiver": swipes}, CAL_FEE_TODAY)
+    assert "Waiver target missed (3 transactions short in 2026)." in msg
+
+
+def test_annual_fee_message_calendar_year_still_open():
+    # A January fee is reminded about in December, while its deciding year is still open.
+    open_window = {**CAL_WAIVER, "days_left": 15, "per_month_needed": 358000}
+    msg = reminders.format_reminder_message(
+        {**FEE, "due_on": "2027-01-15", "fee_waiver": open_window}, date(2026, 12, 16))
+    assert "RM 3,580.00 more before 31 Dec" in msg and "missed" not in msg
 
 
 def test_annual_fee_message_no_waiver():
