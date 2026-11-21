@@ -53,6 +53,23 @@ func TestAnnualFeeWorkflow(t *testing.T) {
 		t.Fatalf("expected behind, got %v", waiver["status"])
 	}
 
+	// A second card whose fee is 60 days out: its fee reminder is not sendable
+	// yet, but the pace nudge is (the first card's pace nudge shares its fee
+	// reminder's deadline, so only the fee reminder goes out for it).
+	rec = app.request("POST", "/api/v1/accounts/credit-card",
+		`{"name":"Mastercard World","currency":"MYR","credit_limit":2000000}`, token)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create second card: %d %s", rec.Code, rec.Body.String())
+	}
+	card2ID := accountOf(t, rec)["id"].(string)
+	feeDate2 := time.Now().UTC().AddDate(0, 0, 60)
+	rec = app.request("PUT", "/api/v1/accounts/"+card2ID+"/annual-fee", fmt.Sprintf(
+		`{"amount":40000,"month":%d,"day":%d,"waiver_type":"spend","waiver_spend":1200000,"waiver_window":"card_year"}`,
+		int(feeDate2.Month()), feeDate2.Day()), token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("set second annual fee: %d %s", rec.Code, rec.Body.String())
+	}
+
 	rec = app.botRequest("GET", "/api/v1/internal/telegram/reminders/due")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("due: %d %s", rec.Code, rec.Body.String())
@@ -80,12 +97,17 @@ func TestAnnualFeeWorkflow(t *testing.T) {
 		t.Fatalf("the fee reminder carries the waiver progress: %v", fee)
 	}
 
+	if fee["account_id"] != cardID {
+		t.Fatalf("the fee reminder is the first card's: %v", fee)
+	}
+
 	pace, ok := byKind["fee_waiver_pace"]
 	if !ok {
 		t.Fatalf("no fee_waiver_pace reminder in %v", due)
 	}
 	pw, ok := pace["fee_waiver"].(map[string]interface{})
-	if !ok || pw["status"] != "behind" || pace["due_on"] != wantDue {
+	if !ok || pw["status"] != "behind" || pace["due_on"] != feeDate2.Format("2006-01-02") ||
+		pace["account_id"] != card2ID || pace["annual_fee"].(float64) != 40000 {
 		t.Fatalf("unexpected pace reminder: %v", pace)
 	}
 }

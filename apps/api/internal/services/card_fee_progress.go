@@ -120,9 +120,20 @@ func newWaiverTarget(target, actual int64) *FeeWaiverTarget {
 }
 
 // buildCardFeeSummary computes the fee summary of a card whose AnnualFee is
-// preloaded. A card without a fee gets a nil Fee and Waiver; one without a
-// waiver condition gets a nil Waiver.
+// preloaded, with the waiver progress over the current window (the one the
+// user can still act on). A card without a fee gets a nil Fee and Waiver; one
+// without a waiver condition gets a nil Waiver.
 func buildCardFeeSummary(tx *gorm.DB, acct *models.Account, now time.Time) (*CardFeeSummary, error) {
+	return buildCardFeeSummaryIn(tx, acct, now, func(fee *models.CardAnnualFee) (time.Time, time.Time) {
+		return FeeWaiverWindow(fee, now)
+	})
+}
+
+// buildCardFeeSummaryIn is buildCardFeeSummary with the waiver progress over
+// the window that window returns. A window that has already ended reports
+// met or behind, no days left and no per-month figure.
+func buildCardFeeSummaryIn(tx *gorm.DB, acct *models.Account, now time.Time,
+	window func(*models.CardAnnualFee) (time.Time, time.Time)) (*CardFeeSummary, error) {
 	today := utcDay(now)
 	summary := &CardFeeSummary{Currency: acct.Currency}
 
@@ -145,18 +156,26 @@ func buildCardFeeSummary(tx *gorm.DB, acct *models.Account, now time.Time) (*Car
 		return summary, nil
 	}
 
-	start, end := FeeWaiverWindow(fee, today)
+	start, end := window(fee)
+	start, end = utcDay(start), utcDay(end)
 	spend, swipes, err := cardSpend(tx, acct.UserID, acct.ID, start, end)
 	if err != nil {
 		return nil, err
 	}
+	closed := today.After(end)
 	w := &FeeWaiverProgress{
 		Type:        *fee.WaiverType,
 		Window:      fee.WaiverWindow,
 		WindowStart: start.Format(feeDateLayout),
 		WindowEnd:   end.Format(feeDateLayout),
 		Status:      waiverStatus(fee, spend, swipes, start, end, today),
-		DaysLeft:    daysBetween(today, end),
+	}
+	if closed {
+		if w.Status != FeeWaiverMet {
+			w.Status = FeeWaiverBehind
+		}
+	} else {
+		w.DaysLeft = daysBetween(today, end)
 	}
 	if fee.WaiverSpend != nil && *fee.WaiverType != models.WaiverTypeSwipes {
 		w.Spend = newWaiverTarget(*fee.WaiverSpend, spend)
@@ -164,7 +183,7 @@ func buildCardFeeSummary(tx *gorm.DB, acct *models.Account, now time.Time) (*Car
 	if fee.WaiverSwipes != nil && *fee.WaiverType != models.WaiverTypeSpend {
 		w.Swipes = newWaiverTarget(int64(*fee.WaiverSwipes), swipes)
 	}
-	if w.Status != FeeWaiverMet && w.Spend != nil {
+	if !closed && w.Status != FeeWaiverMet && w.Spend != nil {
 		months := int64((w.DaysLeft + 29) / 30)
 		if months < 1 {
 			months = 1

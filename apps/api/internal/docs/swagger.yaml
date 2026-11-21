@@ -7063,7 +7063,7 @@ paths:
       consumes:
       - application/json
       description: Enable or disable the reminder (all occurrences of its kind for
-        that account)
+        that account; card_annual_fee and fee_waiver_pace share one switch)
       parameters:
       - description: Reminder ID
         in: path

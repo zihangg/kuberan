@@ -54,7 +54,7 @@ func (h *ReminderHandler) List(c *gin.Context) {
 
 // SetEnabled switches an account's reminder on or off.
 // @Summary     Switch a reminder on or off
-// @Description Enable or disable the reminder (all occurrences of its kind for that account)
+// @Description Enable or disable the reminder (all occurrences of its kind for that account; card_annual_fee and fee_waiver_pace share one switch)
 // @Tags        reminders
 // @Accept      json
 // @Produce     json

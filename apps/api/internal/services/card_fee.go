@@ -46,3 +46,21 @@ func FeeWaiverWindow(fee *models.CardAnnualFee, from time.Time) (start, end time
 	start = feeDateIn(end.Year()-1, fee.FeeMonth, fee.FeeDay).AddDate(0, 0, 1)
 	return start, end
 }
+
+// FeeDecidingWindow returns the inclusive UTC dates of the waiver window that
+// decides the fee charged on feeDate. A card-year window ends on the fee date.
+// Spend in calendar year Y waives the fee charged in year Y+1, so a
+// calendar-year fee is decided by the calendar year before it, except a fee on
+// 31 December, which is decided by its own year.
+func FeeDecidingWindow(fee *models.CardAnnualFee, feeDate time.Time) (start, end time.Time) {
+	feeDate = utcDay(feeDate)
+	if fee.WaiverWindow != models.WaiverWindowCalendarYear {
+		return FeeWaiverWindow(fee, feeDate)
+	}
+	year := feeDate.Year() - 1
+	if feeDate.Month() == time.December && feeDate.Day() == 31 {
+		year = feeDate.Year()
+	}
+	return time.Date(year, time.January, 1, 0, 0, 0, 0, time.UTC),
+		time.Date(year, time.December, 31, 0, 0, 0, 0, time.UTC)
+}

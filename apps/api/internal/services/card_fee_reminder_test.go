@@ -222,9 +222,14 @@ func TestCardFeeReminders_TelegramSwitch(t *testing.T) {
 
 	got, err := env.svc.Due(now)
 	testutil.AssertNoError(t, err)
-	if len(got) != 3 {
-		t.Fatalf("expected card_due, card_annual_fee and fee_waiver_pace due, got %+v", got)
+	// The pace nudge shares the fee reminder's deadline, so only the fee
+	// reminder goes out for it (F3).
+	if len(got) != 2 || dueOfKind(got, models.ReminderKindCardDue) == nil || dueOfKind(got, models.ReminderKindCardAnnualFee) == nil {
+		t.Fatalf("expected card_due and card_annual_fee due, got %+v", got)
 	}
+	testutil.AssertNoError(t, env.db.Model(&models.Reminder{}).
+		Where("ref_id = ? AND kind = ?", env.card.ID, models.ReminderKindFeeWaiverPace).
+		Update("remind_at", now.Add(-time.Hour)).Error)
 
 	off := false
 	_, err = NewTelegramService(env.db).UpdateReminderSettings(env.user.ID, ReminderSettings{AnnualFee: &off})
@@ -237,13 +242,14 @@ func TestCardFeeReminders_TelegramSwitch(t *testing.T) {
 	if got[0].AnnualFee != nil || got[0].FeeWaiver != nil || got[0].SpentLast12Months != nil || got[0].FeeDayKnown != nil {
 		t.Fatalf("card_due must not carry fee fields: %+v", got[0])
 	}
-	// The withheld pace row moves to the next day, so it never fills the batch;
-	// the fee reminder (not a pace row) keeps its remind_at.
-	if pace := env.unsent(t, models.ReminderKindFeeWaiverPace); !pace.RemindAt.Equal(time.Date(2027, 3, 4, 1, 0, 0, 0, time.UTC)) {
+	// Both withheld annual-fee rows move to the next day, so they never fill
+	// the batch (F4).
+	nextDay := time.Date(2027, 3, 4, 1, 0, 0, 0, time.UTC)
+	if pace := env.unsent(t, models.ReminderKindFeeWaiverPace); !pace.RemindAt.Equal(nextDay) {
 		t.Fatalf("withheld pace remind_at %v, want 2027-03-04 01:00", pace.RemindAt)
 	}
-	if fee := env.unsent(t, models.ReminderKindCardAnnualFee); !fee.RemindAt.Equal(time.Date(2027, 2, 13, 1, 0, 0, 0, time.UTC)) {
-		t.Fatalf("fee remind_at moved: %v", fee.RemindAt)
+	if fee := env.unsent(t, models.ReminderKindCardAnnualFee); !fee.RemindAt.Equal(nextDay) {
+		t.Fatalf("withheld fee remind_at %v, want 2027-03-04 01:00", fee.RemindAt)
 	}
 }
 
@@ -434,4 +440,165 @@ func TestCardFeeReminders_EditDateAfterSent(t *testing.T) {
 	if d := dueOfKind(got, models.ReminderKindCardAnnualFee); d != nil {
 		t.Fatalf("this year's fee reminder must not be sent again: %+v", d)
 	}
+}
+
+// F1: a calendar-year waiver decides the fee charged the following year, so
+// the fee reminder for 15 Mar 2027 is judged on 2026's spend, not 2027's.
+func TestCardFeeReminders_CalendarYearFeeUsesPreviousYear(t *testing.T) {
+	tests := []struct {
+		name       string
+		spend      int64
+		wantStatus FeeWaiverStatus
+		wantRemain int64
+	}{
+		{"met in 2026", 12_500_00, FeeWaiverMet, 0},
+		{"missed in 2026", 8_420_00, FeeWaiverBehind, 3_580_00},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			env := feeFixture(t, 0, 0)
+			_, err := env.fees.Set(env.user.ID, env.card.ID, spendWaiver(models.WaiverWindowCalendarYear),
+				time.Date(2026, 11, 21, 12, 0, 0, 0, time.UTC))
+			testutil.AssertNoError(t, err)
+			addCardTx(t, env.db, env.user.ID, env.card.ID, models.TransactionTypeExpense, tt.spend, "flights", utcYMD(2026, 6, 2))
+			// 2027 spend must not count towards the 2027 fee.
+			addCardTx(t, env.db, env.user.ID, env.card.ID, models.TransactionTypeExpense, 20_000_00, "car", utcYMD(2027, 1, 10))
+
+			got, err := env.svc.Due(time.Date(2027, 2, 14, 2, 0, 0, 0, time.UTC))
+			testutil.AssertNoError(t, err)
+			d := dueOfKind(got, models.ReminderKindCardAnnualFee)
+			if d == nil || d.FeeWaiver == nil {
+				t.Fatalf("expected the fee reminder with waiver progress, got %+v", got)
+			}
+			w := d.FeeWaiver
+			if w.WindowStart != "2026-01-01" || w.WindowEnd != "2026-12-31" {
+				t.Fatalf("window %s..%s, want 2026-01-01..2026-12-31", w.WindowStart, w.WindowEnd)
+			}
+			if w.Status != tt.wantStatus || w.Spend == nil || w.Spend.Actual != tt.spend || w.Spend.Remaining != tt.wantRemain {
+				t.Fatalf("unexpected progress: %+v (spend %+v)", w, w.Spend)
+			}
+			if w.DaysLeft != 0 || w.PerMonthNeeded != nil {
+				t.Fatalf("a closed window has no days left and no per-month figure: %+v", w)
+			}
+		})
+	}
+}
+
+// F2: the card's one fee switch covers both annual-fee reminders, across
+// occurrences, and leaves card_due alone.
+func TestCardFeeReminders_SwitchCoversFeeAndPace(t *testing.T) {
+	env := feeFixture(t, 5, 100_00)
+	now := time.Date(2026, 11, 21, 12, 0, 0, 0, time.UTC)
+	_, err := env.fees.Set(env.user.ID, env.card.ID, spendWaiver(models.WaiverWindowCalendarYear), now)
+	testutil.AssertNoError(t, err)
+	fee := env.unsent(t, models.ReminderKindCardAnnualFee)
+
+	_, err = env.svc.SetEnabled(env.user.ID, fee.ID, false)
+	testutil.AssertNoError(t, err)
+	pace := env.unsent(t, models.ReminderKindFeeWaiverPace)
+	if pace.Enabled {
+		t.Fatal("switching the fee reminder off must switch the waiver nudge off too")
+	}
+	if !env.unsent(t, models.ReminderKindCardDue).Enabled {
+		t.Fatal("card_due must stay on")
+	}
+
+	// The pace reminder's next occurrence stays off.
+	_, err = env.svc.MarkSent(pace.ID, time.Date(2026, 12, 1, 2, 0, 0, 0, time.UTC))
+	testutil.AssertNoError(t, err)
+	next := env.unsent(t, models.ReminderKindFeeWaiverPace)
+	if next.ID == pace.ID || next.Enabled {
+		t.Fatalf("the next waiver nudge must stay off: %+v", next)
+	}
+
+	// Switching the pace row back on switches the fee reminder on too.
+	_, err = env.svc.SetEnabled(env.user.ID, next.ID, true)
+	testutil.AssertNoError(t, err)
+	if !env.unsent(t, models.ReminderKindCardAnnualFee).Enabled || !env.unsent(t, models.ReminderKindFeeWaiverPace).Enabled {
+		t.Fatal("switching back on must cover both annual-fee kinds")
+	}
+}
+
+// F3: when the fee reminder goes out in the same poll and covers the same
+// deadline, the pace reminder is withheld (the fee reminder already carries
+// the shortfall) and checked again the next day.
+func TestCardFeeReminders_PaceWithheldWhenFeeReminderCoversDeadline(t *testing.T) {
+	env := feeFixture(t, 0, 0)
+	now := time.Date(2027, 3, 3, 2, 0, 0, 0, time.UTC)
+	_, err := env.fees.Set(env.user.ID, env.card.ID, spendWaiver(models.WaiverWindowCardYear), now)
+	testutil.AssertNoError(t, err)
+
+	got, err := env.svc.Due(now)
+	testutil.AssertNoError(t, err)
+	if len(got) != 1 || got[0].Kind != models.ReminderKindCardAnnualFee {
+		t.Fatalf("only the fee reminder goes out for the shared deadline, got %+v", got)
+	}
+	if got[0].FeeWaiver == nil || got[0].FeeWaiver.Status != FeeWaiverBehind {
+		t.Fatalf("the fee reminder carries the shortfall: %+v", got[0].FeeWaiver)
+	}
+	pace := env.unsent(t, models.ReminderKindFeeWaiverPace)
+	if !pace.RemindAt.Equal(time.Date(2027, 3, 4, 1, 0, 0, 0, time.UTC)) {
+		t.Fatalf("withheld pace remind_at %v, want 2027-03-04 01:00", pace.RemindAt)
+	}
+}
+
+// F3: a pace reminder for a different deadline than the fee reminder's still
+// goes out in the same poll.
+func TestCardFeeReminders_PaceSentWithFeeReminderForOtherDeadline(t *testing.T) {
+	env := feeFixture(t, 0, 0)
+	_, err := env.fees.Set(env.user.ID, env.card.ID, spendWaiver(models.WaiverWindowCalendarYear),
+		time.Date(2027, 1, 20, 12, 0, 0, 0, time.UTC))
+	testutil.AssertNoError(t, err)
+	// The pace row (31 Dec 2027) is not normally sendable in February; bring it
+	// into the fee reminder's poll by hand.
+	testutil.AssertNoError(t, env.db.Model(&models.Reminder{}).
+		Where("ref_id = ? AND kind = ?", env.card.ID, models.ReminderKindFeeWaiverPace).
+		Update("remind_at", time.Date(2027, 1, 1, 1, 0, 0, 0, time.UTC)).Error)
+	// The fee due 15 Mar 2027 is decided by 2026; the pace row is for 2027.
+	got, err := env.svc.Due(time.Date(2027, 2, 20, 2, 0, 0, 0, time.UTC))
+	testutil.AssertNoError(t, err)
+	if dueOfKind(got, models.ReminderKindCardAnnualFee) == nil {
+		t.Fatalf("expected the fee reminder, got %+v", got)
+	}
+	if d := dueOfKind(got, models.ReminderKindFeeWaiverPace); d == nil || d.DueOn != "2027-12-31" {
+		t.Fatalf("the pace reminder for 2027 is a different deadline and goes out too, got %+v", got)
+	}
+}
+
+// F4: a fee reminder Due() reads but does not return is moved to the next day
+// like a withheld pace row, so it never fills the batch.
+func TestCardFeeReminders_WithheldFeeReminderPostponed(t *testing.T) {
+	t.Run("no telegram link", func(t *testing.T) {
+		env := feeFixture(t, 0, 0)
+		now := time.Date(2027, 2, 20, 2, 0, 0, 0, time.UTC)
+		_, err := env.fees.Set(env.user.ID, env.card.ID, CardAnnualFeeInput{Amount: 250_00, Month: 3, Day: intp(15)}, now)
+		testutil.AssertNoError(t, err)
+		testutil.AssertNoError(t, env.db.Model(&models.TelegramLink{}).Where("user_id = ?", env.user.ID).
+			Update("is_active", false).Error)
+
+		got, err := env.svc.Due(now)
+		testutil.AssertNoError(t, err)
+		if len(got) != 0 {
+			t.Fatalf("no active link, nothing to send: %+v", got)
+		}
+		if fee := env.unsent(t, models.ReminderKindCardAnnualFee); !fee.RemindAt.Equal(time.Date(2027, 2, 21, 1, 0, 0, 0, time.UTC)) {
+			t.Fatalf("withheld fee remind_at %v, want 2027-02-21 01:00", fee.RemindAt)
+		}
+	})
+	t.Run("inactive account", func(t *testing.T) {
+		env := feeFixture(t, 0, 0)
+		now := time.Date(2027, 2, 20, 2, 0, 0, 0, time.UTC)
+		_, err := env.fees.Set(env.user.ID, env.card.ID, CardAnnualFeeInput{Amount: 250_00, Month: 3, Day: intp(15)}, now)
+		testutil.AssertNoError(t, err)
+		testutil.AssertNoError(t, env.db.Model(&models.Account{}).Where("id = ?", env.card.ID).Update("is_active", false).Error)
+
+		got, err := env.svc.Due(now)
+		testutil.AssertNoError(t, err)
+		if len(got) != 0 {
+			t.Fatalf("an inactive card gets no reminders: %+v", got)
+		}
+		if fee := env.unsent(t, models.ReminderKindCardAnnualFee); !fee.RemindAt.Equal(time.Date(2027, 2, 21, 1, 0, 0, 0, time.UTC)) {
+			t.Fatalf("withheld fee remind_at %v, want 2027-02-21 01:00", fee.RemindAt)
+		}
+	})
 }

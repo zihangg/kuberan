@@ -68,3 +68,34 @@ func TestFeeWaiverWindowLeapFeeDate(t *testing.T) {
 		t.Fatalf("end = %v, want %v", end, want)
 	}
 }
+
+func TestFeeDecidingWindow(t *testing.T) {
+	d := func(v int) *int { return &v }
+	tests := []struct {
+		name      string
+		window    models.WaiverWindow
+		month     int
+		day       *int
+		feeDate   time.Time
+		wantStart time.Time
+		wantEnd   time.Time
+	}{
+		{"calendar year: the year before the fee", models.WaiverWindowCalendarYear, 3, d(15),
+			utcYMD(2027, 3, 15), utcYMD(2026, 1, 1), utcYMD(2026, 12, 31)},
+		{"calendar year: a January fee", models.WaiverWindowCalendarYear, 1, d(1),
+			utcYMD(2027, 1, 1), utcYMD(2026, 1, 1), utcYMD(2026, 12, 31)},
+		{"calendar year: a 31 Dec fee uses its own year", models.WaiverWindowCalendarYear, 12, d(31),
+			utcYMD(2026, 12, 31), utcYMD(2026, 1, 1), utcYMD(2026, 12, 31)},
+		{"card year: ends on the fee date", models.WaiverWindowCardYear, 3, d(15),
+			utcYMD(2027, 3, 15), utcYMD(2026, 3, 16), utcYMD(2027, 3, 15)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fee := &models.CardAnnualFee{FeeMonth: tt.month, FeeDay: tt.day, WaiverWindow: tt.window}
+			start, end := FeeDecidingWindow(fee, tt.feeDate)
+			if !start.Equal(tt.wantStart) || !end.Equal(tt.wantEnd) {
+				t.Fatalf("FeeDecidingWindow = %v..%v, want %v..%v", start, end, tt.wantStart, tt.wantEnd)
+			}
+		})
+	}
+}

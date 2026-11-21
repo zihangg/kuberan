@@ -5232,7 +5232,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Enable or disable the reminder (all occurrences of its kind for that account)",
+                "description": "Enable or disable the reminder (all occurrences of its kind for that account; card_annual_fee and fee_waiver_pace share one switch)",
                 "consumes": [
                     "application/json"
                 ],

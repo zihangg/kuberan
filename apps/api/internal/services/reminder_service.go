@@ -50,7 +50,9 @@ type ReminderServicer interface {
 	// soonest first. refID, when non-empty, limits it to one account.
 	ListUpcoming(userID, refID string, now time.Time) ([]models.Reminder, error)
 	// SetEnabled switches an account's reminder on or off (all occurrences of
-	// the reminder's kind for its account) and returns the reminder.
+	// the reminder's kind for its account) and returns the reminder. The two
+	// annual-fee kinds (card_annual_fee, fee_waiver_pace) share one switch:
+	// either one switches both for the card.
 	SetEnabled(userID, reminderID string, enabled bool) (*models.Reminder, error)
 	// SyncAccount brings the reminders of an account in line with its due day
 	// or maturity date.
@@ -59,8 +61,10 @@ type ReminderServicer interface {
 	// remind_at reached, for users with an active Telegram link that has the
 	// reminder's kind switched on. Reminders whose due date has passed unsent
 	// are dropped and the next occurrence is created. A fee_waiver_pace
-	// reminder is sent only while the card is behind pace; otherwise it is
-	// withheld and checked again the next day.
+	// reminder is sent only while the card is behind pace and no fee reminder
+	// in the same poll covers its deadline; otherwise it is withheld and
+	// checked again the next day, as is an annual-fee reminder that cannot be
+	// sent (no active link, switched off, account inactive).
 	Due(now time.Time) ([]DueReminder, error)
 	// MarkSent records that a reminder was delivered. Idempotent: marking a
 	// sent reminder again changes nothing. A recurring reminder gets its next
@@ -99,8 +103,13 @@ func (s *reminderService) SetEnabled(userID, reminderID string, enabled bool) (*
 		}
 		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
+	kinds := []models.ReminderKind{rem.Kind}
+	if rem.Kind == models.ReminderKindCardAnnualFee || rem.Kind == models.ReminderKindFeeWaiverPace {
+		// One switch on the card covers the fee reminder and the waiver nudge.
+		kinds = []models.ReminderKind{models.ReminderKindCardAnnualFee, models.ReminderKindFeeWaiverPace}
+	}
 	if err := s.db.Model(&models.Reminder{}).
-		Where("user_id = ? AND ref_id = ? AND kind = ?", userID, rem.RefID, rem.Kind).
+		Where("user_id = ? AND ref_id = ? AND kind IN ?", userID, rem.RefID, kinds).
 		Update("enabled", enabled).Error; err != nil {
 		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
@@ -162,7 +171,7 @@ func (s *reminderService) Due(now time.Time) ([]DueReminder, error) {
 		link, linked := linkByUser[r.UserID]
 		acct, ok := accountByID[r.RefID]
 		if !linked || !ok || !kindEnabledOnLink(&link, r.Kind) {
-			if r.Kind == models.ReminderKindFeeWaiverPace {
+			if isAnnualFeeKind(r.Kind) {
 				withheld = append(withheld, r.ID)
 			}
 			continue
@@ -193,34 +202,74 @@ func (s *reminderService) Due(now time.Time) ([]DueReminder, error) {
 				continue
 			}
 		case models.ReminderKindCardAnnualFee, models.ReminderKindFeeWaiverPace:
-			send, err := s.addCardFeeDetails(&item, &acct, now)
+			send, err := s.addCardFeeDetails(&item, &acct, r.DueOn, now)
 			if err != nil {
 				return nil, err
 			}
 			if !send {
-				if r.Kind == models.ReminderKindFeeWaiverPace {
-					withheld = append(withheld, r.ID)
-				}
+				withheld = append(withheld, r.ID)
 				continue
 			}
 		}
 		out = append(out, item)
 	}
+	out, covered := withholdCoveredPace(out)
+	withheld = append(withheld, covered...)
 	if err := s.postponeWithheld(withheld, now); err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
+// isAnnualFeeKind reports whether a kind is one of the two annual-fee
+// reminders (plan 025).
+func isAnnualFeeKind(k models.ReminderKind) bool {
+	return k == models.ReminderKindCardAnnualFee || k == models.ReminderKindFeeWaiverPace
+}
+
+// withholdCoveredPace drops each fee_waiver_pace reminder whose card also has
+// a card_annual_fee reminder in the same batch for the same deadline (the fee
+// reminder's waiver window ends on the pace reminder's due date): the fee
+// reminder already carries the shortfall. It returns the remaining reminders
+// and the IDs of the dropped pace reminders.
+func withholdCoveredPace(items []DueReminder) (kept []DueReminder, dropped []string) {
+	feeDeadline := make(map[string]string)
+	for i := range items {
+		if items[i].Kind == models.ReminderKindCardAnnualFee && items[i].FeeWaiver != nil {
+			feeDeadline[items[i].AccountID] = items[i].FeeWaiver.WindowEnd
+		}
+	}
+	if len(feeDeadline) == 0 {
+		return items, nil
+	}
+	kept = items[:0]
+	for i := range items {
+		it := items[i]
+		if end, ok := feeDeadline[it.AccountID]; ok && it.Kind == models.ReminderKindFeeWaiverPace && end == it.DueOn {
+			dropped = append(dropped, it.ID)
+			continue
+		}
+		kept = append(kept, it)
+	}
+	return kept, dropped
+}
+
 // addCardFeeDetails fills in the annual-fee fields of a card_annual_fee or
-// fee_waiver_pace reminder from the card's fee summary as of now. It reports
-// false when the reminder should not be sent: the card has no fee, or (pace)
-// it has no waiver condition or is not behind pace.
-func (s *reminderService) addCardFeeDetails(item *DueReminder, acct *models.Account, now time.Time) (bool, error) {
+// fee_waiver_pace reminder from the card's fee summary as of now. The fee
+// reminder's waiver progress is over the window that decides the fee due on
+// dueOn (for a calendar-year waiver, the year before the fee); the pace
+// reminder's is over the current window. It reports false when the reminder
+// should not be sent: the card has no fee, or (pace) it has no waiver
+// condition or is not behind pace.
+func (s *reminderService) addCardFeeDetails(item *DueReminder, acct *models.Account, dueOn, now time.Time) (bool, error) {
 	if acct.AnnualFee == nil {
 		return false, nil
 	}
-	summary, err := buildCardFeeSummary(s.db, acct, now)
+	window := func(fee *models.CardAnnualFee) (time.Time, time.Time) { return FeeWaiverWindow(fee, now) }
+	if item.Kind == models.ReminderKindCardAnnualFee {
+		window = func(fee *models.CardAnnualFee) (time.Time, time.Time) { return FeeDecidingWindow(fee, dueOn) }
+	}
+	summary, err := buildCardFeeSummaryIn(s.db, acct, now, window)
 	if err != nil {
 		return false, apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
@@ -239,10 +288,11 @@ func (s *reminderService) addCardFeeDetails(item *DueReminder, acct *models.Acco
 	return true, nil
 }
 
-// postponeWithheld moves the pace reminders Due() read but did not return (on
-// track or met, no waiver, no active link, annual-fee reminders switched off,
-// account inactive) to 01:00 UTC the next day, so they are checked once a day
-// and never fill Due()'s batch.
+// postponeWithheld moves the annual-fee reminders (card_annual_fee and
+// fee_waiver_pace) Due() read but did not return (pace on track or met or
+// covered by the fee reminder, no fee or waiver, no active link, annual-fee
+// reminders switched off, account inactive) to 01:00 UTC the next day, so they
+// are checked once a day and never fill Due()'s batch.
 func (s *reminderService) postponeWithheld(ids []string, now time.Time) error {
 	if len(ids) == 0 {
 		return nil
