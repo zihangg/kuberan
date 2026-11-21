@@ -1022,3 +1022,14 @@ type ReceivableServicer interface {
 	// RenameCounterparty renames (or merges) every receivable with fromKey and returns the number updated.
 	RenameCounterparty(userID, fromKey, toName string) (int64, error)
 }
+
+// CardFeeServicer manages the annual fee of a credit card and reports its
+// waiver progress (plan 025). All operations are user-scoped.
+type CardFeeServicer interface {
+	// Set creates or replaces the card's annual fee and re-syncs its reminders.
+	Set(userID, accountID string, in CardAnnualFeeInput, now time.Time) (*models.CardAnnualFee, error)
+	// Delete removes the card's annual fee (hard delete) and re-syncs its reminders.
+	Delete(userID, accountID string, now time.Time) error
+	// Summary returns the fee and waiver progress; Fee and Waiver are nil when unset.
+	Summary(userID, accountID string, now time.Time) (*CardFeeSummary, error)
+}
