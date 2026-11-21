@@ -133,7 +133,11 @@ function CommandsCard() {
 
 const REMINDER_ROWS: {
   field: keyof UpdateReminderSettingsRequest;
-  link: "remind_card_due" | "remind_loan_due" | "remind_fd_maturity";
+  link:
+    | "remind_card_due"
+    | "remind_loan_due"
+    | "remind_fd_maturity"
+    | "remind_annual_fee";
   title: string;
   description: string;
 }[] = [
@@ -155,6 +159,13 @@ const REMINDER_ROWS: {
     title: "Fixed deposit maturity",
     description: `${REMINDER_LEAD_DAYS.fd_maturity} days before a deposit matures`,
   },
+  {
+    // Covers both annual-fee kinds (card_annual_fee and fee_waiver_pace).
+    field: "annual_fee",
+    link: "remind_annual_fee",
+    title: "Annual fees",
+    description: "Fee reminders and waiver progress",
+  },
 ];
 
 /** Per-kind reminder switches; the bot sends only the kinds left on. */
@@ -165,13 +176,14 @@ function ReminderSettings({
     remind_card_due?: boolean;
     remind_loan_due?: boolean;
     remind_fd_maturity?: boolean;
+    remind_annual_fee?: boolean;
   };
 }) {
   const update = useUpdateReminderSettings();
   return (
     <SettingsSection
       title="Reminders"
-      description="Due dates and maturities the bot messages you about. You can also switch one account's reminder off on its page."
+      description="Due dates, maturities and annual fees the bot messages you about. You can also switch one account's reminder off on its page."
     >
       <div className="divide-y">
         {REMINDER_ROWS.map((row) => (

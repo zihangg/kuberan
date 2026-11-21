@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { feeDateLabel, waiverFraction, waiverStatusLabel } from "./card-fee";
+import {
+  annualFeeFormFrom,
+  feeDateLabel,
+  toAnnualFeeRequest,
+  waiverFraction,
+  waiverStatusLabel,
+  windowElapsedFraction,
+  type AnnualFeeForm,
+} from "./card-fee";
 
 describe("feeDateLabel", () => {
   it("shows day and short month when the day is known", () => {
@@ -29,5 +37,111 @@ describe("waiverFraction", () => {
   it("is 0 for a zero target or negative actual", () => {
     expect(waiverFraction({ target: 0, actual: 5, remaining: 0 })).toBe(0);
     expect(waiverFraction({ target: 100, actual: -5, remaining: 105 })).toBe(0);
+  });
+});
+
+const base: AnnualFeeForm = {
+  amount: 25000,
+  month: 3,
+  day: 0,
+  waiverType: "none",
+  waiverSpend: 0,
+  waiverSwipes: 0,
+  waiverWindow: "card_year",
+};
+
+describe("toAnnualFeeRequest", () => {
+  it("sends only amount and month for a fee with no day or waiver", () => {
+    expect(toAnnualFeeRequest(base)).toEqual({ ok: true, data: { amount: 25000, month: 3 } });
+  });
+
+  it("includes the day when known", () => {
+    const r = toAnnualFeeRequest({ ...base, day: 15 });
+    expect(r.ok && r.data.day).toBe(15);
+  });
+
+  it("rejects a zero amount", () => {
+    expect(toAnnualFeeRequest({ ...base, amount: 0 }).ok).toBe(false);
+  });
+
+  it("rejects an out-of-range month or day", () => {
+    expect(toAnnualFeeRequest({ ...base, month: 13 }).ok).toBe(false);
+    expect(toAnnualFeeRequest({ ...base, day: 32 }).ok).toBe(false);
+  });
+
+  it("drops the swipes target on a spend waiver", () => {
+    expect(
+      toAnnualFeeRequest({ ...base, waiverType: "spend", waiverSpend: 1200000, waiverSwipes: 12 }),
+    ).toEqual({
+      ok: true,
+      data: { amount: 25000, month: 3, waiver_type: "spend", waiver_spend: 1200000, waiver_window: "card_year" },
+    });
+  });
+
+  it("drops the spend target on a swipes waiver", () => {
+    const r = toAnnualFeeRequest({
+      ...base,
+      waiverType: "swipes",
+      waiverSpend: 500,
+      waiverSwipes: 12,
+      waiverWindow: "calendar_year",
+    });
+    expect(r).toEqual({
+      ok: true,
+      data: { amount: 25000, month: 3, waiver_type: "swipes", waiver_swipes: 12, waiver_window: "calendar_year" },
+    });
+  });
+
+  it("needs both targets for spend_or_swipes", () => {
+    expect(toAnnualFeeRequest({ ...base, waiverType: "spend_or_swipes", waiverSpend: 100 }).ok).toBe(false);
+    expect(toAnnualFeeRequest({ ...base, waiverType: "spend_or_swipes", waiverSwipes: 12 }).ok).toBe(false);
+    const r = toAnnualFeeRequest({ ...base, waiverType: "spend_or_swipes", waiverSpend: 100, waiverSwipes: 12 });
+    expect(r.ok && r.data.waiver_spend).toBe(100);
+    expect(r.ok && r.data.waiver_swipes).toBe(12);
+  });
+
+  it("sends no targets without a waiver type", () => {
+    const r = toAnnualFeeRequest({ ...base, waiverSpend: 100, waiverSwipes: 12 });
+    expect(r).toEqual({ ok: true, data: { amount: 25000, month: 3 } });
+  });
+
+  it("requires a positive spend target on a spend waiver", () => {
+    expect(toAnnualFeeRequest({ ...base, waiverType: "spend" }).ok).toBe(false);
+  });
+});
+
+describe("annualFeeFormFrom", () => {
+  it("maps a stored fee to the form", () => {
+    const f = annualFeeFormFrom({
+      id: "f",
+      account_id: "a",
+      user_id: "u",
+      amount: 25000,
+      fee_month: 3,
+      fee_day: null,
+      waiver_type: "swipes",
+      waiver_spend: null,
+      waiver_swipes: 12,
+      waiver_window: "calendar_year",
+      created_at: "",
+      updated_at: "",
+    });
+    expect(f).toEqual({
+      amount: 25000,
+      month: 3,
+      day: 0,
+      waiverType: "swipes",
+      waiverSpend: 0,
+      waiverSwipes: 12,
+      waiverWindow: "calendar_year",
+    });
+  });
+});
+
+describe("windowElapsedFraction", () => {
+  it("is the share of the window gone by", () => {
+    expect(windowElapsedFraction("2026-01-01", "2026-12-31", 0)).toBe(1);
+    expect(windowElapsedFraction("2026-01-01", "2026-12-31", 365)).toBe(0);
+    expect(windowElapsedFraction("2026-01-01", "2026-12-31", 182.5)).toBeCloseTo(0.5);
   });
 });
