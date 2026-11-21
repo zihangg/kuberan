@@ -558,3 +558,148 @@ func (h *InvestmentHandler) GetInvestmentTransactions(c *gin.Context) {
 
 	c.JSON(http.StatusOK, result)
 }
+
+// UpdateInvestmentTransactionRequest is the payload for correcting a buy, sell,
+// dividend or split. It replaces the transaction's editable fields; its type
+// cannot change and only the fields of that type are read (as on the record
+// endpoints): buys and sells use quantity, price_per_unit and fee; dividends
+// amount (gross), fee (withholding) and dividend_type; splits split_ratio.
+// The cash leg is funding_account_id / funding_amount for a buy and
+// deposit_account_id / deposit_amount for a sell or dividend; omit the account
+// for no cash leg.
+type UpdateInvestmentTransactionRequest struct {
+	Date             time.Time `json:"date" binding:"required"`
+	Quantity         float64   `json:"quantity" binding:"gte=0,lte=1e15"`
+	PricePerUnit     int64     `json:"price_per_unit" binding:"gte=0,lte=100000000000000"`
+	Amount           int64     `json:"amount" binding:"gte=0,lte=100000000000000"`
+	Fee              int64     `json:"fee" binding:"gte=0,lte=100000000000000"`
+	Notes            string    `json:"notes" binding:"max=500"`
+	DividendType     string    `json:"dividend_type" binding:"max=50"`
+	SplitRatio       float64   `json:"split_ratio" binding:"gte=0,lte=1000000"`
+	FundingAccountID string    `json:"funding_account_id"`
+	FundingAmount    int64     `json:"funding_amount" binding:"omitempty,gt=0,lte=100000000000000"`
+	DepositAccountID string    `json:"deposit_account_id"`
+	DepositAmount    int64     `json:"deposit_amount" binding:"omitempty,gt=0,lte=100000000000000"`
+	// FXRate optionally overrides the security currency -> base rate. When it
+	// is omitted and the date, total and cash leg are unchanged, the stored
+	// rate is kept; otherwise the rate is resolved as for a new trade.
+	FXRate string `json:"fx_rate" binding:"max=32"`
+}
+
+// UpdateInvestmentTransaction handles correcting an investment transaction.
+// @Summary     Edit investment transaction
+// @Description Correct a buy, sell, dividend or split. The request replaces the transaction's editable fields (same rules and currencies as recording it). Its old cash leg is reversed and the new one applied, then the holding is rebuilt from all its transactions, so later sells' realized gains are recomputed. Refused with 400 INSUFFICIENT_SHARES when a sell would exceed the position at that point; nothing changes then.
+// @Tags        investments
+// @Accept      json
+// @Produce     json
+// @Security    BearerAuth
+// @Param       id      path string                             true "Investment ID"
+// @Param       txid    path string                             true "Investment transaction ID"
+// @Param       request body UpdateInvestmentTransactionRequest  true "Corrected transaction"
+// @Success     200 {object} models.InvestmentTransaction "Transaction updated"
+// @Failure     400 {object} ErrorResponse "Invalid input or insufficient shares"
+// @Failure     401 {object} ErrorResponse "Unauthorized"
+// @Failure     404 {object} ErrorResponse "Investment or transaction not found"
+// @Failure     500 {object} ErrorResponse "Server error"
+// @Failure     503 {object} ErrorResponse "No FX rate available; pass fx_rate"
+// @Router      /investments/{id}/transactions/{txid} [put]
+func (h *InvestmentHandler) UpdateInvestmentTransaction(c *gin.Context) {
+	userID, err := getUserID(c)
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+	investmentID, err := parsePathID(c, "id")
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+	txID, err := parsePathID(c, "txid")
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	var req UpdateInvestmentTransactionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, err.Error()))
+		return
+	}
+	if req.FundingAccountID != "" && req.DepositAccountID != "" {
+		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput,
+			"send funding_account_id (buys) or deposit_account_id (sells, dividends), not both"))
+		return
+	}
+	accountID, accountAmount := req.FundingAccountID, req.FundingAmount
+	if req.DepositAccountID != "" || req.DepositAmount != 0 {
+		accountID, accountAmount = req.DepositAccountID, req.DepositAmount
+	}
+
+	invTx, err := h.investmentService.UpdateInvestmentTransaction(userID, investmentID, txID, services.UpdateTradeParams{
+		Date:          req.Date,
+		Quantity:      req.Quantity,
+		PricePerUnit:  req.PricePerUnit,
+		Amount:        req.Amount,
+		Fee:           req.Fee,
+		Notes:         req.Notes,
+		DividendType:  req.DividendType,
+		SplitRatio:    req.SplitRatio,
+		AccountID:     accountID,
+		AccountAmount: accountAmount,
+		FXRate:        req.FXRate,
+	})
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	auditMeta := map[string]interface{}{"transaction_id": txID, "type": invTx.Type}
+	if accountID != "" {
+		auditMeta["account_id"] = accountID
+	}
+	h.auditService.Log(userID, "INVESTMENT_TRANSACTION_UPDATE", "investment", investmentID, c.ClientIP(), auditMeta)
+
+	c.JSON(http.StatusOK, gin.H{"transaction": invTx})
+}
+
+// DeleteInvestmentTransaction handles deleting an investment transaction.
+// @Summary     Delete investment transaction
+// @Description Delete a buy, sell, dividend or split. Its cash leg is reversed (the cash account's balance is restored) and the holding is rebuilt from the remaining transactions. Refused with 400 INSUFFICIENT_SHARES when a later sell would then exceed the position; nothing changes then.
+// @Tags        investments
+// @Produce     json
+// @Security    BearerAuth
+// @Param       id   path string true "Investment ID"
+// @Param       txid path string true "Investment transaction ID"
+// @Success     200 {object} MessageResponse "Transaction deleted"
+// @Failure     400 {object} ErrorResponse "Invalid input or insufficient shares"
+// @Failure     401 {object} ErrorResponse "Unauthorized"
+// @Failure     404 {object} ErrorResponse "Investment or transaction not found"
+// @Failure     500 {object} ErrorResponse "Server error"
+// @Router      /investments/{id}/transactions/{txid} [delete]
+func (h *InvestmentHandler) DeleteInvestmentTransaction(c *gin.Context) {
+	userID, err := getUserID(c)
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+	investmentID, err := parsePathID(c, "id")
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+	txID, err := parsePathID(c, "txid")
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	if err := h.investmentService.DeleteInvestmentTransaction(userID, investmentID, txID); err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	h.auditService.Log(userID, "INVESTMENT_TRANSACTION_DELETE", "investment", investmentID, c.ClientIP(),
+		map[string]interface{}{"transaction_id": txID})
+
+	c.JSON(http.StatusOK, gin.H{"message": "Investment transaction deleted"})
+}

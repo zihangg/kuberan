@@ -66,7 +66,7 @@ func getTotalInvestedByID(db *gorm.DB, investmentIDs []string) (map[string]int64
 
 	if err := db.Table("investment_transactions").
 		Select("investment_id, COALESCE(SUM(total_amount), 0) AS total").
-		Where("investment_id IN ? AND type = ?", investmentIDs, models.InvestmentTransactionBuy).
+		Where("investment_id IN ? AND type = ? AND deleted_at IS NULL", investmentIDs, models.InvestmentTransactionBuy).
 		Group("investment_id").
 		Scan(&rows).Error; err != nil {
 		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
@@ -521,6 +521,9 @@ type cashLegRequest struct {
 	amount    int64  // caller-stated amount in the account's currency; 0 = not given
 	field     string // request field carrying amount ("funding_amount" / "deposit_amount")
 	native    int64  // the amount, in the security's currency, that the leg settles
+	// keepAccountID is the account an edited trade already used: it stays
+	// usable even if it has since been deactivated.
+	keepAccountID string
 }
 
 // resolveCashLeg validates the cash account of a trade and returns it with the
@@ -538,7 +541,11 @@ func (s *investmentService) resolveCashLeg(userID string, req cashLegRequest, se
 		}
 		return nil, 0, nil
 	}
-	account, err := s.accountService.GetAccountByID(userID, req.accountID)
+	lookup := s.accountService.GetAccountByID
+	if req.keepAccountID != "" && req.accountID == req.keepAccountID {
+		lookup = s.accountService.GetAccountByIDIncludingInactive
+	}
+	account, err := lookup(userID, req.accountID)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -564,21 +571,26 @@ func (s *investmentService) resolveCashLeg(userID string, req cashLegRequest, se
 }
 
 // applyCashLeg writes the cash transaction row and moves the (row-locked)
-// account's balance by amount, in the account's own currency.
-func (s *investmentService) applyCashLeg(tx *gorm.DB, userID, accountID string, txnType models.TransactionType, amount int64, description string, date time.Time) error {
-	accounts, err := lockAccounts(tx, userID, []string{accountID}, true)
+// account's balance by amount, in the account's own currency. With
+// requireActive the account must be active (an edit keeping the account its
+// trade already used passes false). investmentTxID
+// links the row to the trade it settles, so the trade can later be edited or
+// deleted together with its cash.
+func (s *investmentService) applyCashLeg(tx *gorm.DB, userID, accountID string, txnType models.TransactionType, amount int64, description string, date time.Time, investmentTxID string, requireActive bool) error {
+	accounts, err := lockAccounts(tx, userID, []string{accountID}, requireActive)
 	if err != nil {
 		return err
 	}
 	acct := accounts[accountID]
 	cashTx := models.Transaction{
-		UserID:      userID,
-		AccountID:   accountID,
-		Type:        models.TransactionTypeInvestment,
-		Amount:      amount,
-		Description: description,
-		Date:        date,
-		Source:      models.TransactionSourceSystem,
+		UserID:                  userID,
+		AccountID:               accountID,
+		Type:                    models.TransactionTypeInvestment,
+		Amount:                  amount,
+		Description:             description,
+		Date:                    date,
+		Source:                  models.TransactionSourceSystem,
+		InvestmentTransactionID: &investmentTxID,
 	}
 	if err := tx.Create(&cashTx).Error; err != nil {
 		return apperrors.Wrap(apperrors.ErrInternalServer, err)
@@ -586,85 +598,40 @@ func (s *investmentService) applyCashLeg(tx *gorm.DB, userID, accountID string, 
 	return s.accountService.ApplyBalanceDelta(tx, acct.ID, acct.Type, txnType, amount)
 }
 
-// RecordBuy records a buy transaction and updates the investment holding. The
-// price and fee are in the security's currency. If p.FundingAccountID is set the
-// cost is deducted from that cash account: in the account's own currency, which
-// must be stated in p.FundingAmount when it differs from the security's.
-func (s *investmentService) RecordBuy(userID, investmentID string, p BuyParams) (*models.InvestmentTransaction, error) {
-	investment, err := s.GetInvestmentByID(userID, investmentID)
-	if err != nil {
-		return nil, err
-	}
-	secCcy := normalizeCode(investment.Security.Currency)
+// preparedTrade is a validated and priced buy, sell, dividend or split, ready
+// to be written: the investment transaction row (without ID or InvestmentID)
+// and its cash leg. cash is nil when the trade moves no cash.
+type preparedTrade struct {
+	row        models.InvestmentTransaction
+	cash       *models.Account
+	cashAmount int64                  // in the cash account's currency
+	cashType   models.TransactionType // the cash leg's balance effect (expense = money out)
+	cashDesc   string
+	// keepAccountID is the account an edited trade already used ("" when
+	// recording): it may be inactive.
+	keepAccountID string
+}
 
-	explicit, err := parseOptionalRate(p.FXRate)
-	if err != nil {
-		return nil, err
-	}
-	gross, err := lineAmount(p.Quantity, p.PricePerUnit)
-	if err != nil {
-		return nil, err
-	}
-	totalAmount := gross + p.Fee
-
-	fundingAccount, cashAmount, err := s.resolveCashLeg(userID, cashLegRequest{
-		accountID: p.FundingAccountID, amount: p.FundingAmount, field: "funding_amount", native: totalAmount,
-	}, secCcy, p.Date)
-	if err != nil {
-		return nil, err
-	}
-
-	rate, baseAmount, err := s.priceTrade(userID, secCcy, p.Date, explicit, fundingAccount, cashAmount, totalAmount, totalAmount)
-	if err != nil {
-		return nil, err
-	}
-
-	var invTx models.InvestmentTransaction
-	err = s.db.Transaction(func(tx *gorm.DB) error {
-		// Re-read the holding under a row lock so concurrent writes serialize.
-		locked, txErr := lockInvestment(tx, investmentID)
-		if txErr != nil {
-			return txErr
-		}
-		st := stateOf(locked)
-		if _, txErr := st.apply(tradeEvent{
-			Type: models.InvestmentTransactionBuy, Quantity: p.Quantity, TotalAmount: totalAmount, BaseAmount: baseAmount,
-		}); txErr != nil {
-			return txErr
-		}
-
-		invTx = models.InvestmentTransaction{
-			InvestmentID: investmentID,
-			Type:         models.InvestmentTransactionBuy,
-			Date:         p.Date,
-			Quantity:     p.Quantity,
-			PricePerUnit: p.PricePerUnit,
-			TotalAmount:  totalAmount,
-			Fee:          p.Fee,
-			Notes:        p.Notes,
-			FXRateToBase: &rate,
-			BaseAmount:   &baseAmount,
-		}
-		if txErr := tx.Create(&invTx).Error; txErr != nil {
-			return apperrors.Wrap(apperrors.ErrInternalServer, txErr)
-		}
-		if txErr := tx.Model(&models.Investment{}).Where("id = ?", investmentID).Updates(st.columns()).Error; txErr != nil {
-			return apperrors.Wrap(apperrors.ErrInternalServer, txErr)
-		}
-
-		// Deduct from funding account (row-locked, relative update; plan 021, D10)
-		if fundingAccount != nil {
-			return s.applyCashLeg(tx, userID, fundingAccount.ID, models.TransactionTypeExpense, cashAmount,
-				fmt.Sprintf("Investment purchase: %g %s", p.Quantity, investment.Security.Name), p.Date)
-		}
+// writeCashLeg writes the prepared trade's cash leg, linked to investmentTxID.
+func (s *investmentService) writeCashLeg(tx *gorm.DB, userID string, pt *preparedTrade, investmentTxID string) error {
+	if pt.cash == nil {
 		return nil
-	})
-	if err != nil {
-		return nil, err
 	}
+	return s.applyCashLeg(tx, userID, pt.cash.ID, pt.cashType, pt.cashAmount, pt.cashDesc, pt.row.Date, investmentTxID,
+		pt.keepAccountID == "" || pt.cash.ID != pt.keepAccountID)
+}
 
-	invTx.Currency = secCcy
-	return &invTx, nil
+// keptRate is the FX rate a trade was stored with. An edit that names no
+// fx_rate and leaves the trade's date, total and cash leg as they were keeps it
+// (including a legacy row's NULL rate), so correcting notes or a typo elsewhere
+// never re-prices the trade at today's market rate.
+type keptRate struct {
+	date       time.Time
+	total      int64 // the converted figure: buy cost, sell proceeds, gross dividend
+	accountID  string
+	cashAmount int64
+	rate       *fx.Rate
+	base       *int64
 }
 
 // priceTrade resolves the trade's FX rate and base amount. cashAmount is the
@@ -694,22 +661,85 @@ func (s *investmentService) priceTrade(
 	return rate, baseAmount, nil
 }
 
-// RecordSell records a sell transaction and adjusts the investment holding
-// proportionally, in the security's currency and in base. If p.DepositAccountID
-// is set the net proceeds are credited to that cash account: in the account's own
-// currency, which must be stated in p.DepositAmount when it differs from the
-// security's.
-func (s *investmentService) RecordSell(userID, investmentID string, p SellParams) (*models.InvestmentTransaction, error) {
-	investment, err := s.GetInvestmentByID(userID, investmentID)
+// accountIDOrEmpty returns the cash account the edited trade used, or "" when
+// there is no edit (nil) or it had no cash leg.
+func (k *keptRate) accountIDOrEmpty() string {
+	if k == nil {
+		return ""
+	}
+	return k.accountID
+}
+
+// priceOrKeep resolves the trade's FX rate and base amount like priceTrade,
+// except that it returns keep's stored figures when the trade is unchanged and
+// no explicit rate is given.
+func (s *investmentService) priceOrKeep(
+	userID, secCcy string, date time.Time, explicit *fx.Rate,
+	cashAccount *models.Account, cashAmount, cashNative, total int64, keep *keptRate,
+) (*fx.Rate, *int64, error) {
+	if explicit == nil && keep != nil {
+		accountID := ""
+		if cashAccount != nil {
+			accountID = cashAccount.ID
+		}
+		if keep.date.Equal(date) && keep.total == total && keep.accountID == accountID && keep.cashAmount == cashAmount {
+			return keep.rate, keep.base, nil
+		}
+	}
+	rate, base, err := s.priceTrade(userID, secCcy, date, explicit, cashAccount, cashAmount, cashNative, total)
+	if err != nil {
+		return nil, nil, err
+	}
+	return &rate, &base, nil
+}
+
+// prepareBuy validates and prices a buy of investment (Security loaded).
+func (s *investmentService) prepareBuy(userID string, investment *models.Investment, p BuyParams, keep *keptRate) (*preparedTrade, error) {
+	secCcy := normalizeCode(investment.Security.Currency)
+	explicit, err := parseOptionalRate(p.FXRate)
 	if err != nil {
 		return nil, err
 	}
-	secCcy := normalizeCode(investment.Security.Currency)
-
-	if p.Quantity > investment.Quantity+quantityEpsilon {
-		return nil, apperrors.ErrInsufficientShares
+	gross, err := lineAmount(p.Quantity, p.PricePerUnit)
+	if err != nil {
+		return nil, err
 	}
+	totalAmount := gross + p.Fee
 
+	fundingAccount, cashAmount, err := s.resolveCashLeg(userID, cashLegRequest{
+		accountID: p.FundingAccountID, amount: p.FundingAmount, field: "funding_amount", native: totalAmount, keepAccountID: keep.accountIDOrEmpty(),
+	}, secCcy, p.Date)
+	if err != nil {
+		return nil, err
+	}
+	rate, baseAmount, err := s.priceOrKeep(userID, secCcy, p.Date, explicit, fundingAccount, cashAmount, totalAmount, totalAmount, keep)
+	if err != nil {
+		return nil, err
+	}
+	return &preparedTrade{
+		row: models.InvestmentTransaction{
+			Type:         models.InvestmentTransactionBuy,
+			Date:         p.Date,
+			Quantity:     p.Quantity,
+			PricePerUnit: p.PricePerUnit,
+			TotalAmount:  totalAmount,
+			Fee:          p.Fee,
+			Notes:        p.Notes,
+			FXRateToBase: rate,
+			BaseAmount:   baseAmount,
+		},
+		cash:          fundingAccount,
+		cashAmount:    cashAmount,
+		cashType:      models.TransactionTypeExpense,
+		cashDesc:      fmt.Sprintf("Investment purchase: %g %s", p.Quantity, investment.Security.Name),
+		keepAccountID: keep.accountIDOrEmpty(),
+	}, nil
+}
+
+// prepareSell validates and prices a sell of investment (Security loaded). The
+// position is checked by the caller, against the state the sell applies to.
+func (s *investmentService) prepareSell(userID string, investment *models.Investment, p SellParams, keep *keptRate) (*preparedTrade, error) {
+	secCcy := normalizeCode(investment.Security.Currency)
 	explicit, err := parseOptionalRate(p.FXRate)
 	if err != nil {
 		return nil, err
@@ -721,81 +751,40 @@ func (s *investmentService) RecordSell(userID, investmentID string, p SellParams
 	totalAmount := gross - p.Fee
 
 	depositAccount, cashAmount, err := s.resolveCashLeg(userID, cashLegRequest{
-		accountID: p.DepositAccountID, amount: p.DepositAmount, field: "deposit_amount", native: totalAmount,
+		accountID: p.DepositAccountID, amount: p.DepositAmount, field: "deposit_amount", native: totalAmount, keepAccountID: keep.accountIDOrEmpty(),
 	}, secCcy, p.Date)
 	if err != nil {
 		return nil, err
 	}
-
-	rate, baseAmount, err := s.priceTrade(userID, secCcy, p.Date, explicit, depositAccount, cashAmount, totalAmount, totalAmount)
+	rate, baseAmount, err := s.priceOrKeep(userID, secCcy, p.Date, explicit, depositAccount, cashAmount, totalAmount, totalAmount, keep)
 	if err != nil {
 		return nil, err
 	}
-
-	var invTx models.InvestmentTransaction
-	err = s.db.Transaction(func(tx *gorm.DB) error {
-		// Re-read and re-validate the holding under a row lock so two concurrent
-		// sells can never oversell the position.
-		locked, txErr := lockInvestment(tx, investmentID)
-		if txErr != nil {
-			return txErr
-		}
-		st := stateOf(locked)
-		res, txErr := st.apply(tradeEvent{
-			Type: models.InvestmentTransactionSell, Quantity: p.Quantity, TotalAmount: totalAmount, BaseAmount: baseAmount,
-		})
-		if txErr != nil {
-			return txErr
-		}
-
-		invTx = models.InvestmentTransaction{
-			InvestmentID:         investmentID,
-			Type:                 models.InvestmentTransactionSell,
-			Date:                 p.Date,
-			Quantity:             p.Quantity,
-			PricePerUnit:         p.PricePerUnit,
-			TotalAmount:          totalAmount,
-			Fee:                  p.Fee,
-			Notes:                p.Notes,
-			RealizedGainLoss:     res.RealizedGainLoss,
-			RealizedGainLossBase: res.RealizedGainLossBase,
-			FXRateToBase:         &rate,
-			BaseAmount:           &baseAmount,
-		}
-		if txErr := tx.Create(&invTx).Error; txErr != nil {
-			return apperrors.Wrap(apperrors.ErrInternalServer, txErr)
-		}
-		if txErr := tx.Model(&models.Investment{}).Where("id = ?", investmentID).Updates(st.columns()).Error; txErr != nil {
-			return apperrors.Wrap(apperrors.ErrInternalServer, txErr)
-		}
-
-		// Credit deposit account with net proceeds (row-locked, relative update)
-		if depositAccount != nil {
-			return s.applyCashLeg(tx, userID, depositAccount.ID, models.TransactionTypeIncome, cashAmount,
-				fmt.Sprintf("Sale proceeds: %g %s", p.Quantity, investment.Security.Name), p.Date)
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	invTx.Currency = secCcy
-	return &invTx, nil
+	return &preparedTrade{
+		row: models.InvestmentTransaction{
+			Type:         models.InvestmentTransactionSell,
+			Date:         p.Date,
+			Quantity:     p.Quantity,
+			PricePerUnit: p.PricePerUnit,
+			TotalAmount:  totalAmount,
+			Fee:          p.Fee,
+			Notes:        p.Notes,
+			FXRateToBase: rate,
+			BaseAmount:   baseAmount,
+		},
+		cash:          depositAccount,
+		cashAmount:    cashAmount,
+		cashType:      models.TransactionTypeIncome,
+		cashDesc:      fmt.Sprintf("Sale proceeds: %g %s", p.Quantity, investment.Security.Name),
+		keepAccountID: keep.accountIDOrEmpty(),
+	}, nil
 }
 
-// RecordDividend records a dividend without changing quantity, cost basis or
-// realized P&L. p.Amount is the gross dividend in the security's currency and
-// p.Fee the withholding tax and fees. With p.DepositAccountID the NET amount
-// (gross − fee) is credited to that cash account, in the account's own currency,
-// which must be stated in p.DepositAmount when it differs from the security's.
-func (s *investmentService) RecordDividend(userID, investmentID string, p DividendParams) (*models.InvestmentTransaction, error) {
-	investment, err := s.GetInvestmentByID(userID, investmentID)
-	if err != nil {
-		return nil, err
-	}
+// prepareDividend validates and prices a dividend of investment (Security
+// loaded). The cash leg settles the NET dividend; the gross is what gets
+// converted to base.
+func (s *investmentService) prepareDividend(userID string, investment *models.Investment, p DividendParams, keep *keptRate) (*preparedTrade, error) {
 	secCcy := normalizeCode(investment.Security.Currency)
-
 	if p.Fee < 0 {
 		return nil, apperrors.WithMessage(apperrors.ErrInvalidInput, "fee must not be negative")
 	}
@@ -809,7 +798,7 @@ func (s *investmentService) RecordDividend(userID, investmentID string, p Divide
 	net := p.Amount - p.Fee
 
 	depositAccount, cashAmount, err := s.resolveCashLeg(userID, cashLegRequest{
-		accountID: p.DepositAccountID, amount: p.DepositAmount, field: "deposit_amount", native: net,
+		accountID: p.DepositAccountID, amount: p.DepositAmount, field: "deposit_amount", native: net, keepAccountID: keep.accountIDOrEmpty(),
 	}, secCcy, p.Date)
 	if err != nil {
 		return nil, err
@@ -817,40 +806,151 @@ func (s *investmentService) RecordDividend(userID, investmentID string, p Divide
 	if depositAccount != nil && net <= 0 {
 		return nil, apperrors.WithMessage(apperrors.ErrInvalidInput, "the net dividend must be positive to deposit it")
 	}
-
-	// The cash leg settles the NET dividend; the gross is what gets converted.
-	rate, baseAmount, err := s.priceTrade(userID, secCcy, p.Date, explicit, depositAccount, cashAmount, net, p.Amount)
+	rate, baseAmount, err := s.priceOrKeep(userID, secCcy, p.Date, explicit, depositAccount, cashAmount, net, p.Amount, keep)
 	if err != nil {
 		return nil, err
 	}
+	return &preparedTrade{
+		row: models.InvestmentTransaction{
+			Type:         models.InvestmentTransactionDividend,
+			Date:         p.Date,
+			TotalAmount:  p.Amount,
+			Fee:          p.Fee,
+			DividendType: p.DividendType,
+			Notes:        p.Notes,
+			FXRateToBase: rate,
+			BaseAmount:   baseAmount,
+		},
+		cash:          depositAccount,
+		cashAmount:    cashAmount,
+		cashType:      models.TransactionTypeIncome,
+		cashDesc:      fmt.Sprintf("Dividend: %s", investment.Security.Name),
+		keepAccountID: keep.accountIDOrEmpty(),
+	}, nil
+}
 
-	invTx := models.InvestmentTransaction{
-		InvestmentID: investmentID,
-		Type:         models.InvestmentTransactionDividend,
-		Date:         p.Date,
-		TotalAmount:  p.Amount,
-		Fee:          p.Fee,
-		DividendType: p.DividendType,
-		Notes:        p.Notes,
-		FXRateToBase: &rate,
-		BaseAmount:   &baseAmount,
-	}
-	err = s.db.Transaction(func(tx *gorm.DB) error {
+// recordPrepared writes a prepared buy or sell incrementally: it applies the
+// trade to the locked holding, stores the row (with the realized figures of a
+// sell), updates the holding and writes the linked cash leg.
+func (s *investmentService) recordPrepared(userID, investmentID string, pt *preparedTrade) (*models.InvestmentTransaction, error) {
+	invTx := pt.row
+	invTx.InvestmentID = investmentID
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		// Re-read (and for a sell re-validate) the holding under a row lock so
+		// concurrent writes serialize and two sells can never oversell it.
+		locked, txErr := lockInvestment(tx, investmentID)
+		if txErr != nil {
+			return txErr
+		}
+		st := stateOf(locked)
+		res, txErr := st.apply(eventOf(&invTx))
+		if txErr != nil {
+			return txErr
+		}
+		invTx.RealizedGainLoss = res.RealizedGainLoss
+		invTx.RealizedGainLossBase = res.RealizedGainLossBase
+
 		if txErr := tx.Create(&invTx).Error; txErr != nil {
 			return apperrors.Wrap(apperrors.ErrInternalServer, txErr)
 		}
-		if depositAccount != nil {
-			return s.applyCashLeg(tx, userID, depositAccount.ID, models.TransactionTypeIncome, cashAmount,
-				fmt.Sprintf("Dividend: %s", investment.Security.Name), p.Date)
+		if txErr := tx.Model(&models.Investment{}).Where("id = ?", investmentID).Updates(st.columns()).Error; txErr != nil {
+			return apperrors.Wrap(apperrors.ErrInternalServer, txErr)
 		}
-		return nil
+		// Move the cash (row-locked, relative update; plan 021, D10).
+		return s.writeCashLeg(tx, userID, pt, invTx.ID)
 	})
 	if err != nil {
 		return nil, err
 	}
-
-	invTx.Currency = secCcy
 	return &invTx, nil
+}
+
+// RecordBuy records a buy transaction and updates the investment holding. The
+// price and fee are in the security's currency. If p.FundingAccountID is set the
+// cost is deducted from that cash account: in the account's own currency, which
+// must be stated in p.FundingAmount when it differs from the security's.
+func (s *investmentService) RecordBuy(userID, investmentID string, p BuyParams) (*models.InvestmentTransaction, error) {
+	investment, err := s.GetInvestmentByID(userID, investmentID)
+	if err != nil {
+		return nil, err
+	}
+	pt, err := s.prepareBuy(userID, investment, p, nil)
+	if err != nil {
+		return nil, err
+	}
+	invTx, err := s.recordPrepared(userID, investmentID, pt)
+	if err != nil {
+		return nil, err
+	}
+	setCashLeg(invTx, pt)
+	invTx.Currency = normalizeCode(investment.Security.Currency)
+	return invTx, nil
+}
+
+// RecordSell records a sell transaction and adjusts the investment holding
+// proportionally, in the security's currency and in base. If p.DepositAccountID
+// is set the net proceeds are credited to that cash account: in the account's own
+// currency, which must be stated in p.DepositAmount when it differs from the
+// security's.
+func (s *investmentService) RecordSell(userID, investmentID string, p SellParams) (*models.InvestmentTransaction, error) {
+	investment, err := s.GetInvestmentByID(userID, investmentID)
+	if err != nil {
+		return nil, err
+	}
+	if p.Quantity > investment.Quantity+quantityEpsilon {
+		return nil, apperrors.ErrInsufficientShares
+	}
+	pt, err := s.prepareSell(userID, investment, p, nil)
+	if err != nil {
+		return nil, err
+	}
+	invTx, err := s.recordPrepared(userID, investmentID, pt)
+	if err != nil {
+		return nil, err
+	}
+	setCashLeg(invTx, pt)
+	invTx.Currency = normalizeCode(investment.Security.Currency)
+	return invTx, nil
+}
+
+// RecordDividend records a dividend without changing quantity, cost basis or
+// realized P&L. p.Amount is the gross dividend in the security's currency and
+// p.Fee the withholding tax and fees. With p.DepositAccountID the NET amount
+// (gross − fee) is credited to that cash account, in the account's own currency,
+// which must be stated in p.DepositAmount when it differs from the security's.
+func (s *investmentService) RecordDividend(userID, investmentID string, p DividendParams) (*models.InvestmentTransaction, error) {
+	investment, err := s.GetInvestmentByID(userID, investmentID)
+	if err != nil {
+		return nil, err
+	}
+	pt, err := s.prepareDividend(userID, investment, p, nil)
+	if err != nil {
+		return nil, err
+	}
+	invTx := pt.row
+	invTx.InvestmentID = investmentID
+	err = s.db.Transaction(func(tx *gorm.DB) error {
+		if txErr := tx.Create(&invTx).Error; txErr != nil {
+			return apperrors.Wrap(apperrors.ErrInternalServer, txErr)
+		}
+		return s.writeCashLeg(tx, userID, pt, invTx.ID)
+	})
+	if err != nil {
+		return nil, err
+	}
+	setCashLeg(&invTx, pt)
+	invTx.Currency = normalizeCode(investment.Security.Currency)
+	return &invTx, nil
+}
+
+// setCashLeg fills the response-only cash leg fields from a prepared trade.
+func setCashLeg(invTx *models.InvestmentTransaction, pt *preparedTrade) {
+	if pt.cash == nil {
+		invTx.CashAccountID, invTx.CashAmount = nil, nil
+		return
+	}
+	id, amount := pt.cash.ID, pt.cashAmount
+	invTx.CashAccountID, invTx.CashAmount = &id, &amount
 }
 
 // RecordSplit records a stock split and multiplies the investment quantity.
@@ -922,13 +1022,16 @@ func (s *investmentService) GetInvestmentTransactions(userID, investmentID strin
 	}
 
 	var transactions []models.InvestmentTransaction
-	if err := base.Order("date DESC").Scopes(pagination.Paginate(page)).Find(&transactions).Error; err != nil {
+	if err := base.Order("date DESC, created_at DESC, id DESC").Scopes(pagination.Paginate(page)).Find(&transactions).Error; err != nil {
 		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
 
 	currency := normalizeCode(investment.Security.Currency)
 	for i := range transactions {
 		transactions[i].Currency = currency
+	}
+	if err := attachCashLegs(s.db, userID, investment, transactions); err != nil {
+		return nil, err
 	}
 
 	result := pagination.NewPageResponse(transactions, page.Page, page.PageSize, totalItems)

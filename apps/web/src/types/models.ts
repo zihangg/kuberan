@@ -410,6 +410,10 @@ export interface InvestmentTransaction extends BaseModel {
   realized_gain_loss_base: number;
   split_ratio?: number; // float, for splits
   dividend_type?: string; // for dividends
+  /** Cash account the trade was paid from / into; null when none is linked (none used, imported, or an old unmatched row). */
+  cash_account_id: string | null;
+  /** Cents moved on cash_account_id, in that account's currency. */
+  cash_amount: number | null;
   investment?: Investment; // preloaded relation
 }
 

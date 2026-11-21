@@ -17,6 +17,13 @@ interface CrossCurrencyAmountOptions {
   account: Account | undefined;
   /** What the trade moves, in cents of `securityCurrency` (used for the suggestion). */
   nativeTotal: number;
+  /**
+   * The stored leg of a trade being edited. Its amount is used only while the
+   * same account is selected and the trade still moves the same native total;
+   * any change falls back to a fresh suggestion, so a corrected quantity or
+   * price never keeps the old account amount.
+   */
+  initial?: { amount: number; accountId: string; nativeTotal: number } | null;
 }
 
 /**
@@ -29,6 +36,7 @@ export function useCrossCurrencyAmount({
   securityCurrency,
   account,
   nativeTotal,
+  initial = null,
 }: CrossCurrencyAmountOptions) {
   const [manual, setManual] = useState<number | null>(null);
   const [hint, setHint] = useState<FxAmountRequired | null>(null);
@@ -46,13 +54,18 @@ export function useCrossCurrencyAmount({
   );
   const fromRate =
     nativeTotal > 0 ? convertCents(nativeTotal, rate.data?.rate) : null;
-  const suggestion = hint?.suggestedAmount ?? fromRate;
+  const stored =
+    initial && account?.id === initial.accountId && nativeTotal === initial.nativeTotal
+      ? initial.amount
+      : null;
+  const suggestion = stored ?? hint?.suggestedAmount ?? fromRate;
 
   return {
     needed,
     currency: currency ?? "",
     value: manual ?? suggestion ?? 0,
     suggestion,
+    fromStored: stored !== null,
     isManual: manual !== null,
     rateLoading: differs && rate.isLoading,
     rateUnavailable: differs && rate.isError,
@@ -98,7 +111,9 @@ export function CrossCurrencyAmountField({
           ? "Looking up the exchange rate..."
           : state.rateUnavailable && state.suggestion === null
             ? `No exchange rate available; enter the ${state.currency} amount.`
-            : "Suggested from the latest exchange rate; edit it to the amount your account actually moved."}
+            : state.fromStored
+              ? "The amount this trade moved; it is re-suggested if you change the trade."
+              : "Suggested from the latest exchange rate; edit it to the amount your account actually moved."}
         {state.isManual && state.suggestion !== null && (
           <>
             {" "}

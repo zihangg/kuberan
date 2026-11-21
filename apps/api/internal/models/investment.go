@@ -67,6 +67,13 @@ type InvestmentTransaction struct {
 	RealizedGainLossBase int64    `gorm:"type:bigint;not null;default:0" json:"realized_gain_loss_base"`
 	Currency             string   `gorm:"-" json:"currency"` // response only: the security's currency
 
+	// Response only: the cash account the trade was paid from or paid into and
+	// the amount moved there (in that account's currency). Null when the trade
+	// has no cash leg, or it could not be found (imported trades, whose cash is
+	// booked by the import, and some legacy rows).
+	CashAccountID *string `gorm:"-" json:"cash_account_id"`
+	CashAmount    *int64  `gorm:"-" json:"cash_amount"`
+
 	// For splits
 	SplitRatio float64 `json:"split_ratio,omitempty"`
 

@@ -10,6 +10,7 @@ import {
   useRecordDividend,
   useRecordSell,
   useRecordSplit,
+  useUpdateInvestmentTransaction,
 } from "@/hooks/use-investments";
 import { useAccounts } from "@/hooks/use-accounts";
 import { useBaseCurrency } from "@/hooks/use-profile";
@@ -54,6 +55,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
+import type { InvestmentTransaction } from "@/types/models";
 
 const KIND_OPTIONS: { value: TradeKind; label: string }[] = [
   { value: "buy", label: "Buy" },
@@ -70,10 +72,12 @@ const KIND_NOUN: Record<TradeKind, string> = {
   split: "split",
 };
 
-function getErrorMessage(error: unknown): string {
+function getErrorMessage(error: unknown, editing = false): string {
   if (error instanceof ApiClientError) {
     if (error.code === "INSUFFICIENT_SHARES") {
-      return "You do not have enough shares to sell this quantity";
+      return editing
+        ? "A later sale would then sell more units than you held at that point"
+        : "You do not have enough shares to sell this quantity";
     }
     return error.message;
   }
@@ -91,6 +95,8 @@ export interface RecordTradeSheetProps {
   investmentId?: string;
   /** Which tab opens first (Sell and Split fall back to Buy on a closed position). */
   initialKind?: TradeKind;
+  /** A recorded trade to correct instead of recording a new one (needs investmentId). */
+  editing?: InvestmentTransaction;
 }
 
 /**
@@ -101,12 +107,17 @@ export interface RecordTradeSheetProps {
  * corrected from FX_AMOUNT_REQUIRED), the optional exchange rate, dividend
  * withholding (`fee`) and notes. A sale previews proceeds, the cost of the
  * shares sold (average cost) and the realised gain before saving.
+ *
+ * With `editing` the same form corrects a recorded trade: its type is fixed,
+ * the fields start from the stored values, and saving replaces the trade (the
+ * server reverses its old cash movement and recalculates the holding).
  */
 export function RecordTradeSheet({
   open,
   onOpenChange,
   investmentId,
   initialKind = "buy",
+  editing,
 }: RecordTradeSheetProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -115,6 +126,7 @@ export function RecordTradeSheet({
           <SheetBody
             investmentId={investmentId}
             initialKind={initialKind}
+            editing={editing}
             onDone={() => onOpenChange(false)}
           />
         )}
@@ -126,10 +138,12 @@ export function RecordTradeSheet({
 function SheetBody({
   investmentId,
   initialKind,
+  editing,
   onDone,
 }: {
   investmentId?: string;
   initialKind: TradeKind;
+  editing?: InvestmentTransaction;
   onDone: () => void;
 }) {
   const [picked, setPicked] = useState("");
@@ -137,9 +151,10 @@ function SheetBody({
   if (id) {
     return (
       <TradeForm
-        key={id}
+        key={editing ? `${id}:${editing.id}` : id}
         investmentId={id}
         initialKind={initialKind}
+        editing={editing}
         onDone={onDone}
       />
     );
@@ -208,40 +223,74 @@ function PreviewRow({
   );
 }
 
+/** The kinds a trade can be edited as (a transfer cannot). */
+function editableKind(tx: InvestmentTransaction | undefined): TradeKind | null {
+  if (!tx) return null;
+  return tx.type === "transfer" ? null : tx.type;
+}
+
 function TradeForm({
   investmentId,
   initialKind,
+  editing,
   onDone,
 }: {
   investmentId: string;
   initialKind: TradeKind;
+  editing?: InvestmentTransaction;
   onDone: () => void;
 }) {
+  const editKind = editableKind(editing);
+  const isEdit = editKind !== null;
   const { data: investment } = useInvestment(investmentId);
   const { data: accountsData } = useAccounts({ page: 1, page_size: 100 });
   const { hideBalances } = useAuth();
   const baseCurrency = useBaseCurrency();
 
-  const position = investment?.quantity ?? 0;
-  const closed = !!investment && position <= 0;
+  // Editing a sale: its own units are back in the position it may sell. The
+  // server replays every trade and has the final word.
+  const position =
+    (investment?.quantity ?? 0) +
+    (editing?.type === "sell" ? editing.quantity : 0);
+  const closed = !isEdit && !!investment && position <= 0;
   const securityCurrency = investment?.currency || baseCurrency;
   const symbol = investment?.security.symbol ?? "";
 
-  const [kindState, setKind] = useState<TradeKind>(initialKind);
+  const [kindState, setKind] = useState<TradeKind>(editKind ?? initialKind);
   const kind: TradeKind =
-    closed && (kindState === "sell" || kindState === "split") ? "buy" : kindState;
+    editKind ??
+    (closed && (kindState === "sell" || kindState === "split") ? "buy" : kindState);
 
-  const [date, setDate] = useState(() => toLocalDateString());
-  const [quantity, setQuantity] = useState("");
-  // Until edited, the price field offers the latest known price.
-  const [priceEdit, setPriceEdit] = useState<number | null>(null);
+  // The stored date, as the calendar day the date input shows.
+  const initialDate = editing ? editing.date.slice(0, 10) : toLocalDateString();
+  const [date, setDate] = useState(initialDate);
+  const [quantity, setQuantity] = useState(() =>
+    editing && (editing.type === "buy" || editing.type === "sell")
+      ? String(editing.quantity)
+      : ""
+  );
+  // Until edited, the price field offers the stored price (editing) or the
+  // latest known price.
+  const [priceEdit, setPriceEdit] = useState<number | null>(() =>
+    editing && (editing.type === "buy" || editing.type === "sell")
+      ? editing.price_per_unit
+      : null
+  );
   const pricePerUnit = priceEdit ?? investment?.current_price_native ?? 0;
-  const [fee, setFee] = useState(0);
-  const [amount, setAmount] = useState(0);
-  const [dividendType, setDividendType] = useState("cash");
-  const [splitRatio, setSplitRatio] = useState("");
-  const [notes, setNotes] = useState("");
-  const [accountId, setAccountId] = useState("");
+  const [fee, setFee] = useState(editing?.fee ?? 0);
+  const [amount, setAmount] = useState(
+    editing?.type === "dividend" ? editing.total_amount : 0
+  );
+  const [dividendType, setDividendType] = useState(
+    editing?.dividend_type || "cash"
+  );
+  const [splitRatio, setSplitRatio] = useState(
+    editing?.type === "split" && editing.split_ratio ? String(editing.split_ratio) : ""
+  );
+  const [notes, setNotes] = useState(editing?.notes ?? "");
+  const [accountId, setAccountId] = useState(
+    editing ? (editing.cash_account_id ?? "none") : ""
+  );
   const [fxRate, setFxRate] = useState("");
   const [error, setError] = useState("");
 
@@ -249,15 +298,23 @@ function TradeForm({
   const recordSell = useRecordSell(investmentId);
   const recordDividend = useRecordDividend(investmentId);
   const recordSplit = useRecordSplit(investmentId);
+  const updateTrade = useUpdateInvestmentTransaction(investmentId);
   const isSubmitting =
     recordBuy.isPending ||
     recordSell.isPending ||
     recordDividend.isPending ||
-    recordSplit.isPending;
+    recordSplit.isPending ||
+    updateTrade.isPending;
 
+  // Active cash accounts, plus the one an edited trade used even if it has
+  // since been closed, so the form can show (and keep) it.
+  const linkedAccountId = editing?.cash_account_id ?? null;
   const cashAccounts = useMemo(
-    () => accountsData?.data?.filter((a) => a.type === "cash" && a.is_active) ?? [],
-    [accountsData?.data]
+    () =>
+      accountsData?.data?.filter(
+        (a) => a.type === "cash" && (a.is_active || a.id === linkedAccountId)
+      ) ?? [],
+    [accountsData?.data, linkedAccountId]
   );
   const selectedAccount = cashAccounts.find((a) => a.id === accountId);
 
@@ -266,9 +323,11 @@ function TradeForm({
   const ratioNum = parseFloat(splitRatio);
   const ratio = Number.isFinite(ratioNum) ? ratioNum : 0;
 
+  // The average-cost preview describes a sale from today's position, which is
+  // not the position an earlier sale was made from, so an edit leaves it out.
   const sell = useMemo(
     () =>
-      kind === "sell" && investment
+      kind === "sell" && investment && !isEdit
         ? previewSell({
             quantity: qty,
             pricePerUnit,
@@ -277,7 +336,7 @@ function TradeForm({
             costBasis: investment.cost_basis,
           })
         : null,
-    [kind, investment, qty, pricePerUnit, fee, position]
+    [kind, investment, isEdit, qty, pricePerUnit, fee, position]
   );
   const totalCost = buyTotal(qty, pricePerUnit, fee);
   const net = netDividend(amount, fee);
@@ -294,6 +353,19 @@ function TradeForm({
     securityCurrency,
     account: kind === "split" ? undefined : selectedAccount,
     nativeTotal,
+    // An edited trade starts from the amount it moved, while its account and
+    // native total are unchanged.
+    initial:
+      editing && editing.cash_account_id !== null && editing.cash_amount !== null
+        ? {
+            amount: editing.cash_amount,
+            accountId: editing.cash_account_id,
+            nativeTotal:
+              editing.type === "dividend"
+                ? editing.total_amount - editing.fee
+                : editing.total_amount,
+          }
+        : null,
   });
 
   function changeKind(next: TradeKind) {
@@ -343,10 +415,44 @@ function TradeForm({
       onError: (err: unknown) => {
         const required = getFxAmountRequired(err);
         if (required) cross.applyHint(required);
-        setError(getErrorMessage(err));
+        setError(getErrorMessage(err, isEdit));
       },
     };
-    const isoDate = toRFC3339(date);
+    // An unchanged day keeps the stored instant (and with it the trade's rate
+    // and its order among same-day trades).
+    const isoDate = editing && date === initialDate ? editing.date : toRFC3339(date);
+
+    if (editing) {
+      const cash = kind === "split" ? {} : kind === "buy"
+        ? { funding_account_id: account, funding_amount: account ? accountAmount : undefined }
+        : { deposit_account_id: account, deposit_amount: account ? accountAmount : undefined };
+      const fields =
+        kind === "buy" || kind === "sell"
+          ? { quantity: qty, price_per_unit: pricePerUnit, fee }
+          : kind === "dividend"
+            ? { amount, fee, dividend_type: dividendType || undefined }
+            : { split_ratio: ratio };
+      updateTrade.mutate(
+        {
+          id: editing.id,
+          data: {
+            date: isoDate,
+            notes: notes.trim(),
+            fx_rate: kind === "split" ? undefined : fxRate.trim() || undefined,
+            ...fields,
+            ...cash,
+          },
+        },
+        {
+          ...callbacks,
+          onSuccess: () => {
+            toast.success(`${KIND_OPTIONS.find((o) => o.value === kind)?.label} updated`);
+            onDone();
+          },
+        }
+      );
+      return;
+    }
 
     switch (kind) {
       case "buy":
@@ -413,15 +519,16 @@ function TradeForm({
     kind === "buy"
       ? `Amount charged to ${selectedAccount?.name ?? "account"} (${cross.currency})`
       : `Amount received in ${selectedAccount?.name ?? "account"} (${cross.currency})`;
-  const description =
-    kind === "buy"
+  const description = isEdit
+    ? "Saving replaces this trade, moves any linked cash account by the difference and recalculates the holding. Past net-worth history is not recalculated."
+    : kind === "buy"
       ? "Record a purchase of additional shares."
       : kind === "sell"
         ? `Record a sale of shares. You hold ${units(position)} units.`
         : kind === "dividend"
           ? "Record a dividend payment for this investment."
           : "Record a split. A 2:1 split means each unit becomes 2 units.";
-  const submitLabel = `Record ${KIND_NOUN[kind]}`;
+  const submitLabel = isEdit ? "Save changes" : `Record ${KIND_NOUN[kind]}`;
 
   return (
     <form
@@ -436,22 +543,24 @@ function TradeForm({
     >
       <DialogHeader>
         <DialogTitle>
-          Record {KIND_NOUN[kind]}
+          {isEdit ? "Edit" : "Record"} {KIND_NOUN[kind]}
           {symbol ? ` · ${symbol}` : ""}
         </DialogTitle>
         <DialogDescription>{description}</DialogDescription>
       </DialogHeader>
 
-      <Segmented
-        full
-        aria-label="Trade type"
-        value={kind}
-        onValueChange={changeKind}
-        options={KIND_OPTIONS.map((o) => ({
-          ...o,
-          disabled: closed && (o.value === "sell" || o.value === "split"),
-        }))}
-      />
+      {!isEdit && (
+        <Segmented
+          full
+          aria-label="Trade type"
+          value={kind}
+          onValueChange={changeKind}
+          options={KIND_OPTIONS.map((o) => ({
+            ...o,
+            disabled: closed && (o.value === "sell" || o.value === "split"),
+          }))}
+        />
+      )}
 
       {error && (
         <div
@@ -478,7 +587,7 @@ function TradeForm({
                 onChange={(e) => setQuantity(e.target.value)}
                 disabled={isSubmitting}
               />
-              {kind === "sell" && (
+              {kind === "sell" && !isEdit && (
                 <p className="text-muted-foreground flex items-center gap-1 text-xs">
                   of {units(position)} held
                   <Button
@@ -590,7 +699,11 @@ function TradeForm({
             <Label htmlFor="trade-account">{accountLabel}</Label>
             <Select
               value={accountId}
-              onValueChange={setAccountId}
+              onValueChange={(next) => {
+                setAccountId(next);
+                // A typed amount belongs to the account it was typed for.
+                if (isEdit) cross.reset();
+              }}
               disabled={isSubmitting}
             >
               <SelectTrigger id="trade-account" className="w-full">
@@ -617,6 +730,13 @@ function TradeForm({
               state={cross}
               disabled={isSubmitting}
             />
+            {isEdit && editing?.cash_account_id === null && (
+              <p className="text-muted-foreground text-xs">
+                No cash account is linked to this trade (none was used, it was
+                imported, or it predates linking), so saving changes no balance
+                unless you choose an account above.
+              </p>
+            )}
             <FxRateField
               id="trade-fx-rate"
               securityCurrency={securityCurrency}
@@ -668,7 +788,7 @@ function TradeForm({
             </div>
           )}
 
-          {kind === "split" && ratio > 0 && position > 0 && (
+          {kind === "split" && !isEdit && ratio > 0 && position > 0 && (
             <div className="bg-background rounded-card border p-3.5 text-sm">
               {units(position)} units become {units(position * ratio)} units.
             </div>
@@ -693,7 +813,7 @@ function TradeForm({
           Cancel
         </Button>
         <Button type="submit" disabled={isSubmitting || !investment}>
-          {isSubmitting ? "Recording..." : submitLabel}
+          {isSubmitting ? (isEdit ? "Saving..." : "Recording...") : submitLabel}
         </Button>
       </DialogFooter>
     </form>

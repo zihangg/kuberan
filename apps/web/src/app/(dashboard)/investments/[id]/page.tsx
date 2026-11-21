@@ -3,12 +3,23 @@
 import { useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { AlertTriangle, ChevronLeft, ChevronRight } from "lucide-react";
+import {
+  AlertTriangle,
+  ChevronLeft,
+  ChevronRight,
+  MoreHorizontal,
+  Pencil,
+  Trash2,
+} from "lucide-react";
+import { toast } from "sonner";
 
 import {
+  useDeleteInvestmentTransaction,
   useInvestment,
   useInvestmentTransactions,
 } from "@/hooks/use-investments";
+import { useAccounts } from "@/hooks/use-accounts";
+import { ApiClientError } from "@/lib/api-client";
 import { useSecurityPriceSeries } from "@/hooks/use-securities";
 import { formatDate, formatMoney } from "@/lib/format";
 import { assetTypeLabel } from "@/lib/asset-types";
@@ -29,6 +40,22 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { LazyThemedAreaChart as ThemedAreaChart } from "@/components/charts/lazy";
 import {
   UnrealizedPnl,
@@ -38,6 +65,7 @@ import { RecordTradeSheet } from "@/components/investments/record-trade-sheet";
 import { useAuth } from "@/hooks/use-auth";
 import { useBaseCurrency } from "@/hooks/use-profile";
 import type {
+  Account,
   InvestmentTransaction,
   InvestmentTransactionType,
 } from "@/types/models";
@@ -61,7 +89,15 @@ function units(n: number): string {
 }
 
 /** One line of the history: type chip, date, what happened, and the cash effect. */
-function HistoryRow({ tx }: { tx: InvestmentTransaction }) {
+function HistoryRow({
+  tx,
+  onEdit,
+  onDelete,
+}: {
+  tx: InvestmentTransaction;
+  onEdit: (tx: InvestmentTransaction) => void;
+  onDelete: (tx: InvestmentTransaction) => void;
+}) {
   const config = TX_TYPE_CONFIG[tx.type];
   const isSplit = tx.type === "split";
   const isDividend = tx.type === "dividend";
@@ -138,8 +174,53 @@ function HistoryRow({ tx }: { tx: InvestmentTransaction }) {
           />
         </span>
       )}
+      {tx.type !== "transfer" && (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="-mr-2 size-10 shrink-0 sm:size-8"
+              aria-label={`Actions for the ${config.label.toLowerCase()} on ${formatDate(tx.date)}`}
+            >
+              <MoreHorizontal className="size-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onSelect={() => onEdit(tx)}>
+              <Pencil className="size-4" />
+              Edit
+            </DropdownMenuItem>
+            <DropdownMenuItem variant="destructive" onSelect={() => onDelete(tx)}>
+              <Trash2 className="size-4" />
+              Delete
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
     </li>
   );
+}
+
+/** What deleting tx does, in words: the holding and the linked cash, if any. */
+function deleteDescription(
+  tx: InvestmentTransaction,
+  accounts: Account[],
+  hideBalances: boolean
+): string {
+  const recalc =
+    tx.type === "dividend"
+      ? "The dividend is removed from this holding's history."
+      : "The holding's units, cost and realised gains are recalculated without it (past net-worth history is not).";
+  if (tx.cash_account_id === null || tx.cash_amount === null) {
+    return `${recalc} No cash account is linked to it, so no balance changes.`;
+  }
+  const account = accounts.find((a) => a.id === tx.cash_account_id);
+  const amount = account ? formatMoney(tx.cash_amount, account.currency, hideBalances) : "The cash it moved";
+  const where = account ? account.name : "the linked account";
+  return tx.type === "buy"
+    ? `${recalc} ${amount} goes back to ${where}.`
+    : `${recalc} ${amount} is taken back out of ${where}.`;
 }
 
 function BackLink() {
@@ -278,6 +359,11 @@ export default function InvestmentDetailPage() {
   const baseCurrency = useBaseCurrency();
   const [txPage, setTxPage] = useState(1);
   const [tradeKind, setTradeKind] = useState<TradeKind | null>(null);
+  const [editingTx, setEditingTx] = useState<InvestmentTransaction | null>(null);
+  const [deletingTx, setDeletingTx] = useState<InvestmentTransaction | null>(null);
+  const deleteTrade = useDeleteInvestmentTransaction(investmentId);
+  const { data: accountsData } = useAccounts({ page: 1, page_size: 100 });
+  const { hideBalances } = useAuth();
 
   const {
     data: investment,
@@ -552,7 +638,12 @@ export default function InvestmentDetailPage() {
           <>
             <ul className="divide-border/60 divide-y">
               {transactions.map((tx) => (
-                <HistoryRow key={tx.id} tx={tx} />
+                <HistoryRow
+                  key={tx.id}
+                  tx={tx}
+                  onEdit={setEditingTx}
+                  onDelete={setDeletingTx}
+                />
               ))}
             </ul>
             {txTotalPages > 1 && (
@@ -594,6 +685,64 @@ export default function InvestmentDetailPage() {
         investmentId={investmentId}
         initialKind={tradeKind ?? "buy"}
       />
+
+      <RecordTradeSheet
+        open={editingTx !== null}
+        onOpenChange={(open) => {
+          if (!open) setEditingTx(null);
+        }}
+        investmentId={investmentId}
+        editing={editingTx ?? undefined}
+      />
+
+      <AlertDialog
+        open={deletingTx !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeletingTx(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Delete this {deletingTx ? TX_TYPE_CONFIG[deletingTx.type].label.toLowerCase() : "trade"}?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {deletingTx && deleteDescription(deletingTx, accountsData?.data ?? [], hideBalances)}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-white hover:bg-destructive/90"
+              onClick={() => {
+                const tx = deletingTx;
+                setDeletingTx(null);
+                if (!tx) return;
+                deleteTrade.mutate(tx.id, {
+                  onSuccess: () => {
+                    toast.success(`${TX_TYPE_CONFIG[tx.type].label} deleted`);
+                    // Deleting the last row of the last page: step back a page.
+                    if (transactions.length === 1 && txPage > 1) {
+                      setTxPage((p) => p - 1);
+                    }
+                  },
+                  onError: (err) => {
+                    toast.error(
+                      err instanceof ApiClientError && err.code === "INSUFFICIENT_SHARES"
+                        ? "Can't delete: a later sale would then sell more units than you held."
+                        : err instanceof ApiClientError
+                          ? err.message
+                          : "Could not delete the trade"
+                    );
+                  },
+                });
+              }}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
