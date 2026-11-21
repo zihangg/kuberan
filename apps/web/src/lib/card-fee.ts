@@ -3,6 +3,7 @@ import type { SetAnnualFeeRequest } from "@/types/api";
 import type {
   CardAnnualFee,
   CardFeeInfo,
+  CardFeeSummary,
   FeeWaiverStatus,
   FeeWaiverTarget,
 } from "@/types/models";
@@ -27,6 +28,19 @@ export function waiverStatusLabel(status: FeeWaiverStatus): string {
     case "behind":
       return "Behind";
   }
+}
+
+/**
+ * Which fee the current waiver window waives. A card-year window ends on the
+ * upcoming fee; spend in a calendar year waives the fee charged the year
+ * after, except a fee on 31 Dec, which that same year decides.
+ */
+export function waivedFeeLabel(summary: CardFeeSummary): string {
+  const waiver = summary.waiver;
+  if (!waiver || waiver.window !== "calendar_year") return "the fee";
+  const windowYear = waiver.window_end.slice(0, 4);
+  const nextFee = summary.fee?.next_fee_date.split("T")[0] ?? "";
+  return nextFee === `${windowYear}-12-31` ? "this year's fee" : "next year's fee";
 }
 
 /** How far a waiver target is reached, 0 to 1. */

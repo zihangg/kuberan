@@ -108,7 +108,7 @@ export function AnnualFeeControl({ account }: { account: Account }) {
           </div>
           {reminder && (
             <Switch
-              aria-label="Remind me about the annual fee on Telegram"
+              aria-label="Remind me about the annual fee and waiver on Telegram"
               checked={reminder.enabled}
               disabled={setEnabled.isPending}
               onCheckedChange={(enabled) =>

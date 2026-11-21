@@ -4,10 +4,12 @@ import {
   feeDateLabel,
   toAnnualFeeRequest,
   waiverFraction,
+  waivedFeeLabel,
   waiverStatusLabel,
   windowElapsedFraction,
   type AnnualFeeForm,
 } from "./card-fee";
+import type { CardFeeSummary, FeeWaiverProgress } from "@/types/models";
 
 describe("feeDateLabel", () => {
   it("shows day and short month when the day is known", () => {
@@ -143,5 +145,41 @@ describe("windowElapsedFraction", () => {
     expect(windowElapsedFraction("2026-01-01", "2026-12-31", 0)).toBe(1);
     expect(windowElapsedFraction("2026-01-01", "2026-12-31", 365)).toBe(0);
     expect(windowElapsedFraction("2026-01-01", "2026-12-31", 182.5)).toBeCloseTo(0.5);
+  });
+});
+
+describe("waivedFeeLabel", () => {
+  const waiver = (window: FeeWaiverProgress["window"], start: string, end: string): FeeWaiverProgress => ({
+    type: "spend",
+    window,
+    window_start: start,
+    window_end: end,
+    spend: { target: 1_200_000, actual: 100_000, remaining: 1_100_000 },
+    swipes: null,
+    status: "behind",
+    per_month_needed: 100_000,
+    days_left: 40,
+  });
+  const summary = (w: FeeWaiverProgress, nextFee: string): CardFeeSummary => ({
+    currency: "MYR",
+    fee: { amount: 25000, next_fee_date: nextFee, day_known: true },
+    waiver: w,
+    spent_last_12_months: 0,
+  });
+
+  it("is the upcoming fee for a card-year window", () => {
+    expect(waivedFeeLabel(summary(waiver("card_year", "2026-03-16", "2027-03-15"), "2027-03-15"))).toBe(
+      "the fee",
+    );
+  });
+  it("is next year's fee for a calendar-year window", () => {
+    expect(waivedFeeLabel(summary(waiver("calendar_year", "2026-01-01", "2026-12-31"), "2027-03-15"))).toBe(
+      "next year's fee",
+    );
+  });
+  it("is this year's fee when the fee falls on 31 Dec", () => {
+    expect(waivedFeeLabel(summary(waiver("calendar_year", "2026-01-01", "2026-12-31"), "2026-12-31"))).toBe(
+      "this year's fee",
+    );
   });
 });

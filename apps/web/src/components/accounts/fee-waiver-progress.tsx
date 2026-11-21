@@ -9,6 +9,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import {
+  waivedFeeLabel,
   waiverFraction,
   waiverStatusLabel,
   windowElapsedFraction,
@@ -95,8 +96,10 @@ export function FeeWaiverProgress({ summary }: { summary: CardFeeSummary }) {
     waiver.days_left,
   );
   const dayWord = waiver.days_left === 1 ? "day" : "days";
-  const windowName =
-    waiver.window === "calendar_year" ? "this calendar year" : "this card year";
+  const calendarYear = waiver.window === "calendar_year";
+  const windowName = calendarYear ? "this calendar year" : "this card year";
+  // For a calendar-year waiver this year's spend decides next year's fee.
+  const waivedFee = waivedFeeLabel(summary);
 
   return (
     <div className="space-y-2.5">
@@ -144,10 +147,16 @@ export function FeeWaiverProgress({ summary }: { summary: CardFeeSummary }) {
 
       <p className="text-muted-foreground text-xs">
         {waiver.status === "met" ? (
-          `Waiver reached for ${windowName}.`
+          calendarYear ? (
+            `Waiver reached for ${windowName}: ${waivedFee} is waived.`
+          ) : (
+            `Waiver reached for ${windowName}.`
+          )
         ) : (
           <>
-            {waiver.type === "spend_or_swipes" && "Either target waives the fee. "}
+            {waiver.type === "spend_or_swipes"
+              ? `Either target waives ${waivedFee}. `
+              : calendarYear && `This year's spend waives ${waivedFee}. `}
             {waiver.per_month_needed !== null && waiver.per_month_needed > 0 && (
               <>
                 Spend about{" "}
