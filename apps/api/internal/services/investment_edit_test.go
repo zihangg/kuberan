@@ -284,3 +284,74 @@ func TestLegacyCashLeg_AmbiguousIsLeftAlone(t *testing.T) {
 		t.Errorf("an ambiguous legacy cash leg was reversed")
 	}
 }
+
+func TestDeleteInvestmentTransaction_TotalInvestedIgnoresDeleted(t *testing.T) {
+	f := newNativeFixture(t, false)
+	inv := f.holding(t, f.myr)
+	_, err := f.svc.RecordBuy(f.user.ID, inv.ID, BuyParams{Date: nativeDay, Quantity: 10, PricePerUnit: 1000})
+	testutil.AssertNoError(t, err)
+	typo, err := f.svc.RecordBuy(f.user.ID, inv.ID, BuyParams{Date: nativeDay, Quantity: 100, PricePerUnit: 1000})
+	testutil.AssertNoError(t, err)
+	testutil.AssertNoError(t, f.svc.DeleteInvestmentTransaction(f.user.ID, inv.ID, typo.ID))
+
+	got, err := f.svc.GetInvestmentByID(f.user.ID, inv.ID)
+	testutil.AssertNoError(t, err)
+	if got.TotalInvested != 10000 {
+		t.Errorf("total_invested = %d, want 10000", got.TotalInvested)
+	}
+}
+
+func TestLegacyCashLeg_SameSecurityInAnotherHoldingIsAmbiguous(t *testing.T) {
+	f := newNativeFixture(t, false)
+	a := f.holding(t, f.myr)
+	otherAcct := testutil.CreateTestInvestmentAccount(t, f.db, f.user.ID)
+	b := &models.Investment{AccountID: otherAcct.ID, SecurityID: f.myr.ID}
+	testutil.AssertNoError(t, f.db.Create(b).Error)
+
+	// Paid from cash in holding A; no cash account in holding B. Same day, same
+	// quantity, so both would have written the same description.
+	_, err := f.svc.RecordBuy(f.user.ID, a.ID, BuyParams{Date: nativeDay, Quantity: 100, PricePerUnit: 950, FundingAccountID: f.cashMYR.ID})
+	testutil.AssertNoError(t, err)
+	bBuy, err := f.svc.RecordBuy(f.user.ID, b.ID, BuyParams{Date: nativeDay, Quantity: 100, PricePerUnit: 950})
+	testutil.AssertNoError(t, err)
+	testutil.AssertNoError(t, f.db.Model(&models.Transaction{}).Where("investment_transaction_id IS NOT NULL").
+		Update("investment_transaction_id", nil).Error)
+	before := f.balance(t, f.cashMYR)
+
+	page, err := f.svc.GetInvestmentTransactions(f.user.ID, b.ID, pagination.PageRequest{})
+	testutil.AssertNoError(t, err)
+	if page.Data[0].CashAccountID != nil {
+		t.Errorf("holding B shows holding A's cash leg")
+	}
+	testutil.AssertNoError(t, f.svc.DeleteInvestmentTransaction(f.user.ID, b.ID, bBuy.ID))
+	if got := f.balance(t, f.cashMYR); got != before {
+		t.Errorf("deleting B reversed A's cash: %d -> %d", before, got)
+	}
+}
+
+func TestUpdateInvestmentTransaction_KeepsDeactivatedAccount(t *testing.T) {
+	f := newNativeFixture(t, false)
+	inv := f.holding(t, f.myr)
+	start := f.balance(t, f.cashMYR)
+	buy, err := f.svc.RecordBuy(f.user.ID, inv.ID, BuyParams{Date: nativeDay, Quantity: 10, PricePerUnit: 1000, FundingAccountID: f.cashMYR.ID})
+	testutil.AssertNoError(t, err)
+	testutil.AssertNoError(t, f.db.Model(f.cashMYR).Update("is_active", false).Error)
+
+	_, err = f.svc.UpdateInvestmentTransaction(f.user.ID, inv.ID, buy.ID, UpdateTradeParams{
+		Date: nativeDay, Quantity: 10, PricePerUnit: 900, AccountID: f.cashMYR.ID,
+	})
+	testutil.AssertNoError(t, err)
+	if got := f.balance(t, f.cashMYR); got != start-9000 {
+		t.Errorf("cash = %d, want %d", got, start-9000)
+	}
+
+	// A different inactive account is still refused.
+	other := testutil.CreateTestCashAccountWithBalance(t, f.db, f.user.ID, 0)
+	testutil.AssertNoError(t, f.db.Model(other).Updates(map[string]interface{}{"currency": "MYR", "is_active": false}).Error)
+	_, err = f.svc.UpdateInvestmentTransaction(f.user.ID, inv.ID, buy.ID, UpdateTradeParams{
+		Date: nativeDay, Quantity: 10, PricePerUnit: 900, AccountID: other.ID,
+	})
+	if err == nil {
+		t.Errorf("moving the cash leg to an inactive account was allowed")
+	}
+}

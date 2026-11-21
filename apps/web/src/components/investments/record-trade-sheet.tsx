@@ -71,10 +71,12 @@ const KIND_NOUN: Record<TradeKind, string> = {
   split: "split",
 };
 
-function getErrorMessage(error: unknown): string {
+function getErrorMessage(error: unknown, editing = false): string {
   if (error instanceof ApiClientError) {
     if (error.code === "INSUFFICIENT_SHARES") {
-      return "You do not have enough shares to sell this quantity";
+      return editing
+        ? "A later sale would then sell more units than you held at that point"
+        : "You do not have enough shares to sell this quantity";
     }
     return error.message;
   }
@@ -350,9 +352,19 @@ function TradeForm({
     securityCurrency,
     account: kind === "split" ? undefined : selectedAccount,
     nativeTotal,
-    // An edited trade starts from the amount it moved (used only when that
-    // account's currency differs from the security's).
-    initialValue: editing?.cash_amount ?? null,
+    // An edited trade starts from the amount it moved, while its account and
+    // native total are unchanged.
+    initial:
+      editing && editing.cash_account_id !== null && editing.cash_amount !== null
+        ? {
+            amount: editing.cash_amount,
+            accountId: editing.cash_account_id,
+            nativeTotal:
+              editing.type === "dividend"
+                ? editing.total_amount - editing.fee
+                : editing.total_amount,
+          }
+        : null,
   });
 
   function changeKind(next: TradeKind) {
@@ -402,7 +414,7 @@ function TradeForm({
       onError: (err: unknown) => {
         const required = getFxAmountRequired(err);
         if (required) cross.applyHint(required);
-        setError(getErrorMessage(err));
+        setError(getErrorMessage(err, isEdit));
       },
     };
     // An unchanged day keeps the stored instant (and with it the trade's rate
@@ -507,7 +519,7 @@ function TradeForm({
       ? `Amount charged to ${selectedAccount?.name ?? "account"} (${cross.currency})`
       : `Amount received in ${selectedAccount?.name ?? "account"} (${cross.currency})`;
   const description = isEdit
-    ? "Saving replaces this trade, moves any linked cash account by the difference and recalculates the holding."
+    ? "Saving replaces this trade, moves any linked cash account by the difference and recalculates the holding. Past net-worth history is not recalculated."
     : kind === "buy"
       ? "Record a purchase of additional shares."
       : kind === "sell"
@@ -689,7 +701,7 @@ function TradeForm({
               value={accountId}
               onValueChange={(next) => {
                 setAccountId(next);
-                // The stored amount belongs to the original account.
+                // A typed amount belongs to the account it was typed for.
                 if (isEdit) cross.reset();
               }}
               disabled={isSubmitting}

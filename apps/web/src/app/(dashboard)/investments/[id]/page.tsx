@@ -211,7 +211,7 @@ function deleteDescription(
   const recalc =
     tx.type === "dividend"
       ? "The dividend is removed from this holding's history."
-      : "The holding's units, cost and realised gains are recalculated without it.";
+      : "The holding's units, cost and realised gains are recalculated without it (past net-worth history is not).";
   if (tx.cash_account_id === null || tx.cash_amount === null) {
     return `${recalc} No cash account is linked to it, so no balance changes.`;
   }

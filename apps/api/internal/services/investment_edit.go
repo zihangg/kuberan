@@ -75,8 +75,11 @@ func cashLegReversal(row *models.InvestmentTransaction) models.TransactionType {
 // same date and the description its record path wrote (and, when the account
 // is in the security's currency, the same amount). A legacy match is accepted
 // only when it is unambiguous: one candidate, or several that are
-// interchangeable (same account and amount, e.g. two identical buys). Imported
-// rows never match: their cash is booked by the importer with an import_ref.
+// interchangeable (same account and amount, e.g. two identical buys), and only
+// when no unlinked trade in another holding of a security with the same name
+// could have written the same cash row (the same stock held in two broker
+// accounts). Imported rows never match: their cash is booked by the importer
+// with an import_ref.
 func cashLegsFor(db *gorm.DB, userID string, investment *models.Investment, rows []models.InvestmentTransaction) (map[string]*models.Transaction, error) {
 	out := make(map[string]*models.Transaction, len(rows))
 	if len(rows) == 0 {
@@ -124,10 +127,18 @@ func cashLegsFor(db *gorm.DB, userID string, investment *models.Investment, rows
 		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
 
+	rivals, err := rivalTrades(db, userID, investment, dates)
+	if err != nil {
+		return nil, err
+	}
+
 	secCcy := normalizeCode(investment.Security.Currency)
 	claimed := make(map[string]bool, len(candidates))
 	sortTradesForClaim(pending)
 	for _, row := range pending {
+		if hasRival(rivals, row) {
+			continue
+		}
 		desc := cashLegDescription(row, investment.Security.Name)
 		var match []*models.Transaction
 		for i := range candidates {
@@ -157,6 +168,46 @@ func cashLegsFor(db *gorm.DB, userID string, investment *models.Investment, rows
 		out[row.ID] = match[0]
 	}
 	return out, nil
+}
+
+// rivalTrade is an unlinked trade in another holding that would have given its
+// cash leg the same description as a trade of this holding.
+type rivalTrade struct {
+	Type     models.InvestmentTransactionType
+	Date     time.Time
+	Quantity float64
+}
+
+// rivalTrades lists the user's non-deleted trades on dates in other holdings
+// of securities named like investment's, that have no linked cash leg.
+func rivalTrades(db *gorm.DB, userID string, investment *models.Investment, dates []time.Time) ([]rivalTrade, error) {
+	var out []rivalTrade
+	if err := db.Table("investment_transactions it").
+		Select("it.type, it.date, it.quantity").
+		Joins("JOIN investments i ON i.id = it.investment_id").
+		Joins("JOIN accounts a ON a.id = i.account_id").
+		Joins("JOIN securities s ON s.id = i.security_id").
+		Where("a.user_id = ? AND i.id <> ? AND s.name = ? AND it.deleted_at IS NULL AND it.date IN ?",
+			userID, investment.ID, investment.Security.Name, dates).
+		Where("NOT EXISTS (SELECT 1 FROM transactions t WHERE t.investment_transaction_id = it.id AND t.deleted_at IS NULL)").
+		Scan(&out).Error; err != nil {
+		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
+	}
+	return out, nil
+}
+
+// hasRival reports whether a rival trade would have written the same cash
+// description on the same date as row.
+func hasRival(rivals []rivalTrade, row *models.InvestmentTransaction) bool {
+	for _, r := range rivals {
+		if r.Type != row.Type || !r.Date.Equal(row.Date) {
+			continue
+		}
+		if row.Type == models.InvestmentTransactionDividend || r.Quantity == row.Quantity {
+			return true
+		}
+	}
+	return false
 }
 
 // sortTradesForClaim orders rows by (created_at, id) so identical legacy trades

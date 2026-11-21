@@ -66,7 +66,7 @@ func getTotalInvestedByID(db *gorm.DB, investmentIDs []string) (map[string]int64
 
 	if err := db.Table("investment_transactions").
 		Select("investment_id, COALESCE(SUM(total_amount), 0) AS total").
-		Where("investment_id IN ? AND type = ?", investmentIDs, models.InvestmentTransactionBuy).
+		Where("investment_id IN ? AND type = ? AND deleted_at IS NULL", investmentIDs, models.InvestmentTransactionBuy).
 		Group("investment_id").
 		Scan(&rows).Error; err != nil {
 		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
@@ -521,6 +521,9 @@ type cashLegRequest struct {
 	amount    int64  // caller-stated amount in the account's currency; 0 = not given
 	field     string // request field carrying amount ("funding_amount" / "deposit_amount")
 	native    int64  // the amount, in the security's currency, that the leg settles
+	// keepAccountID is the account an edited trade already used: it stays
+	// usable even if it has since been deactivated.
+	keepAccountID string
 }
 
 // resolveCashLeg validates the cash account of a trade and returns it with the
@@ -538,7 +541,11 @@ func (s *investmentService) resolveCashLeg(userID string, req cashLegRequest, se
 		}
 		return nil, 0, nil
 	}
-	account, err := s.accountService.GetAccountByID(userID, req.accountID)
+	lookup := s.accountService.GetAccountByID
+	if req.keepAccountID != "" && req.accountID == req.keepAccountID {
+		lookup = s.accountService.GetAccountByIDIncludingInactive
+	}
+	account, err := lookup(userID, req.accountID)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -564,11 +571,13 @@ func (s *investmentService) resolveCashLeg(userID string, req cashLegRequest, se
 }
 
 // applyCashLeg writes the cash transaction row and moves the (row-locked)
-// account's balance by amount, in the account's own currency. investmentTxID
+// account's balance by amount, in the account's own currency. With
+// requireActive the account must be active (an edit keeping the account its
+// trade already used passes false). investmentTxID
 // links the row to the trade it settles, so the trade can later be edited or
 // deleted together with its cash.
-func (s *investmentService) applyCashLeg(tx *gorm.DB, userID, accountID string, txnType models.TransactionType, amount int64, description string, date time.Time, investmentTxID string) error {
-	accounts, err := lockAccounts(tx, userID, []string{accountID}, true)
+func (s *investmentService) applyCashLeg(tx *gorm.DB, userID, accountID string, txnType models.TransactionType, amount int64, description string, date time.Time, investmentTxID string, requireActive bool) error {
+	accounts, err := lockAccounts(tx, userID, []string{accountID}, requireActive)
 	if err != nil {
 		return err
 	}
@@ -598,6 +607,9 @@ type preparedTrade struct {
 	cashAmount int64                  // in the cash account's currency
 	cashType   models.TransactionType // the cash leg's balance effect (expense = money out)
 	cashDesc   string
+	// keepAccountID is the account an edited trade already used ("" when
+	// recording): it may be inactive.
+	keepAccountID string
 }
 
 // writeCashLeg writes the prepared trade's cash leg, linked to investmentTxID.
@@ -605,7 +617,8 @@ func (s *investmentService) writeCashLeg(tx *gorm.DB, userID string, pt *prepare
 	if pt.cash == nil {
 		return nil
 	}
-	return s.applyCashLeg(tx, userID, pt.cash.ID, pt.cashType, pt.cashAmount, pt.cashDesc, pt.row.Date, investmentTxID)
+	return s.applyCashLeg(tx, userID, pt.cash.ID, pt.cashType, pt.cashAmount, pt.cashDesc, pt.row.Date, investmentTxID,
+		pt.keepAccountID == "" || pt.cash.ID != pt.keepAccountID)
 }
 
 // keptRate is the FX rate a trade was stored with. An edit that names no
@@ -648,6 +661,15 @@ func (s *investmentService) priceTrade(
 	return rate, baseAmount, nil
 }
 
+// accountIDOrEmpty returns the cash account the edited trade used, or "" when
+// there is no edit (nil) or it had no cash leg.
+func (k *keptRate) accountIDOrEmpty() string {
+	if k == nil {
+		return ""
+	}
+	return k.accountID
+}
+
 // priceOrKeep resolves the trade's FX rate and base amount like priceTrade,
 // except that it returns keep's stored figures when the trade is unchanged and
 // no explicit rate is given.
@@ -685,7 +707,7 @@ func (s *investmentService) prepareBuy(userID string, investment *models.Investm
 	totalAmount := gross + p.Fee
 
 	fundingAccount, cashAmount, err := s.resolveCashLeg(userID, cashLegRequest{
-		accountID: p.FundingAccountID, amount: p.FundingAmount, field: "funding_amount", native: totalAmount,
+		accountID: p.FundingAccountID, amount: p.FundingAmount, field: "funding_amount", native: totalAmount, keepAccountID: keep.accountIDOrEmpty(),
 	}, secCcy, p.Date)
 	if err != nil {
 		return nil, err
@@ -706,10 +728,11 @@ func (s *investmentService) prepareBuy(userID string, investment *models.Investm
 			FXRateToBase: rate,
 			BaseAmount:   baseAmount,
 		},
-		cash:       fundingAccount,
-		cashAmount: cashAmount,
-		cashType:   models.TransactionTypeExpense,
-		cashDesc:   fmt.Sprintf("Investment purchase: %g %s", p.Quantity, investment.Security.Name),
+		cash:          fundingAccount,
+		cashAmount:    cashAmount,
+		cashType:      models.TransactionTypeExpense,
+		cashDesc:      fmt.Sprintf("Investment purchase: %g %s", p.Quantity, investment.Security.Name),
+		keepAccountID: keep.accountIDOrEmpty(),
 	}, nil
 }
 
@@ -728,7 +751,7 @@ func (s *investmentService) prepareSell(userID string, investment *models.Invest
 	totalAmount := gross - p.Fee
 
 	depositAccount, cashAmount, err := s.resolveCashLeg(userID, cashLegRequest{
-		accountID: p.DepositAccountID, amount: p.DepositAmount, field: "deposit_amount", native: totalAmount,
+		accountID: p.DepositAccountID, amount: p.DepositAmount, field: "deposit_amount", native: totalAmount, keepAccountID: keep.accountIDOrEmpty(),
 	}, secCcy, p.Date)
 	if err != nil {
 		return nil, err
@@ -749,10 +772,11 @@ func (s *investmentService) prepareSell(userID string, investment *models.Invest
 			FXRateToBase: rate,
 			BaseAmount:   baseAmount,
 		},
-		cash:       depositAccount,
-		cashAmount: cashAmount,
-		cashType:   models.TransactionTypeIncome,
-		cashDesc:   fmt.Sprintf("Sale proceeds: %g %s", p.Quantity, investment.Security.Name),
+		cash:          depositAccount,
+		cashAmount:    cashAmount,
+		cashType:      models.TransactionTypeIncome,
+		cashDesc:      fmt.Sprintf("Sale proceeds: %g %s", p.Quantity, investment.Security.Name),
+		keepAccountID: keep.accountIDOrEmpty(),
 	}, nil
 }
 
@@ -774,7 +798,7 @@ func (s *investmentService) prepareDividend(userID string, investment *models.In
 	net := p.Amount - p.Fee
 
 	depositAccount, cashAmount, err := s.resolveCashLeg(userID, cashLegRequest{
-		accountID: p.DepositAccountID, amount: p.DepositAmount, field: "deposit_amount", native: net,
+		accountID: p.DepositAccountID, amount: p.DepositAmount, field: "deposit_amount", native: net, keepAccountID: keep.accountIDOrEmpty(),
 	}, secCcy, p.Date)
 	if err != nil {
 		return nil, err
@@ -797,10 +821,11 @@ func (s *investmentService) prepareDividend(userID string, investment *models.In
 			FXRateToBase: rate,
 			BaseAmount:   baseAmount,
 		},
-		cash:       depositAccount,
-		cashAmount: cashAmount,
-		cashType:   models.TransactionTypeIncome,
-		cashDesc:   fmt.Sprintf("Dividend: %s", investment.Security.Name),
+		cash:          depositAccount,
+		cashAmount:    cashAmount,
+		cashType:      models.TransactionTypeIncome,
+		cashDesc:      fmt.Sprintf("Dividend: %s", investment.Security.Name),
+		keepAccountID: keep.accountIDOrEmpty(),
 	}, nil
 }
 
