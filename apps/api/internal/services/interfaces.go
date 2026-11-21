@@ -58,6 +58,8 @@ type ReminderSettings struct {
 	CardDue    *bool
 	LoanDue    *bool
 	FDMaturity *bool
+	// AnnualFee covers both annual-fee kinds (card_annual_fee, fee_waiver_pace).
+	AnnualFee *bool
 }
 
 // RecordConsentInput holds the outcome of one consent decision (plan 022).

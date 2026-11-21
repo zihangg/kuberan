@@ -6066,7 +6066,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Switch the card due, loan due and fixed-deposit maturity reminders on or off for the linked Telegram account",
+                "description": "Switch the card due, loan due, fixed-deposit maturity and annual fee reminders on or off for the linked Telegram account",
                 "consumes": [
                     "application/json"
                 ],
@@ -8876,12 +8876,13 @@ const docTemplate = `{
         "internal_handlers.SetCardAnnualFeeRequest": {
             "type": "object",
             "required": [
+                "amount",
                 "month"
             ],
             "properties": {
                 "amount": {
                     "type": "integer",
-                    "minimum": 0
+                    "minimum": 1
                 },
                 "day": {
                     "type": "integer",
@@ -9277,6 +9278,10 @@ const docTemplate = `{
         "internal_handlers.UpdateReminderSettingsRequest": {
             "type": "object",
             "properties": {
+                "annual_fee": {
+                    "description": "AnnualFee switches both annual-fee reminders (fee due, waiver pace).",
+                    "type": "boolean"
+                },
                 "card_due": {
                     "type": "boolean"
                 },

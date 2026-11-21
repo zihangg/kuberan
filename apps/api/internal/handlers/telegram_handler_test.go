@@ -65,6 +65,7 @@ type mockTelegramService struct {
 	recordActivityFn       func(telegramUserID int64) error
 	isLinkedFn             func(userID string) (bool, error)
 	getUserWithAuthTokenFn func(telegramUserID int64) (*services.TelegramUserAuth, error)
+	updateReminderFn       func(userID string, settings services.ReminderSettings) (*models.TelegramLink, error)
 }
 
 func (m *mockTelegramService) GetLinkByUserID(userID string) (*models.TelegramLink, error) {
@@ -123,7 +124,10 @@ func (m *mockTelegramService) GetUserWithAuthToken(telegramUserID int64) (*servi
 	return &services.TelegramUserAuth{}, nil
 }
 
-func (m *mockTelegramService) UpdateReminderSettings(_ string, _ services.ReminderSettings) (*models.TelegramLink, error) {
+func (m *mockTelegramService) UpdateReminderSettings(userID string, settings services.ReminderSettings) (*models.TelegramLink, error) {
+	if m.updateReminderFn != nil {
+		return m.updateReminderFn(userID, settings)
+	}
 	return &models.TelegramLink{}, nil
 }
 
@@ -137,6 +141,7 @@ func setupTelegramRouter(handler *TelegramHandler) *gin.Engine {
 	auth.GET("/telegram/link", handler.GetLink)
 	auth.POST("/telegram/generate-code", handler.GenerateCode)
 	auth.DELETE("/telegram/unlink", handler.Unlink)
+	auth.PUT("/telegram/reminder-settings", handler.UpdateReminderSettings)
 	return r
 }
 
@@ -164,6 +169,7 @@ func TestTelegramHandler_GetLink(t *testing.T) {
 					IsActive:         true,
 					LastMessageAt:    &now,
 					MessageCount:     5,
+					RemindAnnualFee:  true,
 				}, nil
 			},
 		}
@@ -182,6 +188,9 @@ func TestTelegramHandler_GetLink(t *testing.T) {
 		}
 		if link["telegram_user_id"] != float64(987654321) {
 			t.Errorf("expected telegram_user_id 987654321, got %v", link["telegram_user_id"])
+		}
+		if link["remind_annual_fee"] != true {
+			t.Errorf("expected remind_annual_fee true, got %v", link["remind_annual_fee"])
 		}
 	})
 
@@ -505,6 +514,41 @@ func TestTelegramHandler_RecordActivity(t *testing.T) {
 
 		if rec.Code != http.StatusBadRequest {
 			t.Fatalf("expected 400, got %d", rec.Code)
+		}
+	})
+}
+
+func TestTelegramHandler_UpdateReminderSettings(t *testing.T) {
+	t.Run("annual_fee_switch_round_trips", func(t *testing.T) {
+		var got services.ReminderSettings
+		telegramSvc := &mockTelegramService{
+			updateReminderFn: func(userID string, settings services.ReminderSettings) (*models.TelegramLink, error) {
+				got = settings
+				link := &models.TelegramLink{Base: models.Base{ID: "link-123"}, UserID: userID,
+					RemindCardDue: true, RemindLoanDue: true, RemindFDMaturity: true, RemindAnnualFee: true}
+				if settings.AnnualFee != nil {
+					link.RemindAnnualFee = *settings.AnnualFee
+				}
+				return link, nil
+			},
+		}
+		handler := NewTelegramHandler(telegramSvc, &mockTelegramAuditService{})
+		r := setupTelegramRouter(handler)
+
+		rec := doTelegramRequest(r, "PUT", "/telegram/reminder-settings", `{"annual_fee":false}`)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		if got.AnnualFee == nil || *got.AnnualFee {
+			t.Fatalf("expected AnnualFee=false passed to the service, got %+v", got.AnnualFee)
+		}
+		if got.CardDue != nil || got.LoanDue != nil || got.FDMaturity != nil {
+			t.Fatalf("omitted switches must stay nil: %+v", got)
+		}
+		link := parseTelegramJSON(t, rec)["link"].(map[string]interface{})
+		if link["remind_annual_fee"] != false || link["remind_card_due"] != true {
+			t.Fatalf("unexpected switches in response: %v", link)
 		}
 	})
 }

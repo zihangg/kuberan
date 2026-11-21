@@ -18,6 +18,13 @@ const (
 	loanReminderLeadDays = 3
 	fdReminderLeadDays   = 7
 	reminderSendHourUTC  = 1
+
+	// annualFeeReminderLeadDays is how long before a card's annual fee date
+	// the fee reminder is sent (plan 025).
+	annualFeeReminderLeadDays = 30
+	// feeWaiverPaceLeadDays is how long before the waiver deadline the pace
+	// reminder may go out; Due() still withholds it while the card is on track.
+	feeWaiverPaceLeadDays = 90
 )
 
 // NextDueDate returns the first date on or after from (compared by UTC date)
@@ -47,10 +54,17 @@ func reminderRemindAt(dueOn time.Time, leadDays int) time.Time {
 	return d.Add(reminderSendHourUTC * time.Hour)
 }
 
-// isRecurringReminder reports whether a kind repeats every month (the next
-// occurrence is created once the current one has been sent).
+// isRecurringReminder reports whether a kind repeats (monthly for card and
+// loan payments, yearly for the annual fee and the waiver pace check): the
+// next occurrence is planned once the current one has been sent.
 func isRecurringReminder(k models.ReminderKind) bool {
-	return k == models.ReminderKindCardDue || k == models.ReminderKindLoanDue
+	switch k {
+	case models.ReminderKindCardDue, models.ReminderKindLoanDue,
+		models.ReminderKindCardAnnualFee, models.ReminderKindFeeWaiverPace:
+		return true
+	default:
+		return false
+	}
 }
 
 // reminderPlan is one reminder an account wants: the kind and the first due
@@ -73,25 +87,22 @@ func reminderPlanFrom(now, after time.Time) time.Time {
 }
 
 // planAccountReminders works out the reminders an account should have as of
-// now, at most one per kind. sentAfter holds, per kind, the due date of the
-// latest reminder of that kind already sent: that kind's plan then starts the
-// day after it.
-func planAccountReminders(acct *models.Account, fd *models.FixedDepositDetails, now time.Time, sentAfter map[models.ReminderKind]time.Time) []reminderPlan {
+// now, at most one per kind. fee is the card's annual fee (nil when it has
+// none). sentAfter holds, per kind, the due date of the latest reminder of
+// that kind already sent: that kind's plan then starts the day after it.
+func planAccountReminders(acct *models.Account, fd *models.FixedDepositDetails, fee *models.CardAnnualFee, now time.Time, sentAfter map[models.ReminderKind]time.Time) []reminderPlan {
 	if !acct.IsActive {
 		return nil
 	}
 	var plans []reminderPlan
 	switch acct.Type {
 	case models.AccountTypeCreditCard, models.AccountTypeDebt:
-		if acct.DueDay == nil || *acct.DueDay < 1 || *acct.DueDay > 31 {
-			break
+		if plan, ok := planPaymentReminder(acct, now, sentAfter); ok {
+			plans = append(plans, plan)
 		}
-		kind, lead := models.ReminderKindCardDue, cardReminderLeadDays
-		if acct.Type == models.AccountTypeDebt {
-			kind, lead = models.ReminderKindLoanDue, loanReminderLeadDays
+		if acct.Type == models.AccountTypeCreditCard && fee != nil {
+			plans = append(plans, planCardFeeReminders(fee, now, sentAfter)...)
 		}
-		from := reminderPlanFrom(now, sentAfter[kind])
-		plans = append(plans, reminderPlan{kind: kind, dueOn: NextDueDate(*acct.DueDay, from), leadDays: lead})
 	case models.AccountTypeFixedDeposit:
 		if fd == nil || fd.Status != models.FixedDepositStatusActive {
 			break
@@ -106,16 +117,53 @@ func planAccountReminders(acct *models.Account, fd *models.FixedDepositDetails, 
 	return plans
 }
 
+// planPaymentReminder plans the monthly card_due / loan_due reminder of a card
+// or loan with a valid due day.
+func planPaymentReminder(acct *models.Account, now time.Time, sentAfter map[models.ReminderKind]time.Time) (reminderPlan, bool) {
+	if acct.DueDay == nil || *acct.DueDay < 1 || *acct.DueDay > 31 {
+		return reminderPlan{}, false
+	}
+	kind, lead := models.ReminderKindCardDue, cardReminderLeadDays
+	if acct.Type == models.AccountTypeDebt {
+		kind, lead = models.ReminderKindLoanDue, loanReminderLeadDays
+	}
+	from := reminderPlanFrom(now, sentAfter[kind])
+	return reminderPlan{kind: kind, dueOn: NextDueDate(*acct.DueDay, from), leadDays: lead}, true
+}
+
+// planCardFeeReminders plans a card's yearly annual-fee reminder (due on the
+// next fee date) and, when the fee can be waived, the pace reminder (due at
+// the end of the next waiver window not yet reminded about).
+func planCardFeeReminders(fee *models.CardAnnualFee, now time.Time, sentAfter map[models.ReminderKind]time.Time) []reminderPlan {
+	feeFrom := reminderPlanFrom(now, sentAfter[models.ReminderKindCardAnnualFee])
+	plans := []reminderPlan{{
+		kind:     models.ReminderKindCardAnnualFee,
+		dueOn:    NextFeeDate(fee.FeeMonth, fee.FeeDay, feeFrom),
+		leadDays: annualFeeReminderLeadDays,
+	}}
+	if fee.WaiverType == nil {
+		return plans
+	}
+	paceFrom := reminderPlanFrom(now, sentAfter[models.ReminderKindFeeWaiverPace])
+	_, end := FeeWaiverWindow(fee, paceFrom)
+	return append(plans, reminderPlan{
+		kind:     models.ReminderKindFeeWaiverPace,
+		dueOn:    end,
+		leadDays: feeWaiverPaceLeadDays,
+	})
+}
+
 // syncAccountReminders brings the reminders of one account in line with its
-// due_day / maturity date, inside tx, kind by kind. For each planned kind it
-// keeps the matching unsent reminder, removes that kind's other unsent ones
-// (due day changed) and creates the missing one; unsent reminders of kinds no
-// longer planned (account deactivated, due day cleared, deposit closed) are
-// removed. A reminder switched off for the account stays off across
-// occurrences of its kind. Idempotent.
+// due_day, maturity date or annual fee, inside tx, kind by kind. For each
+// planned kind it keeps the matching unsent reminder, removes that kind's
+// other unsent ones (due day or fee date changed) and creates the missing one;
+// unsent reminders of kinds no longer planned (account deactivated, due day
+// cleared, deposit closed, fee or waiver removed) are removed. A reminder
+// switched off for the account stays off across occurrences of its kind.
+// Idempotent.
 func syncAccountReminders(tx *gorm.DB, accountID string, now time.Time) error {
 	var acct models.Account
-	err := tx.Preload("FixedDeposit").Where("id = ?", accountID).First(&acct).Error
+	err := tx.Preload("FixedDeposit").Preload("AnnualFee").Where("id = ?", accountID).First(&acct).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return deleteUnsentReminders(tx, accountID, nil)
 	}
@@ -142,7 +190,7 @@ func syncAccountReminders(tx *gorm.DB, accountID string, now time.Time) error {
 		}
 	}
 
-	plans := planAccountReminders(&acct, acct.FixedDeposit, now, sentAfter)
+	plans := planAccountReminders(&acct, acct.FixedDeposit, acct.AnnualFee, now, sentAfter)
 	planned := make([]models.ReminderKind, 0, len(plans))
 	for _, plan := range plans {
 		planned = append(planned, plan.kind)

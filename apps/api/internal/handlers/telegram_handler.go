@@ -237,11 +237,13 @@ type UpdateReminderSettingsRequest struct {
 	CardDue    *bool `json:"card_due"`
 	LoanDue    *bool `json:"loan_due"`
 	FDMaturity *bool `json:"fd_maturity"`
+	// AnnualFee switches both annual-fee reminders (fee due, waiver pace).
+	AnnualFee *bool `json:"annual_fee"`
 }
 
 // UpdateReminderSettings switches Telegram reminder kinds on or off.
 // @Summary     Update reminder settings
-// @Description Switch the card due, loan due and fixed-deposit maturity reminders on or off for the linked Telegram account
+// @Description Switch the card due, loan due, fixed-deposit maturity and annual fee reminders on or off for the linked Telegram account
 // @Tags        telegram
 // @Accept      json
 // @Produce     json
@@ -264,13 +266,13 @@ func (h *TelegramHandler) UpdateReminderSettings(c *gin.Context) {
 		return
 	}
 	link, err := h.telegramService.UpdateReminderSettings(userID, services.ReminderSettings{
-		CardDue: req.CardDue, LoanDue: req.LoanDue, FDMaturity: req.FDMaturity,
+		CardDue: req.CardDue, LoanDue: req.LoanDue, FDMaturity: req.FDMaturity, AnnualFee: req.AnnualFee,
 	})
 	if err != nil {
 		respondWithError(c, err)
 		return
 	}
 	h.auditService.Log(userID, "UPDATE_REMINDER_SETTINGS", "telegram_link", link.ID, c.ClientIP(),
-		map[string]interface{}{"card_due": req.CardDue, "loan_due": req.LoanDue, "fd_maturity": req.FDMaturity})
+		map[string]interface{}{"card_due": req.CardDue, "loan_due": req.LoanDue, "fd_maturity": req.FDMaturity, "annual_fee": req.AnnualFee})
 	c.JSON(http.StatusOK, gin.H{"link": link})
 }

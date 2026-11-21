@@ -1005,7 +1005,7 @@ definitions:
   internal_handlers.SetCardAnnualFeeRequest:
     properties:
       amount:
-        minimum: 0
+        minimum: 1
         type: integer
       day:
         maximum: 31
@@ -1034,6 +1034,7 @@ definitions:
         - calendar_year
         type: string
     required:
+    - amount
     - month
     type: object
   internal_handlers.SetReminderEnabledRequest:
@@ -1303,6 +1304,10 @@ definitions:
     type: object
   internal_handlers.UpdateReminderSettingsRequest:
     properties:
+      annual_fee:
+        description: AnnualFee switches both annual-fee reminders (fee due, waiver
+          pace).
+        type: boolean
       card_due:
         type: boolean
       fd_maturity:
@@ -7591,8 +7596,8 @@ paths:
     put:
       consumes:
       - application/json
-      description: Switch the card due, loan due and fixed-deposit maturity reminders
-        on or off for the linked Telegram account
+      description: Switch the card due, loan due, fixed-deposit maturity and annual
+        fee reminders on or off for the linked Telegram account
       parameters:
       - description: Reminder switches
         in: body
