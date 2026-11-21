@@ -93,7 +93,7 @@ Response:
     "spend": {"target": 1200000, "actual": 842000, "remaining": 358000},
     "swipes": null,
     "status": "behind",              // met | on_track | behind
-    "per_month_needed": 119333,      // remaining / months left (ceil), null when met
+    "per_month_needed": 89500,       // ceil(remaining / max(1, ceil(days_left/30))); spend target only; null when met or swipes-only
     "days_left": 114
   },
   "spent_last_12_months": 842000     // always present: used by the keep-or-cancel message
@@ -103,6 +103,7 @@ Response:
 - `status`: `met` when the condition holds (either target for `spend_or_swipes`); otherwise `on_track` when
   actual ≥ 90% of the straight-line pace (target × elapsed fraction of the window); otherwise `behind`. During
   the first 30 days of a window it never reports `behind`.
+- Validation also rejects a target that does not belong to the waiver type (a swipes target on a `spend` waiver, and the other way round).
 - `waiver` is `null` when the card has no waiver condition; 404 `ACCOUNT_NOT_FOUND` for another user's card;
   `annual_fee` not set → 200 with `fee: null, waiver: null`.
 
