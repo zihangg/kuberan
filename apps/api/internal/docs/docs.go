@@ -3473,6 +3473,152 @@ const docTemplate = `{
                 }
             }
         },
+        "/investments/{id}/transactions/{txid}": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Correct a buy, sell, dividend or split. The request replaces the transaction's editable fields (same rules and currencies as recording it). Its old cash leg is reversed and the new one applied, then the holding is rebuilt from all its transactions, so later sells' realized gains are recomputed. Refused with 400 INSUFFICIENT_SHARES when a sell would exceed the position at that point; nothing changes then.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "investments"
+                ],
+                "summary": "Edit investment transaction",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Investment ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Investment transaction ID",
+                        "name": "txid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Corrected transaction",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.UpdateInvestmentTransactionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Transaction updated",
+                        "schema": {
+                            "$ref": "#/definitions/kuberan_internal_models.InvestmentTransaction"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid input or insufficient shares",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Investment or transaction not found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "No FX rate available; pass fx_rate",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Delete a buy, sell, dividend or split. Its cash leg is reversed (the cash account's balance is restored) and the holding is rebuilt from the remaining transactions. Refused with 400 INSUFFICIENT_SHARES when a later sell would then exceed the position; nothing changes then.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "investments"
+                ],
+                "summary": "Delete investment transaction",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Investment ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Investment transaction ID",
+                        "name": "txid",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Transaction deleted",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.MessageResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid input or insufficient shares",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Investment or transaction not found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/oauth/clients": {
             "get": {
                 "security": [
@@ -9026,6 +9172,69 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_handlers.UpdateInvestmentTransactionRequest": {
+            "type": "object",
+            "required": [
+                "date"
+            ],
+            "properties": {
+                "amount": {
+                    "type": "integer",
+                    "maximum": 100000000000000,
+                    "minimum": 0
+                },
+                "date": {
+                    "type": "string"
+                },
+                "deposit_account_id": {
+                    "type": "string"
+                },
+                "deposit_amount": {
+                    "type": "integer",
+                    "maximum": 100000000000000
+                },
+                "dividend_type": {
+                    "type": "string",
+                    "maxLength": 50
+                },
+                "fee": {
+                    "type": "integer",
+                    "maximum": 100000000000000,
+                    "minimum": 0
+                },
+                "funding_account_id": {
+                    "type": "string"
+                },
+                "funding_amount": {
+                    "type": "integer",
+                    "maximum": 100000000000000
+                },
+                "fx_rate": {
+                    "description": "FXRate optionally overrides the security currency -\u003e base rate. When it\nis omitted and the date, total and cash leg are unchanged, the stored\nrate is kept; otherwise the rate is resolved as for a new trade.",
+                    "type": "string",
+                    "maxLength": 32
+                },
+                "notes": {
+                    "type": "string",
+                    "maxLength": 500
+                },
+                "price_per_unit": {
+                    "type": "integer",
+                    "maximum": 100000000000000,
+                    "minimum": 0
+                },
+                "quantity": {
+                    "type": "number",
+                    "maximum": 1000000000000000,
+                    "minimum": 0
+                },
+                "split_ratio": {
+                    "type": "number",
+                    "maximum": 1000000,
+                    "minimum": 0
+                }
+            }
+        },
         "internal_handlers.UpdateProfileSettingsRequest": {
             "type": "object",
             "properties": {
@@ -9891,6 +10100,13 @@ const docTemplate = `{
                 "base_amount": {
                     "type": "integer"
                 },
+                "cash_account_id": {
+                    "description": "Response only: the cash account the trade was paid from or paid into and\nthe amount moved there (in that account's currency). Null when the trade\nhas no cash leg, or it could not be found (imported trades, whose cash is\nbooked by the import, and some legacy rows).",
+                    "type": "string"
+                },
+                "cash_amount": {
+                    "type": "integer"
+                },
                 "created_at": {
                     "type": "string"
                 },
@@ -10388,6 +10604,10 @@ const docTemplate = `{
                 },
                 "import_ref": {
                     "description": "ImportRef marks a row written by an importer (\"ibkr:\u003caccount\u003e:\u003cevent key\u003e\")\nso that re-running the import replaces rather than duplicates it. NULL for\nevery row that was entered by hand.",
+                    "type": "string"
+                },
+                "investment_transaction_id": {
+                    "description": "InvestmentTransactionID links the cash leg of a buy, sell or dividend to\nthat investment transaction, so deleting or editing the trade reverses\nexactly this row. NULL on every other row and on cash legs written before\nthe link existed.",
                     "type": "string"
                 },
                 "notes": {

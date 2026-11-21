@@ -155,8 +155,9 @@ var (
 
 // Investment errors.
 var (
-	ErrInvestmentNotFound = &AppError{Code: "INVESTMENT_NOT_FOUND", Message: "Investment not found", StatusCode: http.StatusNotFound}
-	ErrInsufficientShares = &AppError{Code: "INSUFFICIENT_SHARES", Message: "Insufficient shares for this sale", StatusCode: http.StatusBadRequest}
+	ErrInvestmentNotFound            = &AppError{Code: "INVESTMENT_NOT_FOUND", Message: "Investment not found", StatusCode: http.StatusNotFound}
+	ErrInvestmentTransactionNotFound = &AppError{Code: "INVESTMENT_TRANSACTION_NOT_FOUND", Message: "Investment transaction not found", StatusCode: http.StatusNotFound}
+	ErrInsufficientShares            = &AppError{Code: "INSUFFICIENT_SHARES", Message: "Insufficient shares for this sale", StatusCode: http.StatusBadRequest}
 )
 
 // Security errors.

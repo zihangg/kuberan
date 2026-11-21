@@ -17,6 +17,8 @@ interface CrossCurrencyAmountOptions {
   account: Account | undefined;
   /** What the trade moves, in cents of `securityCurrency` (used for the suggestion). */
   nativeTotal: number;
+  /** A value to start from, e.g. the stored amount of a trade being edited. */
+  initialValue?: number | null;
 }
 
 /**
@@ -29,8 +31,9 @@ export function useCrossCurrencyAmount({
   securityCurrency,
   account,
   nativeTotal,
+  initialValue = null,
 }: CrossCurrencyAmountOptions) {
-  const [manual, setManual] = useState<number | null>(null);
+  const [manual, setManual] = useState<number | null>(initialValue);
   const [hint, setHint] = useState<FxAmountRequired | null>(null);
 
   const accountCurrency = account?.currency;

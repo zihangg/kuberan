@@ -1214,6 +1214,56 @@ definitions:
       parent_id:
         type: string
     type: object
+  internal_handlers.UpdateInvestmentTransactionRequest:
+    properties:
+      amount:
+        maximum: 100000000000000
+        minimum: 0
+        type: integer
+      date:
+        type: string
+      deposit_account_id:
+        type: string
+      deposit_amount:
+        maximum: 100000000000000
+        type: integer
+      dividend_type:
+        maxLength: 50
+        type: string
+      fee:
+        maximum: 100000000000000
+        minimum: 0
+        type: integer
+      funding_account_id:
+        type: string
+      funding_amount:
+        maximum: 100000000000000
+        type: integer
+      fx_rate:
+        description: |-
+          FXRate optionally overrides the security currency -> base rate. When it
+          is omitted and the date, total and cash leg are unchanged, the stored
+          rate is kept; otherwise the rate is resolved as for a new trade.
+        maxLength: 32
+        type: string
+      notes:
+        maxLength: 500
+        type: string
+      price_per_unit:
+        maximum: 100000000000000
+        minimum: 0
+        type: integer
+      quantity:
+        maximum: 1000000000000000
+        minimum: 0
+        type: number
+      split_ratio:
+        maximum: 1000000
+        minimum: 0
+        type: number
+    required:
+    - date
+    type: object
   internal_handlers.UpdateProfileSettingsRequest:
     properties:
       appearance:
@@ -1839,6 +1889,15 @@ definitions:
     properties:
       base_amount:
         type: integer
+      cash_account_id:
+        description: |-
+          Response only: the cash account the trade was paid from or paid into and
+          the amount moved there (in that account's currency). Null when the trade
+          has no cash leg, or it could not be found (imported trades, whose cash is
+          booked by the import, and some legacy rows).
+        type: string
+      cash_amount:
+        type: integer
       created_at:
         type: string
       currency:
@@ -2210,6 +2269,13 @@ definitions:
           ImportRef marks a row written by an importer ("ibkr:<account>:<event key>")
           so that re-running the import replaces rather than duplicates it. NULL for
           every row that was entered by hand.
+        type: string
+      investment_transaction_id:
+        description: |-
+          InvestmentTransactionID links the cash leg of a buy, sell or dividend to
+          that investment transaction, so deleting or editing the trade reverses
+          exactly this row. NULL on every other row and on cash legs written before
+          the link existed.
         type: string
       notes:
         description: Notes is free text the user attaches to the row (max 2000 characters).
@@ -5669,6 +5735,109 @@ paths:
       security:
       - BearerAuth: []
       summary: Get investment transactions
+      tags:
+      - investments
+  /investments/{id}/transactions/{txid}:
+    delete:
+      description: Delete a buy, sell, dividend or split. Its cash leg is reversed
+        (the cash account's balance is restored) and the holding is rebuilt from the
+        remaining transactions. Refused with 400 INSUFFICIENT_SHARES when a later
+        sell would then exceed the position; nothing changes then.
+      parameters:
+      - description: Investment ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Investment transaction ID
+        in: path
+        name: txid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Transaction deleted
+          schema:
+            $ref: '#/definitions/internal_handlers.MessageResponse'
+        "400":
+          description: Invalid input or insufficient shares
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "404":
+          description: Investment or transaction not found
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete investment transaction
+      tags:
+      - investments
+    put:
+      consumes:
+      - application/json
+      description: Correct a buy, sell, dividend or split. The request replaces the
+        transaction's editable fields (same rules and currencies as recording it).
+        Its old cash leg is reversed and the new one applied, then the holding is
+        rebuilt from all its transactions, so later sells' realized gains are recomputed.
+        Refused with 400 INSUFFICIENT_SHARES when a sell would exceed the position
+        at that point; nothing changes then.
+      parameters:
+      - description: Investment ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Investment transaction ID
+        in: path
+        name: txid
+        required: true
+        type: string
+      - description: Corrected transaction
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handlers.UpdateInvestmentTransactionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Transaction updated
+          schema:
+            $ref: '#/definitions/kuberan_internal_models.InvestmentTransaction'
+        "400":
+          description: Invalid input or insufficient shares
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "404":
+          description: Investment or transaction not found
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "503":
+          description: No FX rate available; pass fx_rate
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Edit investment transaction
       tags:
       - investments
   /investments/portfolio:

@@ -98,6 +98,12 @@ type Transaction struct {
 	// every row that was entered by hand.
 	ImportRef *string `gorm:"size:128;index:idx_transactions_import_ref" json:"import_ref,omitempty"`
 
+	// InvestmentTransactionID links the cash leg of a buy, sell or dividend to
+	// that investment transaction, so deleting or editing the trade reverses
+	// exactly this row. NULL on every other row and on cash legs written before
+	// the link existed.
+	InvestmentTransactionID *string `gorm:"type:uuid;index:idx_transactions_investment_transaction_id" json:"investment_transaction_id,omitempty"`
+
 	// Relationships
 	Account   Account   `gorm:"foreignKey:AccountID" json:"account"`
 	ToAccount *Account  `gorm:"foreignKey:ToAccountID" json:"to_account,omitempty"`

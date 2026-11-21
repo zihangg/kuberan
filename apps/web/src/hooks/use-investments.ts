@@ -19,8 +19,10 @@ import type {
   RecordSellRequest,
   RecordDividendRequest,
   RecordSplitRequest,
+  UpdateInvestmentTransactionRequest,
 } from "@/types/api";
 import { accountKeys } from "./use-accounts";
+import { transactionKeys } from "./use-transactions";
 
 export type InvestmentStatus = "open" | "closed" | "all";
 
@@ -210,6 +212,8 @@ export function useRecordDividend(investmentId: string) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: investmentKeys.all });
+      // A dividend deposited to a cash account changes its balance.
+      queryClient.invalidateQueries({ queryKey: accountKeys.all });
     },
   });
 }
@@ -230,3 +234,46 @@ export function useRecordSplit(investmentId: string) {
   });
 }
 
+
+/** Corrects a trade; the server reverses its old cash leg and rebuilds the holding. */
+export function useUpdateInvestmentTransaction(investmentId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      id,
+      data,
+    }: {
+      id: string;
+      data: UpdateInvestmentTransactionRequest;
+    }) => {
+      const res = await apiClient.put<InvestmentTransactionResponse>(
+        `/api/v1/investments/${investmentId}/transactions/${id}`,
+        data
+      );
+      return res.transaction;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: investmentKeys.all });
+      queryClient.invalidateQueries({ queryKey: accountKeys.all });
+      // The cash leg is a row in the account's transactions.
+      queryClient.invalidateQueries({ queryKey: transactionKeys.all });
+    },
+  });
+}
+
+/** Deletes a trade; the server reverses its cash leg and rebuilds the holding. */
+export function useDeleteInvestmentTransaction(investmentId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      apiClient.del<{ message: string }>(
+        `/api/v1/investments/${investmentId}/transactions/${id}`
+      ),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: investmentKeys.all });
+      queryClient.invalidateQueries({ queryKey: accountKeys.all });
+      // The cash leg is a row in the account's transactions.
+      queryClient.invalidateQueries({ queryKey: transactionKeys.all });
+    },
+  });
+}

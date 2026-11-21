@@ -325,6 +325,8 @@ func registerInvestmentRoutes(protected *gin.RouterGroup, h Routes) {
 	investments.POST("/:id/dividend", h.Investment.RecordDividend)
 	investments.POST("/:id/split", h.Investment.RecordSplit)
 	investments.GET("/:id/transactions", h.Investment.GetInvestmentTransactions)
+	investments.PUT("/:id/transactions/:txid", h.Investment.UpdateInvestmentTransaction)
+	investments.DELETE("/:id/transactions/:txid", h.Investment.DeleteInvestmentTransaction)
 }
 
 // registerSecurityRoutes registers the authenticated security routes.

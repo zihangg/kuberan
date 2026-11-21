@@ -667,6 +667,8 @@ type InvestmentServicer interface {
 	RecordDividend(userID, investmentID string, p DividendParams) (*models.InvestmentTransaction, error)
 	RecordSplit(userID, investmentID string, date time.Time, splitRatio float64, notes string) (*models.InvestmentTransaction, error)
 	GetInvestmentTransactions(userID, investmentID string, page pagination.PageRequest) (*pagination.PageResponse[models.InvestmentTransaction], error)
+	UpdateInvestmentTransaction(userID, investmentID, transactionID string, p UpdateTradeParams) (*models.InvestmentTransaction, error)
+	DeleteInvestmentTransaction(userID, investmentID, transactionID string) error
 }
 
 // CurrencyPair names an exchange-rate pair: one unit of Base is worth Rate

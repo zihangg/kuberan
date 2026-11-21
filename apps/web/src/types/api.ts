@@ -609,6 +609,28 @@ export interface RecordBuyRequest {
   fx_rate?: string;
 }
 
+/**
+ * PUT /investments/:id/transactions/:txid. Replaces the editable fields of a
+ * trade (its type stays); only the fields of that type are read. Omitting the
+ * account removes the cash leg. With fx_rate omitted and the date, total and
+ * cash leg unchanged, the stored rate is kept.
+ */
+export interface UpdateInvestmentTransactionRequest {
+  date: string; // ISO 8601
+  quantity?: number; // buy / sell
+  price_per_unit?: number; // cents, buy / sell
+  amount?: number; // cents, dividend gross
+  fee?: number; // cents
+  notes?: string;
+  dividend_type?: string;
+  split_ratio?: number;
+  funding_account_id?: string; // buy
+  funding_amount?: number;
+  deposit_account_id?: string; // sell / dividend
+  deposit_amount?: number;
+  fx_rate?: string;
+}
+
 export interface RecordSellRequest {
   date: string; // ISO 8601
   quantity: number; // float, > 0

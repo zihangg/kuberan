@@ -33,6 +33,10 @@ type mockInvestmentService struct {
 	recordDividendFn            func(userID, investmentID string, date time.Time, amount int64, dividendType, notes string) (*models.InvestmentTransaction, error)
 	recordSplitFn               func(userID, investmentID string, date time.Time, splitRatio float64, notes string) (*models.InvestmentTransaction, error)
 	getInvestmentTransactionsFn func(userID, investmentID string, page pagination.PageRequest) (*pagination.PageResponse[models.InvestmentTransaction], error)
+	lastUpdate                  services.UpdateTradeParams
+	updateErr                   error
+	deleteErr                   error
+	deletedID                   string
 }
 
 func (m *mockInvestmentService) AddInvestment(userID string, p services.AddInvestmentParams) (*models.Investment, error) {
@@ -112,6 +116,19 @@ func (m *mockInvestmentService) GetInvestmentTransactions(userID, investmentID s
 	return &resp, nil
 }
 
+func (m *mockInvestmentService) UpdateInvestmentTransaction(_, investmentID, transactionID string, p services.UpdateTradeParams) (*models.InvestmentTransaction, error) {
+	m.lastUpdate = p
+	if m.updateErr != nil {
+		return nil, m.updateErr
+	}
+	return &models.InvestmentTransaction{Base: models.Base{ID: transactionID}, InvestmentID: investmentID, Type: models.InvestmentTransactionBuy}, nil
+}
+
+func (m *mockInvestmentService) DeleteInvestmentTransaction(_, _, transactionID string) error {
+	m.deletedID = transactionID
+	return m.deleteErr
+}
+
 var _ services.InvestmentServicer = (*mockInvestmentService)(nil)
 
 func setupInvestmentRouter(handler *InvestmentHandler) *gin.Engine {
@@ -126,6 +143,8 @@ func setupInvestmentRouter(handler *InvestmentHandler) *gin.Engine {
 	auth.POST("/investments/:id/dividend", handler.RecordDividend)
 	auth.POST("/investments/:id/split", handler.RecordSplit)
 	auth.GET("/investments/:id/transactions", handler.GetInvestmentTransactions)
+	auth.PUT("/investments/:id/transactions/:txid", handler.UpdateInvestmentTransaction)
+	auth.DELETE("/investments/:id/transactions/:txid", handler.DeleteInvestmentTransaction)
 	auth.GET("/accounts/:id/investments", handler.GetAccountInvestments)
 	return r
 }
@@ -933,6 +952,85 @@ func TestInvestmentHandler_Phase3aRequestFields(t *testing.T) {
 		if body.Error.Code != "FX_AMOUNT_REQUIRED" || body.Error.Details["currency"] != "MYR" ||
 			body.Error.Details["field"] != "funding_amount" || body.Error.Details["suggested_amount"] != float64(447120) {
 			t.Errorf("unexpected error body: %s", rec.Body.String())
+		}
+	})
+}
+
+const testTradePath = "/investments/00000000-0000-0000-0000-000000000001/transactions/00000000-0000-0000-0000-000000000002"
+
+func TestInvestmentHandler_UpdateInvestmentTransaction(t *testing.T) {
+	t.Run("maps the cash leg fields and returns 200", func(t *testing.T) {
+		svc := &mockInvestmentService{}
+		r := setupInvestmentRouter(NewInvestmentHandler(svc, &mockAuditService{}))
+		rec := doRequest(r, "PUT", testTradePath,
+			`{"date":"2025-06-01T00:00:00Z","quantity":10,"price_per_unit":1000,"fee":5,"deposit_account_id":"acc","deposit_amount":900,"fx_rate":"4.4"}`)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		p := svc.lastUpdate
+		if p.Quantity != 10 || p.PricePerUnit != 1000 || p.Fee != 5 || p.AccountID != "acc" || p.AccountAmount != 900 || p.FXRate != "4.4" {
+			t.Errorf("params = %+v", p)
+		}
+		tx := parseJSON(t, rec)["transaction"].(map[string]interface{})
+		if tx["id"] != "00000000-0000-0000-0000-000000000002" {
+			t.Errorf("id = %v", tx["id"])
+		}
+	})
+
+	t.Run("funding account is passed for buys", func(t *testing.T) {
+		svc := &mockInvestmentService{}
+		r := setupInvestmentRouter(NewInvestmentHandler(svc, &mockAuditService{}))
+		rec := doRequest(r, "PUT", testTradePath,
+			`{"date":"2025-06-01T00:00:00Z","quantity":1,"price_per_unit":1,"funding_account_id":"fund","funding_amount":7}`)
+		if rec.Code != http.StatusOK || svc.lastUpdate.AccountID != "fund" || svc.lastUpdate.AccountAmount != 7 {
+			t.Fatalf("got %d, params %+v", rec.Code, svc.lastUpdate)
+		}
+	})
+
+	t.Run("rejects both accounts", func(t *testing.T) {
+		r := setupInvestmentRouter(NewInvestmentHandler(&mockInvestmentService{}, &mockAuditService{}))
+		rec := doRequest(r, "PUT", testTradePath,
+			`{"date":"2025-06-01T00:00:00Z","funding_account_id":"a","deposit_account_id":"b"}`)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400, got %d", rec.Code)
+		}
+	})
+
+	t.Run("rejects a bad transaction id", func(t *testing.T) {
+		r := setupInvestmentRouter(NewInvestmentHandler(&mockInvestmentService{}, &mockAuditService{}))
+		rec := doRequest(r, "PUT", "/investments/00000000-0000-0000-0000-000000000001/transactions/nope",
+			`{"date":"2025-06-01T00:00:00Z"}`)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400, got %d", rec.Code)
+		}
+	})
+
+	t.Run("passes service errors through", func(t *testing.T) {
+		svc := &mockInvestmentService{updateErr: apperrors.ErrInsufficientShares}
+		r := setupInvestmentRouter(NewInvestmentHandler(svc, &mockAuditService{}))
+		rec := doRequest(r, "PUT", testTradePath, `{"date":"2025-06-01T00:00:00Z","quantity":1,"price_per_unit":1}`)
+		if rec.Code != http.StatusBadRequest || parseJSON(t, rec)["error"].(map[string]interface{})["code"] != "INSUFFICIENT_SHARES" {
+			t.Fatalf("got %d: %s", rec.Code, rec.Body.String())
+		}
+	})
+}
+
+func TestInvestmentHandler_DeleteInvestmentTransaction(t *testing.T) {
+	t.Run("returns 200", func(t *testing.T) {
+		svc := &mockInvestmentService{}
+		r := setupInvestmentRouter(NewInvestmentHandler(svc, &mockAuditService{}))
+		rec := doRequest(r, "DELETE", testTradePath, "")
+		if rec.Code != http.StatusOK || svc.deletedID != "00000000-0000-0000-0000-000000000002" {
+			t.Fatalf("got %d, deleted %q", rec.Code, svc.deletedID)
+		}
+	})
+
+	t.Run("returns 404 when not found", func(t *testing.T) {
+		svc := &mockInvestmentService{deleteErr: apperrors.ErrInvestmentTransactionNotFound}
+		r := setupInvestmentRouter(NewInvestmentHandler(svc, &mockAuditService{}))
+		rec := doRequest(r, "DELETE", testTradePath, "")
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("expected 404, got %d", rec.Code)
 		}
 	})
 }
