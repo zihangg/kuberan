@@ -29,7 +29,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
+import { DateInput } from "@/components/ui/date-input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -240,11 +240,10 @@ function SettleForm({
 
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="settle-date">Date</Label>
-        <Input
+        <DateInput
           id="settle-date"
-          type="date"
           value={date}
-          onChange={(e) => setDate(e.target.value)}
+          onChange={setDate}
           disabled={settle.isPending}
         />
       </div>

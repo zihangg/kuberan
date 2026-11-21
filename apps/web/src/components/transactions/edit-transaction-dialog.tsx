@@ -24,6 +24,7 @@ import { receivableErrorMessage } from "@/lib/receivable-format";
 import { useCategories } from "@/hooks/use-categories";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DateInput } from "@/components/ui/date-input";
 import { Label } from "@/components/ui/label";
 import { Segmented } from "@/components/ui/segmented";
 import { Textarea } from "@/components/ui/textarea";
@@ -532,11 +533,10 @@ export function EditTransactionDialog({
 
                 <div className="flex flex-col gap-1.5">
                   <Label htmlFor="edit-tx-date">Date</Label>
-                  <Input
+                  <DateInput
                     id="edit-tx-date"
-                    type="date"
                     value={date}
-                    onChange={(e) => setDate(e.target.value)}
+                    onChange={setDate}
                     disabled={isSaving}
                   />
                 </div>

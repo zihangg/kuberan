@@ -6,6 +6,7 @@ import { ApiClientError } from "@/lib/api-client";
 import { useUpdateAccount, useAccounts } from "@/hooks/use-accounts";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DateInput } from "@/components/ui/date-input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { CurrencyInput } from "@/components/ui/currency-input";
@@ -421,11 +422,10 @@ export function EditAccountDialog({
               </div>
               <div className="flex flex-col gap-2">
                 <Label htmlFor="edit-fd-maturity-date">Maturity Date</Label>
-                <Input
+                <DateInput
                   id="edit-fd-maturity-date"
-                  type="date"
                   value={fdMaturityDate}
-                  onChange={(e) => setFdMaturityDate(e.target.value)}
+                  onChange={setFdMaturityDate}
                   disabled={isSubmitting}
                 />
               </div>

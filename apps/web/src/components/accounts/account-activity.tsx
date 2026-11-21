@@ -13,7 +13,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
+import { DateInput } from "@/components/ui/date-input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -236,12 +236,11 @@ export function AccountActivity({ accountId }: { accountId: string }) {
             <Label htmlFor="act-from" className="text-xs">
               From date
             </Label>
-            <Input
+            <DateInput
               id="act-from"
-              type="date"
               value={filters.from_date ?? ""}
-              onChange={(e) =>
-                update({ from_date: e.target.value || undefined })
+              onChange={(v) =>
+                update({ from_date: v || undefined })
               }
             />
           </div>
@@ -249,11 +248,10 @@ export function AccountActivity({ accountId }: { accountId: string }) {
             <Label htmlFor="act-to" className="text-xs">
               To date
             </Label>
-            <Input
+            <DateInput
               id="act-to"
-              type="date"
               value={filters.to_date ?? ""}
-              onChange={(e) => update({ to_date: e.target.value || undefined })}
+              onChange={(v) => update({ to_date: v || undefined })}
             />
           </div>
           <div className="space-y-1">

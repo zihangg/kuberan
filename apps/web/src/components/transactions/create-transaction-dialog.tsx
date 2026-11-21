@@ -38,6 +38,7 @@ import { attachmentKeys } from "@/hooks/use-attachments";
 import type { AttachmentResponse } from "@/types/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DateInput } from "@/components/ui/date-input";
 import { Label } from "@/components/ui/label";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import {
@@ -731,11 +732,10 @@ export function CreateTransactionDialog({
 
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="tx-date">Date</Label>
-              <Input
+              <DateInput
                 id="tx-date"
-                type="date"
                 value={date}
-                onChange={(e) => setDate(e.target.value)}
+                onChange={setDate}
                 disabled={isSubmitting}
               />
             </div>

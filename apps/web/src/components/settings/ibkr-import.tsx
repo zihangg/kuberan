@@ -7,6 +7,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DateInput } from "@/components/ui/date-input";
 import { Label } from "@/components/ui/label";
 import { Money } from "@/components/ui/money";
 import {
@@ -339,11 +340,10 @@ export function IbkrImport() {
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="ibkr-start">Cash starts on</Label>
-            <Input
+            <DateInput
               id="ibkr-start"
-              type="date"
               value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
+              onChange={setStartDate}
             />
             <p className="text-xs text-muted-foreground">
               A statement must end the day before; its ending cash becomes the
