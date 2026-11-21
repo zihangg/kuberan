@@ -1,6 +1,6 @@
 # Plan 025 — Credit card annual fees and fee waivers
 
-**Status: proposed.** Nothing implemented yet.
+**Status: agreed, not started.** Decisions recorded at the end.
 
 ## Goal
 
@@ -67,7 +67,8 @@ CREATE TABLE card_annual_fees (
 
 Computed in SQL over the card's own transactions in the window (card currency, so no FX):
 
-- **Spend** = Σ `expense` amounts − Σ `income` amounts (refunds back onto the card), floored at 0.
+- **Spend** = Σ `expense` amounts. Credits on the card (`income`: refunds or cashback) are ignored, since banks
+  don't subtract cashback; a refunded purchase therefore still counts.
 - **Swipes** = count of `expense` rows.
 - Excluded automatically by type: `transfer` (card payments), `opening_balance`, `investment`, soft-deleted rows.
 - Excluded by description: the fee itself (`annual fee`, `yuran tahunan`, case-insensitive), so a charged fee
@@ -162,7 +163,7 @@ Response:
 ## Tests
 
 - Service: `NextFeeDate` (no day, day 31, 29 Feb, the fee date itself, after it); `WaiverWindow` for both
-  windows; progress (refunds, fee row excluded, transfers / opening balance / deleted excluded, shared expense in
+  windows; progress (credits ignored, fee row excluded, transfers / opening balance / deleted excluded, shared expense in
   full, either-target logic, status thresholds, first-30-days rule); validation errors.
 - Reminder sync: **`card_due` and `card_annual_fee` coexist on one card** (the regression from constraint 1);
   removing the fee deletes only its rows; yearly recurrence after `MarkSent`; per-kind on/off carries over;
@@ -183,13 +184,13 @@ One branch, one commit per phase, each green on its own:
 4. Web: types, hooks, fee control, progress, settings switch.
 5. MCP, demo data, export, docs.
 
-## Open decisions
+## Decisions (agreed)
 
-1. **Refunds vs cashback.** Spend nets out all `income` on the card, which also nets out cashback (banks usually
-   don't). Alternative: gross expenses only (overstates spend when there are refunds). Proposed: net.
-2. **Identifying the fee transaction** by description is a heuristic. Alternative: let the user mark it.
-   Proposed: heuristic now, marking later.
-3. **Pace thresholds**: 90% of straight-line pace, 90-day nudge, quiet first 30 days.
-4. **One Telegram switch** for both new kinds vs two.
+1. **Credits on the card are ignored**: spend counts expenses only, because Kuberan can't tell refunds from
+   cashback and banks don't subtract cashback. A refunded purchase still counts.
+2. **The fee charge is recognised by description** (`annual fee`, `yuran tahunan`); marking it by hand is later.
+3. **Pace**: "behind" is below 90% of straight-line pace, the nudge window is the last 90 days, and nothing is
+   reported as behind in a window's first 30 days.
+4. **One Telegram switch** ("Annual fees") covers both new kinds; each card keeps its per-kind switch.
 5. **Out of scope (v2)**: category exclusions per card; detecting the fee from transactions and offering to
    set it up; asking after the fee date whether it was waived.
