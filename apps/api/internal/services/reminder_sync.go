@@ -131,11 +131,26 @@ func planPaymentReminder(acct *models.Account, now time.Time, sentAfter map[mode
 	return reminderPlan{kind: kind, dueOn: NextDueDate(*acct.DueDay, from), leadDays: lead}, true
 }
 
+// annualFeePlanFrom is the first day the next card_annual_fee plan may fall
+// on. A sent fee reminder covers its whole fee year, so the plan starts no
+// earlier than six months after the sent due date: moving the fee date later
+// in the same year does not remind about that year's fee a second time.
+func annualFeePlanFrom(now, after time.Time) time.Time {
+	from := reminderPlanFrom(now, after)
+	if after.IsZero() {
+		return from
+	}
+	if floor := utcDay(after).AddDate(0, 6, 0); floor.After(from) {
+		return floor
+	}
+	return from
+}
+
 // planCardFeeReminders plans a card's yearly annual-fee reminder (due on the
 // next fee date) and, when the fee can be waived, the pace reminder (due at
 // the end of the next waiver window not yet reminded about).
 func planCardFeeReminders(fee *models.CardAnnualFee, now time.Time, sentAfter map[models.ReminderKind]time.Time) []reminderPlan {
-	feeFrom := reminderPlanFrom(now, sentAfter[models.ReminderKindCardAnnualFee])
+	feeFrom := annualFeePlanFrom(now, sentAfter[models.ReminderKindCardAnnualFee])
 	plans := []reminderPlan{{
 		kind:     models.ReminderKindCardAnnualFee,
 		dueOn:    NextFeeDate(fee.FeeMonth, fee.FeeDay, feeFrom),

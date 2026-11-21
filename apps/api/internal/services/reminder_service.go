@@ -16,7 +16,8 @@ const dueReminderBatch = 100
 // DueReminder is a reminder ready to be sent, with what the bot needs to word
 // the message. Amount is in cents of Currency, the account's own currency
 // (plan 024): what is owed on a card or loan, the maturity value of a
-// deposit, or the annual fee for the two annual-fee kinds (plan 025).
+// deposit, or, for card_annual_fee and fee_waiver_pace, the annual fee amount
+// (plan 025).
 type DueReminder struct {
 	ID             string              `json:"id"`
 	Kind           models.ReminderKind `json:"kind"`
@@ -24,7 +25,7 @@ type DueReminder struct {
 	AccountID      string              `json:"account_id"`
 	AccountName    string              `json:"account_name"`
 	DueOn          string              `json:"due_on"` // YYYY-MM-DD
-	Amount         int64               `json:"amount"`
+	Amount         int64               `json:"amount"` // the fee amount for the two annual-fee kinds
 	Currency       string              `json:"currency"`
 	MonthlyPayment *int64              `json:"monthly_payment,omitempty"`
 	AccountType    models.AccountType  `json:"account_type"`
@@ -161,6 +162,9 @@ func (s *reminderService) Due(now time.Time) ([]DueReminder, error) {
 		link, linked := linkByUser[r.UserID]
 		acct, ok := accountByID[r.RefID]
 		if !linked || !ok || !kindEnabledOnLink(&link, r.Kind) {
+			if r.Kind == models.ReminderKindFeeWaiverPace {
+				withheld = append(withheld, r.ID)
+			}
 			continue
 		}
 		item := DueReminder{
@@ -235,8 +239,10 @@ func (s *reminderService) addCardFeeDetails(item *DueReminder, acct *models.Acco
 	return true, nil
 }
 
-// postponeWithheld moves withheld pace reminders to 01:00 UTC the next day,
-// so a card on track is checked once a day and does not fill Due()'s batch.
+// postponeWithheld moves the pace reminders Due() read but did not return (on
+// track or met, no waiver, no active link, annual-fee reminders switched off,
+// account inactive) to 01:00 UTC the next day, so they are checked once a day
+// and never fill Due()'s batch.
 func (s *reminderService) postponeWithheld(ids []string, now time.Time) error {
 	if len(ids) == 0 {
 		return nil
