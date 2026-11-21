@@ -39,6 +39,7 @@ import type {
 } from "@/types/api";
 import { accountKeys } from "./use-accounts";
 import { budgetKeys } from "./use-budgets";
+import { cardFeeKeys } from "./use-card-fee";
 import { categoryKeys } from "./use-categories";
 import { receivableKeys } from "./use-receivables";
 
@@ -235,6 +236,8 @@ function applyTransactionUpdate(
 function invalidateAfterTransactionChange(queryClient: QueryClient) {
   queryClient.invalidateQueries({ queryKey: transactionKeys.all });
   queryClient.invalidateQueries({ queryKey: accountKeys.all });
+  // Fee-waiver progress counts spend and swipes on the card.
+  queryClient.invalidateQueries({ queryKey: cardFeeKeys.all });
   // Spending against a category budget changes; refresh budget progress
   // (budgets page stats/cards + dashboard budgets card).
   queryClient.invalidateQueries({ queryKey: budgetKeys.allProgress() });
@@ -313,6 +316,7 @@ export function useCreateTransfer() {
         queryKey: accountKeys.detail(variables.to_account_id),
       });
       queryClient.invalidateQueries({ queryKey: accountKeys.lists() });
+      queryClient.invalidateQueries({ queryKey: cardFeeKeys.all });
     },
   });
 }

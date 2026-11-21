@@ -1085,4 +1085,25 @@ export interface UpdateReminderSettingsRequest {
   card_due?: boolean;
   loan_due?: boolean;
   fd_maturity?: boolean;
+  annual_fee?: boolean;
+}
+
+// Card annual fee (plan 025)
+/** PUT /api/v1/accounts/:id/annual-fee */
+export interface SetAnnualFeeRequest {
+  /** Fee in cents. */
+  amount: number;
+  /** 1-12. */
+  month: number;
+  /** 1-31; omit when only the month is known. */
+  day?: number;
+  waiver_type?: import("./models").WaiverType;
+  /** Spend target in cents. */
+  waiver_spend?: number;
+  waiver_swipes?: number;
+  waiver_window?: import("./models").WaiverWindow;
+}
+
+export interface AnnualFeeResponse {
+  annual_fee: import("./models").CardAnnualFee;
 }
