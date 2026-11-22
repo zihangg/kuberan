@@ -27,7 +27,7 @@ spend, a minimum number of transactions, or either). Kuberan then:
 - Web: `components/accounts/reminder-control.tsx` on `credit-card-view.tsx`; `lib/reminders.ts` mirrors the lead
   times and labels. Bot: `apps/bot/reminders.py` `format_reminder_message`.
 
-## Data model — migration `000058_card_annual_fees`
+## Data model — migration `000059_card_annual_fees`
 
 New 1:1 table (mirrors `fixed_deposit_details` rather than adding seven nullable columns to `accounts`):
 

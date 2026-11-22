@@ -17,7 +17,7 @@
 - Lead times: fee reminder 30 days, pace reminder window 90 days. Pace "behind" = actual < 90% of straight-line pace; never `behind` within 30 days of the window start.
 - Credits on the card (`income`, `reimbursement`) are ignored. Fee rows are matched by `LOWER(description) LIKE '%annual fee%' OR LIKE '%yuran tahunan%'`.
 - Reminder kinds: `card_annual_fee`, `fee_waiver_pace`. Telegram switch: `remind_annual_fee` (one switch for both).
-- Schema changes only via `apps/api/migrations/000058_card_annual_fees.{up,down}.sql`; register the model in `internal/testutil/database.go`.
+- Schema changes only via `apps/api/migrations/000059_card_annual_fees.{up,down}.sql`; register the model in `internal/testutil/database.go`.
 - Every query is scoped by `user_id`. Exported Go identifiers get godoc. No `//nolint`. Zap only for logging.
 - TypeScript strict, no `any`; money shown with `formatMoney(cents, currency)`; MCP amounts tagged with the ISO code.
 - Per-task gate: `./scripts/check-go.sh apps/api` (Go tasks), `cd apps/bot && pytest` (bot), `cd apps/web && pnpm lint && pnpm exec tsc --noEmit && pnpm test && pnpm build` (web).
@@ -35,7 +35,7 @@
 ### Task 1: Model, migration and fee-date functions
 
 **Files:**
-- Create: `apps/api/migrations/000058_card_annual_fees.up.sql`, `.down.sql`
+- Create: `apps/api/migrations/000059_card_annual_fees.up.sql`, `.down.sql`
 - Create: `apps/api/internal/models/card_annual_fee.go`
 - Modify: `apps/api/internal/models/account.go` (relation), `models/reminder.go` (kinds), `models/telegram_link.go` (switch)
 - Modify: `apps/api/internal/testutil/database.go` (`allModels`)
