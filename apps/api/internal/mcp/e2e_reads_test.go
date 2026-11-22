@@ -531,3 +531,31 @@ func TestE2EListAccountsShowsAnnualFeeAndWaiver(t *testing.T) {
 		t.Errorf("only the card with a fee gets a line:\n%s", out)
 	}
 }
+
+// An "either" waiver shows both targets, so a met swipe count is visible
+// alongside an unmet spend.
+func TestE2EListAccountsShowsBothTargetsOfEitherWaiver(t *testing.T) {
+	e := newE2E(t, e2eOptions{write: defaultWriteConfig()})
+	visa := e.acc["visa"]
+	now := time.Now().UTC()
+	feeDate := now.AddDate(0, 2, 0)
+	day, spend, swipes, wt := 15, int64(1_200_000), 12, models.WaiverTypeSpendOrSwipes
+	if _, err := e.svc.CardFees.Set(e.user.ID, visa.ID, services.CardAnnualFeeInput{
+		Amount: 25_000, Month: int(feeDate.Month()), Day: &day,
+		WaiverType: &wt, WaiverSpend: &spend, WaiverSwipes: &swipes, WaiverWindow: models.WaiverWindowCardYear,
+	}, now); err != nil {
+		t.Fatal(err)
+	}
+	for i := 1; i <= 12; i++ {
+		amount := int64(15_000)
+		if i > 10 {
+			amount = 25_000
+		}
+		if err := e.db.Create(&models.Transaction{UserID: e.user.ID, AccountID: visa.ID, Type: models.TransactionTypeExpense,
+			Amount: amount, Description: "Coffee", Date: now.AddDate(0, 0, -i)}).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	out := e.as("tok").call("list_accounts", nil).ok(t)
+	contains(t, out, "Waiver: MYR 2,000.00 of MYR 12,000.00 or 12 of 12 transactions (met)")
+}

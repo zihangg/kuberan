@@ -130,12 +130,16 @@ func (s *Server) cardFeeLine(userID string, a *models.Account) string {
 	}
 	line := fmt.Sprintf("Annual fee %s \u00b7 %s", formatMoney(sum.Fee.Amount, cur), next)
 	if w := sum.Waiver; w != nil {
-		// spend_or_swipes shows the spend form.
-		switch {
-		case w.Spend != nil:
-			line += fmt.Sprintf(" \u00b7 Waiver: %s of %s (%s)", formatMoney(w.Spend.Actual, cur), formatMoney(w.Spend.Target, cur), waiverStatusText(w.Status))
-		case w.Swipes != nil:
-			line += fmt.Sprintf(" \u00b7 Waiver: %d of %d transactions (%s)", w.Swipes.Actual, w.Swipes.Target, waiverStatusText(w.Status))
+		// spend_or_swipes shows both targets ("... or ... transactions").
+		var targets []string
+		if w.Spend != nil {
+			targets = append(targets, fmt.Sprintf("%s of %s", formatMoney(w.Spend.Actual, cur), formatMoney(w.Spend.Target, cur)))
+		}
+		if w.Swipes != nil {
+			targets = append(targets, fmt.Sprintf("%d of %d transactions", w.Swipes.Actual, w.Swipes.Target))
+		}
+		if len(targets) > 0 {
+			line += fmt.Sprintf(" \u00b7 Waiver: %s (%s)", strings.Join(targets, " or "), waiverStatusText(w.Status))
 		}
 	}
 	return line
