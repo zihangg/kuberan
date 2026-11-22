@@ -148,9 +148,13 @@ func annualFeePlanFrom(now, after time.Time) time.Time {
 
 // planCardFeeReminders plans a card's yearly annual-fee reminder (due on the
 // next fee date) and, when the fee can be waived, the pace reminder (due at
-// the end of the next waiver window not yet reminded about).
+// the end of the next waiver window not yet reminded about). A sent fee
+// reminder covers the pace reminder for the window that decides its fee (it
+// already carried the shortfall), so the pace plan then starts after that
+// window.
 func planCardFeeReminders(fee *models.CardAnnualFee, now time.Time, sentAfter map[models.ReminderKind]time.Time) []reminderPlan {
-	feeFrom := annualFeePlanFrom(now, sentAfter[models.ReminderKindCardAnnualFee])
+	sentFee := sentAfter[models.ReminderKindCardAnnualFee]
+	feeFrom := annualFeePlanFrom(now, sentFee)
 	plans := []reminderPlan{{
 		kind:     models.ReminderKindCardAnnualFee,
 		dueOn:    NextFeeDate(fee.FeeMonth, fee.FeeDay, feeFrom),
@@ -161,6 +165,11 @@ func planCardFeeReminders(fee *models.CardAnnualFee, now time.Time, sentAfter ma
 	}
 	paceFrom := reminderPlanFrom(now, sentAfter[models.ReminderKindFeeWaiverPace])
 	_, end := FeeWaiverWindow(fee, paceFrom)
+	if !sentFee.IsZero() {
+		if _, covered := FeeDecidingWindow(fee, sentFee); !covered.Before(end) {
+			_, end = FeeWaiverWindow(fee, covered.AddDate(0, 0, 1))
+		}
+	}
 	return append(plans, reminderPlan{
 		kind:     models.ReminderKindFeeWaiverPace,
 		dueOn:    end,
@@ -210,6 +219,12 @@ func syncAccountReminders(tx *gorm.DB, accountID string, now time.Time) error {
 	for _, plan := range plans {
 		planned = append(planned, plan.kind)
 		enabled, seen := enabledByKind[plan.kind]
+		if !seen && isAnnualFeeKind(plan.kind) {
+			// The two annual-fee kinds share the card's one switch: a kind
+			// planned for the first time (a waiver added later) takes the
+			// other kind's state.
+			enabled, seen = enabledByKind[otherAnnualFeeKind(plan.kind)]
+		}
 		if !seen {
 			enabled = true
 		}
@@ -218,6 +233,14 @@ func syncAccountReminders(tx *gorm.DB, accountID string, now time.Time) error {
 		}
 	}
 	return deleteUnsentReminders(tx, accountID, planned)
+}
+
+// otherAnnualFeeKind returns the annual-fee kind that shares k's switch.
+func otherAnnualFeeKind(k models.ReminderKind) models.ReminderKind {
+	if k == models.ReminderKindCardAnnualFee {
+		return models.ReminderKindFeeWaiverPace
+	}
+	return models.ReminderKindCardAnnualFee
 }
 
 // syncPlannedReminder reconciles one kind of an account's reminders with its

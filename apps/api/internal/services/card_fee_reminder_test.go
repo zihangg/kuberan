@@ -602,3 +602,66 @@ func TestCardFeeReminders_WithheldFeeReminderPostponed(t *testing.T) {
 		}
 	})
 }
+
+// R1: a sent fee reminder covers the pace nudge for the same deadline, also
+// across polls: once the fee reminder has gone out, the next day's poll does
+// not send the covered nudge, and the pace row moves on to the next window.
+func TestCardFeeReminders_SentFeeReminderCoversPaceNextDay(t *testing.T) {
+	env := feeFixture(t, 0, 0)
+	now := time.Date(2027, 3, 3, 2, 0, 0, 0, time.UTC)
+	_, err := env.fees.Set(env.user.ID, env.card.ID, spendWaiver(models.WaiverWindowCardYear), now)
+	testutil.AssertNoError(t, err)
+
+	got, err := env.svc.Due(now)
+	testutil.AssertNoError(t, err)
+	if len(got) != 1 || got[0].Kind != models.ReminderKindCardAnnualFee {
+		t.Fatalf("expected only the fee reminder, got %+v", got)
+	}
+	_, err = env.svc.MarkSent(got[0].ID, now.Add(time.Minute))
+	testutil.AssertNoError(t, err)
+
+	got, err = env.svc.Due(time.Date(2027, 3, 4, 2, 0, 0, 0, time.UTC))
+	testutil.AssertNoError(t, err)
+	if len(got) != 0 {
+		t.Fatalf("the sent fee reminder covers the 15 Mar 2027 nudge, got %+v", got)
+	}
+	if pace := env.unsent(t, models.ReminderKindFeeWaiverPace); !utcDay(pace.DueOn).Equal(utcYMD(2028, 3, 15)) {
+		t.Fatalf("pace row due %v, want the next window's end 2028-03-15", pace.DueOn)
+	}
+}
+
+// R1: for a calendar-year waiver the fee reminder covers the window that
+// decides it (the previous year), so the current year's nudge is kept.
+func TestCardFeeReminders_SentCalendarYearFeeKeepsCurrentPace(t *testing.T) {
+	env := feeFixture(t, 0, 0)
+	_, err := env.fees.Set(env.user.ID, env.card.ID, spendWaiver(models.WaiverWindowCalendarYear),
+		time.Date(2027, 1, 20, 12, 0, 0, 0, time.UTC))
+	testutil.AssertNoError(t, err)
+	fee := env.unsent(t, models.ReminderKindCardAnnualFee)
+	_, err = env.svc.MarkSent(fee.ID, time.Date(2027, 2, 13, 1, 5, 0, 0, time.UTC))
+	testutil.AssertNoError(t, err)
+	if pace := env.unsent(t, models.ReminderKindFeeWaiverPace); !utcDay(pace.DueOn).Equal(utcYMD(2027, 12, 31)) {
+		t.Fatalf("pace row due %v, want 2027-12-31 (not decided by the 2027 fee)", pace.DueOn)
+	}
+}
+
+// R2: the card's one fee switch carries over to a waiver nudge planned after
+// the switch was turned off (a waiver added later).
+func TestCardFeeReminders_SwitchOffCarriesToNewWaiver(t *testing.T) {
+	env := feeFixture(t, 0, 0)
+	now := time.Date(2026, 11, 21, 12, 0, 0, 0, time.UTC)
+	_, err := env.fees.Set(env.user.ID, env.card.ID, CardAnnualFeeInput{Amount: 250_00, Month: 3, Day: intp(15)}, now)
+	testutil.AssertNoError(t, err)
+	fee := env.unsent(t, models.ReminderKindCardAnnualFee)
+	_, err = env.svc.SetEnabled(env.user.ID, fee.ID, false)
+	testutil.AssertNoError(t, err)
+
+	_, err = env.fees.Set(env.user.ID, env.card.ID, spendWaiver(models.WaiverWindowCardYear), now)
+	testutil.AssertNoError(t, err)
+	if pace := env.unsent(t, models.ReminderKindFeeWaiverPace); pace.Enabled {
+		t.Fatal("the new waiver nudge must follow the card's fee switch (off)")
+	}
+	if env.unsent(t, models.ReminderKindCardAnnualFee).Enabled {
+		t.Fatal("the fee reminder must stay off")
+	}
+}
