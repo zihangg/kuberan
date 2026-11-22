@@ -48,8 +48,10 @@ CREATE TABLE card_annual_fees (
 ```
 
 - `reminders.kind` CHECK gains `card_annual_fee` and `fee_waiver_pace` (both fit `varchar(16)`).
-- `telegram_links.remind_annual_fee BOOLEAN NOT NULL DEFAULT TRUE` (one switch covers both new kinds; each card
-  still has its own per-kind switch).
+- `telegram_links.remind_annual_fee BOOLEAN NOT NULL DEFAULT TRUE` (one switch covers both new kinds for all
+  cards). On a card, one switch covers both annual-fee kinds (the fee reminder and the waiver nudge): switching
+  either row switches both, and the off state carries across occurrences, waiver windows and a waiver added
+  later (a newly planned annual-fee kind takes the other kind's state).
 - Down migration drops the table and column and restores the old CHECK (deleting rows of the new kinds first).
 - Removing a fee **hard-deletes** its row (`Unscoped`): `account_id` is `UNIQUE`, so a soft-deleted row would block
   adding a fee to the same card again.
@@ -127,7 +129,9 @@ Response:
    `[]reminderPlan`. `syncAccountReminders` loops over kinds: for each planned kind it uses that kind's latest
    sent occurrence and its on/off state, keeps the matching unsent row, deletes other unsent rows of that kind and
    creates the missing one; unsent rows of kinds no longer planned are deleted. Existing `card_due` / `loan_due` /
-   `fd_maturity` behaviour is unchanged (covered by the existing tests, which must pass untouched).
+   `fd_maturity` behaviour is unchanged (covered by the existing tests, which must pass untouched), with one
+   deliberate fix for every kind: `rollStale` carries a past-due unsent row's on/off state to the next
+   occurrence, so a reminder switched off stays off after its date passes unsent.
 2. **`card_annual_fee`.** `due_on` = next fee date, sendable 30 days before at 01:00 UTC. Recurs yearly: after
    `MarkSent`, the next plan starts the day after, which is next year's date. Never skipped for a zero balance.
 3. **`fee_waiver_pace`.** Only when a waiver condition exists. `due_on` = window end, sendable from 90 days before.
@@ -135,7 +139,10 @@ Response:
    on track is left unsent and its `remind_at` moves to the next day at 01:00 UTC, so it is checked once a day
    (not on every 5-minute poll) and withheld rows never fill `Due()`'s 100-row batch ahead of real reminders. It
    fires on the first day the card is behind within the last 90 days, at most once per window; `rollStale` moves
-   it to the next window after the deadline.
+   it to the next window after the deadline. A fee reminder covers the nudge for the window that decides its fee
+   (`FeeDecidingWindow`: the fee date's card year, or for a calendar-year waiver the year before the fee): when
+   both are due in one poll the nudge is withheld, and once the fee reminder has been sent the nudge for that
+   window is never sent (the plan moves on to the next window).
 4. `kindEnabledOnLink`: both new kinds → `RemindAnnualFee`. `isRecurringReminder` covers both (their next
    occurrence comes from the plan, not from "+1 month").
 5. `DueReminder` gains `annual_fee` (cents) and `waiver` (the progress object above) for the bot to word messages.
@@ -173,10 +180,12 @@ Response:
 ## Also touched
 
 - **MCP**: `list_accounts` (the only account tool) adds one line under each card with a fee: the fee, next date
-  and waiver progress (`MYR` code formatting). No new write tool.
+  and waiver progress (`MYR` code formatting; a `spend_or_swipes` waiver shows both targets, "MYR x of MYR y or
+  n of m transactions"). No new write tool.
 - **Demo** (`demo_service.go`): the sample card gets an annual fee with a spend waiver; its row is listed in
   `demo_rows` so `DELETE /demo` removes it.
-- **Export**: `accounts.csv` gains the fee and waiver columns.
+- **Export**: `accounts.csv` gains the fee and waiver columns, after all earlier columns (positional readers of
+  those are unaffected).
 - **Docs**: `docs/telegram-bot.md` (reminder kinds), `CLAUDE.md` (endpoints, reminder kinds).
 
 ## Tests
@@ -207,6 +216,8 @@ on its own.
 2. **The fee charge is recognised by description** (`annual fee`, `yuran tahunan`); marking it by hand is later.
 3. **Pace**: "behind" is below 90% of straight-line pace, the nudge window is the last 90 days, and nothing is
    reported as behind in a window's first 30 days.
-4. **One Telegram switch** ("Annual fees") covers both new kinds; each card keeps its per-kind switch.
+4. **One Telegram switch** ("Annual fees") covers both new kinds for all cards, and one per-card switch covers
+   both on that card (the fee reminder and the waiver nudge). The off state carries across occurrences, windows
+   and a newly added waiver. A sent fee reminder covers the waiver nudge for the same deadline.
 5. **Out of scope (v2)**: category exclusions per card; detecting the fee from transactions and offering to
    set it up; asking after the fee date whether it was waived.
