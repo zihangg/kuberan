@@ -247,8 +247,10 @@ var accountsHeader = []string{
 	"id", "name", "type", "description", "currency", "balance", "balance_formatted",
 	"is_active", "is_pinned", "broker", "account_number", "interest_rate",
 	"due_date", "credit_limit", "credit_limit_formatted",
-	"annual_fee", "annual_fee_month", "annual_fee_day", "waiver_type", "waiver_spend", "waiver_swipes", "waiver_window",
 	"created_at", "updated_at", "deleted_at",
+	// Added in plan 025, after every earlier column so positional readers of
+	// those columns are unaffected.
+	"annual_fee", "annual_fee_month", "annual_fee_day", "waiver_type", "waiver_spend", "waiver_swipes", "waiver_window",
 }
 
 func (s *exportService) accountRows(accounts []models.Account, emit exportEmit) error {
@@ -259,8 +261,8 @@ func (s *exportService) accountRows(accounts []models.Account, emit exportEmit) 
 			exportInt(a.Balance), exportCents(a.Balance),
 			exportBool(a.IsActive), exportBool(a.IsPinned), exportText(a.Broker), exportText(a.AccountNumber),
 			exportFloat(a.InterestRate), exportTime(a.DueDate), exportInt(a.CreditLimit), exportCents(a.CreditLimit),
-			fee[0], fee[1], fee[2], fee[3], fee[4], fee[5], fee[6],
-			exportTime(a.CreatedAt), exportTime(a.UpdatedAt), exportDeleted(a.DeletedAt)); err != nil {
+			exportTime(a.CreatedAt), exportTime(a.UpdatedAt), exportDeleted(a.DeletedAt),
+			fee[0], fee[1], fee[2], fee[3], fee[4], fee[5], fee[6]); err != nil {
 			return err
 		}
 	}

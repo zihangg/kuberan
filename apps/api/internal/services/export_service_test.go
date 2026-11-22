@@ -404,8 +404,14 @@ func TestExportService_AccountsCarryAnnualFee(t *testing.T) {
 	}
 	accts := readExportZip(t, buf.Bytes())["accounts.csv"]
 	header := strings.Join(accts[0], ",")
-	if !strings.Contains(header, "annual_fee,annual_fee_month,annual_fee_day,waiver_type,waiver_spend,waiver_swipes,waiver_window") {
-		t.Fatalf("header lacks fee columns: %s", header)
+	// The fee columns come after every existing column, so positional readers
+	// of the existing columns are unaffected.
+	const want = "id,name,type,description,currency,balance,balance_formatted," +
+		"is_active,is_pinned,broker,account_number,interest_rate," +
+		"due_date,credit_limit,credit_limit_formatted,created_at,updated_at,deleted_at," +
+		"annual_fee,annual_fee_month,annual_fee_day,waiver_type,waiver_spend,waiver_swipes,waiver_window"
+	if header != want {
+		t.Fatalf("accounts.csv header\n got %s\nwant %s", header, want)
 	}
 	for i := 1; i < len(accts); i++ {
 		want := map[string]string{}
