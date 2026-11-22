@@ -19,5 +19,7 @@ type TelegramLink struct {
 	RemindCardDue    bool `gorm:"not null;default:true" json:"remind_card_due"`
 	RemindLoanDue    bool `gorm:"not null;default:true" json:"remind_loan_due"`
 	RemindFDMaturity bool `gorm:"column:remind_fd_maturity;not null;default:true" json:"remind_fd_maturity"`
-	User             User `gorm:"foreignKey:UserID" json:"user,omitempty"`
+	// RemindAnnualFee covers both annual-fee kinds (plan 025).
+	RemindAnnualFee bool `gorm:"not null;default:true" json:"remind_annual_fee"`
+	User            User `gorm:"foreignKey:UserID" json:"user,omitempty"`
 }

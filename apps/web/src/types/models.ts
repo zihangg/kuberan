@@ -91,6 +91,8 @@ export interface Account extends BaseModel {
   monthly_payment?: number; // debt accounts: loan instalment (cents)
   due_day?: number; // credit_card/debt accounts: day of the month (1-31) a payment falls due
   fixed_deposit?: FixedDepositDetails; // fixed_deposit accounts only
+  /** Credit cards with an annual fee set; omitted otherwise. */
+  annual_fee?: CardAnnualFee;
   /** Balance converted to the user's base currency now; absent when no rate exists (see fx_missing). */
   balance_base?: number; // cents, base currency
   /** Account currency -> base rate as a decimal string; absent when the account is in the base currency. */
@@ -442,8 +444,72 @@ export interface PortfolioSummary {
   unconverted?: UnconvertedValue[] | null;
 }
 
+// Card annual fee and waiver progress (plan 025)
+export type WaiverType = "spend" | "swipes" | "spend_or_swipes";
+export type WaiverWindow = "card_year" | "calendar_year";
+export type FeeWaiverStatus = "met" | "on_track" | "behind";
+
+/** The annual fee of a credit card and its optional waiver condition. */
+export interface CardAnnualFee extends BaseModel {
+  account_id: string;
+  user_id: string;
+  /** Fee in cents, in the card's currency. */
+  amount: number;
+  /** Month (1-12) the fee is charged. */
+  fee_month: number;
+  /** Day of the month (1-31); null when only the month is known. */
+  fee_day: number | null;
+  waiver_type: WaiverType | null;
+  /** Spend target in cents. */
+  waiver_spend: number | null;
+  waiver_swipes: number | null;
+  waiver_window: WaiverWindow;
+}
+
+/** One waiver target's progress (cents for spend, a count for swipes). */
+export interface FeeWaiverTarget {
+  target: number;
+  actual: number;
+  remaining: number;
+}
+
+export interface FeeWaiverProgress {
+  type: WaiverType;
+  window: WaiverWindow;
+  /** ISO dates (YYYY-MM-DD). */
+  window_start: string;
+  window_end: string;
+  spend: FeeWaiverTarget | null;
+  swipes: FeeWaiverTarget | null;
+  status: FeeWaiverStatus;
+  /** Spend per month still needed to meet the spend target; null when not applicable. */
+  per_month_needed: number | null;
+  days_left: number;
+}
+
+export interface CardFeeInfo {
+  amount: number;
+  /** ISO date (YYYY-MM-DD) of the next charge. */
+  next_fee_date: string;
+  /** False when only the month is known. */
+  day_known: boolean;
+}
+
+/** GET /api/v1/accounts/:id/fee-waiver */
+export interface CardFeeSummary {
+  currency: string;
+  fee: CardFeeInfo | null;
+  waiver: FeeWaiverProgress | null;
+  spent_last_12_months: number;
+}
+
 // Reminders (card due dates, loan instalments, deposit maturities)
-export type ReminderKind = "card_due" | "loan_due" | "fd_maturity";
+export type ReminderKind =
+  | "card_due"
+  | "loan_due"
+  | "fd_maturity"
+  | "card_annual_fee"
+  | "fee_waiver_pace";
 
 /** One upcoming occurrence of a due date; the Telegram bot sends it. */
 export interface Reminder extends BaseModel {

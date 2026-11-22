@@ -454,3 +454,26 @@ func dbOf(t *testing.T, svc ReminderServicer) *gorm.DB {
 	}
 	return rs.db
 }
+
+// R3: a reminder switched off for the account stays off after its due date
+// passes unsent and the next occurrence is planned.
+func TestReminders_DisabledStaysDisabledAfterStaleRoll(t *testing.T) {
+	env := reminderFixture(t, 1)
+	svc, user, card, now := env.svc, env.user, env.card, env.now
+	list, err := svc.ListUpcoming(user.ID, card.ID, now)
+	testutil.AssertNoError(t, err)
+	_, err = svc.SetEnabled(user.ID, list[0].ID, false)
+	testutil.AssertNoError(t, err)
+
+	later := now.AddDate(0, 1, 0)
+	_, err = svc.Due(later)
+	testutil.AssertNoError(t, err)
+	list, err = svc.ListUpcoming(user.ID, card.ID, later)
+	testutil.AssertNoError(t, err)
+	if len(list) != 1 || !list[0].DueOn.After(now) {
+		t.Fatalf("expected the next month's occurrence only, got %+v", list)
+	}
+	if list[0].Enabled {
+		t.Fatalf("the next card_due must stay off: %+v", list[0])
+	}
+}

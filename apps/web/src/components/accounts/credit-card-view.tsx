@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { ArrowLeftRight, Plus } from "lucide-react";
 import { AccountActivity } from "@/components/accounts/account-activity";
 import { AccountHeader } from "@/components/accounts/account-header";
+import { AnnualFeeControl } from "@/components/accounts/annual-fee-control";
 import { EditAccountDialog } from "@/components/accounts/edit-account-dialog";
 import { ReminderControl } from "@/components/accounts/reminder-control";
 import { CreateTransactionDialog } from "@/components/transactions/create-transaction-dialog";
@@ -179,6 +180,9 @@ export function CreditCardView({ account }: { account: Account }) {
             </p>
           )}
           <ReminderControl account={account} />
+          <div className="border-t pt-3">
+            <AnnualFeeControl account={account} />
+          </div>
         </Card>
       </div>
 

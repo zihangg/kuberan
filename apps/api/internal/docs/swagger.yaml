@@ -1002,6 +1002,41 @@ definitions:
       user_agent:
         type: string
     type: object
+  internal_handlers.SetCardAnnualFeeRequest:
+    properties:
+      amount:
+        minimum: 1
+        type: integer
+      day:
+        maximum: 31
+        minimum: 1
+        type: integer
+      month:
+        maximum: 12
+        minimum: 1
+        type: integer
+      waiver_spend:
+        minimum: 1
+        type: integer
+      waiver_swipes:
+        minimum: 1
+        type: integer
+      waiver_type:
+        enum:
+        - spend
+        - swipes
+        - spend_or_swipes
+        type: string
+      waiver_window:
+        description: WaiverWindow defaults to card_year when omitted.
+        enum:
+        - card_year
+        - calendar_year
+        type: string
+    required:
+    - amount
+    - month
+    type: object
   internal_handlers.SetReminderEnabledRequest:
     properties:
       enabled:
@@ -1319,6 +1354,10 @@ definitions:
     type: object
   internal_handlers.UpdateReminderSettingsRequest:
     properties:
+      annual_fee:
+        description: AnnualFee switches both annual-fee reminders (fee due, waiver
+          pace).
+        type: boolean
       card_due:
         type: boolean
       fd_maturity:
@@ -1531,6 +1570,11 @@ definitions:
     properties:
       account_number:
         type: string
+      annual_fee:
+        allOf:
+        - $ref: '#/definitions/kuberan_internal_models.CardAnnualFee'
+        description: 'For credit card accounts: the annual fee and its waiver condition
+          (plan 025).'
       balance:
         type: integer
       balance_base:
@@ -1689,6 +1733,47 @@ definitions:
     x-enum-varnames:
     - BudgetPeriodMonthly
     - BudgetPeriodYearly
+  kuberan_internal_models.CardAnnualFee:
+    properties:
+      account_id:
+        description: AccountID is the FK to the credit card account (unique 1:1).
+        type: string
+      amount:
+        description: Amount is the fee in cents, in the card's currency.
+        type: integer
+      created_at:
+        type: string
+      deleted_at:
+        $ref: '#/definitions/gorm.DeletedAt'
+      fee_day:
+        description: FeeDay is the day of the month (1-31); nil means "sometime in
+          the month" (the 1st).
+        type: integer
+      fee_month:
+        description: FeeMonth is the month (1-12) the fee is charged.
+        type: integer
+      id:
+        type: string
+      updated_at:
+        type: string
+      user_id:
+        description: UserID owns the row (every query is user-scoped).
+        type: string
+      waiver_spend:
+        description: WaiverSpend is the spend target in cents, in the card's currency.
+        type: integer
+      waiver_swipes:
+        description: WaiverSwipes is the number of purchases that waives the fee.
+        type: integer
+      waiver_type:
+        allOf:
+        - $ref: '#/definitions/kuberan_internal_models.WaiverType'
+        description: WaiverType is nil when the fee cannot be waived.
+      waiver_window:
+        allOf:
+        - $ref: '#/definitions/kuberan_internal_models.WaiverWindow'
+        description: WaiverWindow is the period the targets are measured over.
+    type: object
   kuberan_internal_models.Category:
     properties:
       budgets:
@@ -2468,6 +2553,24 @@ definitions:
     - TransactionTypeInvestment
     - TransactionTypeReimbursement
     - TransactionTypeOpeningBalance
+  kuberan_internal_models.WaiverType:
+    enum:
+    - spend
+    - swipes
+    - spend_or_swipes
+    type: string
+    x-enum-varnames:
+    - WaiverTypeSpend
+    - WaiverTypeSwipes
+    - WaiverTypeSpendOrSwipes
+  kuberan_internal_models.WaiverWindow:
+    enum:
+    - card_year
+    - calendar_year
+    type: string
+    x-enum-varnames:
+    - WaiverWindowCardYear
+    - WaiverWindowCalendarYear
   kuberan_internal_pagination.PageResponse-kuberan_internal_models_Account:
     properties:
       data:
@@ -2937,6 +3040,26 @@ definitions:
       notes_column:
         type: string
     type: object
+  kuberan_internal_services.CardFeeInfo:
+    properties:
+      amount:
+        type: integer
+      day_known:
+        type: boolean
+      next_fee_date:
+        type: string
+    type: object
+  kuberan_internal_services.CardFeeSummary:
+    properties:
+      currency:
+        type: string
+      fee:
+        $ref: '#/definitions/kuberan_internal_services.CardFeeInfo'
+      spent_last_12_months:
+        type: integer
+      waiver:
+        $ref: '#/definitions/kuberan_internal_services.FeeWaiverProgress'
+    type: object
   kuberan_internal_services.Cashflow:
     properties:
       currency:
@@ -2985,6 +3108,46 @@ definitions:
         type: object
       total:
         description: Total is the sum of Rows.
+        type: integer
+    type: object
+  kuberan_internal_services.FeeWaiverProgress:
+    properties:
+      days_left:
+        type: integer
+      per_month_needed:
+        type: integer
+      spend:
+        $ref: '#/definitions/kuberan_internal_services.FeeWaiverTarget'
+      status:
+        $ref: '#/definitions/kuberan_internal_services.FeeWaiverStatus'
+      swipes:
+        $ref: '#/definitions/kuberan_internal_services.FeeWaiverTarget'
+      type:
+        $ref: '#/definitions/kuberan_internal_models.WaiverType'
+      window:
+        $ref: '#/definitions/kuberan_internal_models.WaiverWindow'
+      window_end:
+        type: string
+      window_start:
+        type: string
+    type: object
+  kuberan_internal_services.FeeWaiverStatus:
+    enum:
+    - met
+    - on_track
+    - behind
+    type: string
+    x-enum-varnames:
+    - FeeWaiverMet
+    - FeeWaiverOnTrack
+    - FeeWaiverBehind
+  kuberan_internal_services.FeeWaiverTarget:
+    properties:
+      actual:
+        type: integer
+      remaining:
+        type: integer
+      target:
         type: integer
     type: object
   kuberan_internal_services.IBKRImportCandidate:
@@ -3643,6 +3806,69 @@ paths:
       summary: Update account
       tags:
       - accounts
+  /accounts/{id}/annual-fee:
+    delete:
+      description: Removes the annual fee and its waiver condition, and re-syncs the
+        card's reminders
+      parameters:
+      - description: Account ID
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No content
+        "400":
+          description: Not a credit card
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "404":
+          description: Account not found
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Remove a card's annual fee
+      tags:
+      - accounts
+    put:
+      consumes:
+      - application/json
+      description: Sets or replaces the annual fee and its optional waiver condition,
+        and re-syncs the card's reminders
+      parameters:
+      - description: Account ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Annual fee
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handlers.SetCardAnnualFeeRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: The annual fee (annual_fee)
+          schema:
+            type: object
+        "400":
+          description: Invalid input or not a credit card
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "404":
+          description: Account not found
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Set a card's annual fee
+      tags:
+      - accounts
   /accounts/{id}/balance-history:
     get:
       description: Daily balances of one account in the account's own currency, one
@@ -3686,6 +3912,37 @@ paths:
       security:
       - BearerAuth: []
       summary: Get account balance history
+      tags:
+      - accounts
+  /accounts/{id}/fee-waiver:
+    get:
+      description: The annual fee, next fee date and progress toward the waiver target,
+        computed from the card's own transactions; fee and waiver are null when not
+        set
+      parameters:
+      - description: Account ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Fee and waiver progress
+          schema:
+            $ref: '#/definitions/kuberan_internal_services.CardFeeSummary'
+        "400":
+          description: Not a credit card
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "404":
+          description: Account not found
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Card fee and waiver progress
       tags:
       - accounts
   /accounts/{id}/fixed-deposit/close:
@@ -6975,7 +7232,7 @@ paths:
       consumes:
       - application/json
       description: Enable or disable the reminder (all occurrences of its kind for
-        that account)
+        that account; card_annual_fee and fee_waiver_pace share one switch)
       parameters:
       - description: Reminder ID
         in: path
@@ -7508,8 +7765,8 @@ paths:
     put:
       consumes:
       - application/json
-      description: Switch the card due, loan due and fixed-deposit maturity reminders
-        on or off for the linked Telegram account
+      description: Switch the card due, loan due, fixed-deposit maturity and annual
+        fee reminders on or off for the linked Telegram account
       parameters:
       - description: Reminder switches
         in: body

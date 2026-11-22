@@ -81,9 +81,15 @@ category or account on the spot, including a parent category and an emoji icon.
 ### Reminders
 
 Once linked, the bot messages you when a credit card or loan payment is due and
-when a fixed deposit matures. The web app queues them; the bot polls and
-confirms each delivery so a message is never sent twice. Turn them on and off in
-**Settings > Telegram > Reminders**, or per account on its page.
+when a fixed deposit matures. Two more kinds cover a card's annual fee:
+`card_annual_fee` (the fee is coming up) and `fee_waiver_pace` (the card is
+behind the spend or swipe target that waives it). The web app queues them; the
+bot polls and confirms each delivery so a message is never sent twice.
+
+Turn them on and off for every account in **Settings > Telegram > Reminders**
+(the "Annual fees" switch covers both fee kinds), or for one account on its
+page: a card's payment reminder has its own switch, and its annual fee has one
+switch that covers both the fee reminder and the waiver nudge.
 
 ## Troubleshooting
 

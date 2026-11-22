@@ -344,6 +344,9 @@ GET    /api/v1/accounts/:id/balance-history
 GET    /api/v1/accounts/:id/transactions
 GET    /api/v1/accounts/:id/investments
 POST   /api/v1/accounts/:id/fixed-deposit/close
+PUT    /api/v1/accounts/:id/annual-fee       # set a card's annual fee + optional waiver condition (plan 025)
+DELETE /api/v1/accounts/:id/annual-fee
+GET    /api/v1/accounts/:id/fee-waiver       # fee, next fee date and waiver progress
 
 # Transactions
 GET    /api/v1/transactions                  # search/filter/paginate
@@ -452,7 +455,7 @@ POST   /api/v1/telegram/generate-code
 DELETE /api/v1/telegram/unlink
 PUT    /api/v1/telegram/reminder-settings
 
-# Reminders (card due, loan due, deposit maturity; plan 023 5.6)
+# Reminders (card due, loan due, deposit maturity; plan 023 5.6; card_annual_fee, fee_waiver_pace; plan 025)
 GET    /api/v1/reminders
 PATCH  /api/v1/reminders/:id                 # enable/disable one account's reminder
 ```

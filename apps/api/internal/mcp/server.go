@@ -32,9 +32,11 @@ type Services struct {
 	Receivables  services.ReceivableServicer
 	// FX converts write amounts to the user's base currency for the per-change
 	// ceiling. When nil, a write in a non-base currency is rejected.
-	FX     services.FXServicer
-	Audit  services.AuditServicer
-	Grants GrantAuthorizer
+	FX services.FXServicer
+	// CardFees adds annual-fee lines to list_accounts; optional.
+	CardFees services.CardFeeServicer
+	Audit    services.AuditServicer
+	Grants   GrantAuthorizer
 }
 
 // GrantAuthorizer is the one part of services.OAuthGrantServicer the MCP

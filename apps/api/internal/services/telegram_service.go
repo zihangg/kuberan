@@ -299,6 +299,9 @@ func (s *telegramService) UpdateReminderSettings(userID string, settings Reminde
 	if settings.FDMaturity != nil {
 		updates["remind_fd_maturity"] = *settings.FDMaturity
 	}
+	if settings.AnnualFee != nil {
+		updates["remind_annual_fee"] = *settings.AnnualFee
+	}
 	if len(updates) > 0 {
 		if err := s.db.Model(link).Updates(updates).Error; err != nil {
 			return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)

@@ -24,6 +24,7 @@ import type {
 } from "@/types/api";
 import { accountKeys } from "./use-accounts";
 import { budgetKeys } from "./use-budgets";
+import { cardFeeKeys } from "./use-card-fee";
 import { transactionKeys } from "./use-transactions";
 
 export const receivableKeys = {
@@ -49,6 +50,7 @@ function invalidateReceivableDependents(queryClient: QueryClient) {
   queryClient.invalidateQueries({ queryKey: receivableKeys.all });
   queryClient.invalidateQueries({ queryKey: transactionKeys.all });
   queryClient.invalidateQueries({ queryKey: accountKeys.all });
+  queryClient.invalidateQueries({ queryKey: cardFeeKeys.all });
   queryClient.invalidateQueries({ queryKey: budgetKeys.allProgress() });
 }
 

@@ -10,12 +10,17 @@ const (
 	ReminderKindCardDue    ReminderKind = "card_due"
 	ReminderKindLoanDue    ReminderKind = "loan_due"
 	ReminderKindFDMaturity ReminderKind = "fd_maturity"
+	// ReminderKindCardAnnualFee reminds of a credit card's annual fee (plan 025).
+	ReminderKindCardAnnualFee ReminderKind = "card_annual_fee"
+	// ReminderKindFeeWaiverPace reminds of progress towards a fee waiver (plan 025).
+	ReminderKindFeeWaiverPace ReminderKind = "fee_waiver_pace"
 )
 
 // Valid reports whether k is a known reminder kind.
 func (k ReminderKind) Valid() bool {
 	switch k {
-	case ReminderKindCardDue, ReminderKindLoanDue, ReminderKindFDMaturity:
+	case ReminderKindCardDue, ReminderKindLoanDue, ReminderKindFDMaturity,
+		ReminderKindCardAnnualFee, ReminderKindFeeWaiverPace:
 		return true
 	default:
 		return false

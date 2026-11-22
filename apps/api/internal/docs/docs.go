@@ -541,6 +541,102 @@ const docTemplate = `{
                 }
             }
         },
+        "/accounts/{id}/annual-fee": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Sets or replaces the annual fee and its optional waiver condition, and re-syncs the card's reminders",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "accounts"
+                ],
+                "summary": "Set a card's annual fee",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Account ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Annual fee",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.SetCardAnnualFeeRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "The annual fee (annual_fee)",
+                        "schema": {
+                            "type": "object"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid input or not a credit card",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Account not found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Removes the annual fee and its waiver condition, and re-syncs the card's reminders",
+                "tags": [
+                    "accounts"
+                ],
+                "summary": "Remove a card's annual fee",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Account ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No content"
+                    },
+                    "400": {
+                        "description": "Not a credit card",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Account not found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/accounts/{id}/balance-history": {
             "get": {
                 "security": [
@@ -595,6 +691,52 @@ const docTemplate = `{
                     },
                     "401": {
                         "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Account not found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/accounts/{id}/fee-waiver": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "The annual fee, next fee date and progress toward the waiver target, computed from the card's own transactions; fee and waiver are null when not set",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "accounts"
+                ],
+                "summary": "Card fee and waiver progress",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Account ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Fee and waiver progress",
+                        "schema": {
+                            "$ref": "#/definitions/kuberan_internal_services.CardFeeSummary"
+                        }
+                    },
+                    "400": {
+                        "description": "Not a credit card",
                         "schema": {
                             "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
@@ -5236,7 +5378,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Enable or disable the reminder (all occurrences of its kind for that account)",
+                "description": "Enable or disable the reminder (all occurrences of its kind for that account; card_annual_fee and fee_waiver_pace share one switch)",
                 "consumes": [
                     "application/json"
                 ],
@@ -6070,7 +6212,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Switch the card due, loan due and fixed-deposit maturity reminders on or off for the linked Telegram account",
+                "description": "Switch the card due, loan due, fixed-deposit maturity and annual fee reminders on or off for the linked Telegram account",
                 "consumes": [
                     "application/json"
                 ],
@@ -8877,6 +9019,53 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_handlers.SetCardAnnualFeeRequest": {
+            "type": "object",
+            "required": [
+                "amount",
+                "month"
+            ],
+            "properties": {
+                "amount": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "day": {
+                    "type": "integer",
+                    "maximum": 31,
+                    "minimum": 1
+                },
+                "month": {
+                    "type": "integer",
+                    "maximum": 12,
+                    "minimum": 1
+                },
+                "waiver_spend": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "waiver_swipes": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "waiver_type": {
+                    "type": "string",
+                    "enum": [
+                        "spend",
+                        "swipes",
+                        "spend_or_swipes"
+                    ]
+                },
+                "waiver_window": {
+                    "description": "WaiverWindow defaults to card_year when omitted.",
+                    "type": "string",
+                    "enum": [
+                        "card_year",
+                        "calendar_year"
+                    ]
+                }
+            }
+        },
         "internal_handlers.SetReminderEnabledRequest": {
             "type": "object",
             "required": [
@@ -9298,6 +9487,10 @@ const docTemplate = `{
         "internal_handlers.UpdateReminderSettingsRequest": {
             "type": "object",
             "properties": {
+                "annual_fee": {
+                    "description": "AnnualFee switches both annual-fee reminders (fee due, waiver pace).",
+                    "type": "boolean"
+                },
                 "card_due": {
                     "type": "boolean"
                 },
@@ -9606,6 +9799,14 @@ const docTemplate = `{
                 "account_number": {
                     "type": "string"
                 },
+                "annual_fee": {
+                    "description": "For credit card accounts: the annual fee and its waiver condition (plan 025).",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/kuberan_internal_models.CardAnnualFee"
+                        }
+                    ]
+                },
                 "balance": {
                     "type": "integer"
                 },
@@ -9820,6 +10021,67 @@ const docTemplate = `{
                 "BudgetPeriodMonthly",
                 "BudgetPeriodYearly"
             ]
+        },
+        "kuberan_internal_models.CardAnnualFee": {
+            "type": "object",
+            "properties": {
+                "account_id": {
+                    "description": "AccountID is the FK to the credit card account (unique 1:1).",
+                    "type": "string"
+                },
+                "amount": {
+                    "description": "Amount is the fee in cents, in the card's currency.",
+                    "type": "integer"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "deleted_at": {
+                    "$ref": "#/definitions/gorm.DeletedAt"
+                },
+                "fee_day": {
+                    "description": "FeeDay is the day of the month (1-31); nil means \"sometime in the month\" (the 1st).",
+                    "type": "integer"
+                },
+                "fee_month": {
+                    "description": "FeeMonth is the month (1-12) the fee is charged.",
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "user_id": {
+                    "description": "UserID owns the row (every query is user-scoped).",
+                    "type": "string"
+                },
+                "waiver_spend": {
+                    "description": "WaiverSpend is the spend target in cents, in the card's currency.",
+                    "type": "integer"
+                },
+                "waiver_swipes": {
+                    "description": "WaiverSwipes is the number of purchases that waives the fee.",
+                    "type": "integer"
+                },
+                "waiver_type": {
+                    "description": "WaiverType is nil when the fee cannot be waived.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/kuberan_internal_models.WaiverType"
+                        }
+                    ]
+                },
+                "waiver_window": {
+                    "description": "WaiverWindow is the period the targets are measured over.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/kuberan_internal_models.WaiverWindow"
+                        }
+                    ]
+                }
+            }
         },
         "kuberan_internal_models.Category": {
             "type": "object",
@@ -10857,6 +11119,30 @@ const docTemplate = `{
                 "TransactionTypeOpeningBalance"
             ]
         },
+        "kuberan_internal_models.WaiverType": {
+            "type": "string",
+            "enum": [
+                "spend",
+                "swipes",
+                "spend_or_swipes"
+            ],
+            "x-enum-varnames": [
+                "WaiverTypeSpend",
+                "WaiverTypeSwipes",
+                "WaiverTypeSpendOrSwipes"
+            ]
+        },
+        "kuberan_internal_models.WaiverWindow": {
+            "type": "string",
+            "enum": [
+                "card_year",
+                "calendar_year"
+            ],
+            "x-enum-varnames": [
+                "WaiverWindowCardYear",
+                "WaiverWindowCalendarYear"
+            ]
+        },
         "kuberan_internal_pagination.PageResponse-kuberan_internal_models_Account": {
             "type": "object",
             "properties": {
@@ -11558,6 +11844,37 @@ const docTemplate = `{
                 }
             }
         },
+        "kuberan_internal_services.CardFeeInfo": {
+            "type": "object",
+            "properties": {
+                "amount": {
+                    "type": "integer"
+                },
+                "day_known": {
+                    "type": "boolean"
+                },
+                "next_fee_date": {
+                    "type": "string"
+                }
+            }
+        },
+        "kuberan_internal_services.CardFeeSummary": {
+            "type": "object",
+            "properties": {
+                "currency": {
+                    "type": "string"
+                },
+                "fee": {
+                    "$ref": "#/definitions/kuberan_internal_services.CardFeeInfo"
+                },
+                "spent_last_12_months": {
+                    "type": "integer"
+                },
+                "waiver": {
+                    "$ref": "#/definitions/kuberan_internal_services.FeeWaiverProgress"
+                }
+            }
+        },
         "kuberan_internal_services.Cashflow": {
             "type": "object",
             "properties": {
@@ -11627,6 +11944,65 @@ const docTemplate = `{
                 },
                 "total": {
                     "description": "Total is the sum of Rows.",
+                    "type": "integer"
+                }
+            }
+        },
+        "kuberan_internal_services.FeeWaiverProgress": {
+            "type": "object",
+            "properties": {
+                "days_left": {
+                    "type": "integer"
+                },
+                "per_month_needed": {
+                    "type": "integer"
+                },
+                "spend": {
+                    "$ref": "#/definitions/kuberan_internal_services.FeeWaiverTarget"
+                },
+                "status": {
+                    "$ref": "#/definitions/kuberan_internal_services.FeeWaiverStatus"
+                },
+                "swipes": {
+                    "$ref": "#/definitions/kuberan_internal_services.FeeWaiverTarget"
+                },
+                "type": {
+                    "$ref": "#/definitions/kuberan_internal_models.WaiverType"
+                },
+                "window": {
+                    "$ref": "#/definitions/kuberan_internal_models.WaiverWindow"
+                },
+                "window_end": {
+                    "type": "string"
+                },
+                "window_start": {
+                    "type": "string"
+                }
+            }
+        },
+        "kuberan_internal_services.FeeWaiverStatus": {
+            "type": "string",
+            "enum": [
+                "met",
+                "on_track",
+                "behind"
+            ],
+            "x-enum-varnames": [
+                "FeeWaiverMet",
+                "FeeWaiverOnTrack",
+                "FeeWaiverBehind"
+            ]
+        },
+        "kuberan_internal_services.FeeWaiverTarget": {
+            "type": "object",
+            "properties": {
+                "actual": {
+                    "type": "integer"
+                },
+                "remaining": {
+                    "type": "integer"
+                },
+                "target": {
                     "type": "integer"
                 }
             }

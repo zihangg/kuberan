@@ -90,6 +90,7 @@ func run() error {
 		Snapshots:    snapshotService,
 		Receivables:  receivableService,
 		FX:           fxService,
+		CardFees:     services.NewCardFeeService(db),
 		Audit:        auditService,
 		Grants:       grantService,
 	}, addr, mcpserver.OAuthConfig{

@@ -15,6 +15,7 @@ interface TelegramLink {
   remind_card_due: boolean;
   remind_loan_due: boolean;
   remind_fd_maturity: boolean;
+  remind_annual_fee: boolean;
 }
 
 interface GenerateCodeResponse {

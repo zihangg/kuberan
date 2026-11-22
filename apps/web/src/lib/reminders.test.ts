@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { pickReminder, reminderSummary } from "./reminders";
+import { pickReminder, reminderSummary, REMINDER_KIND_LABELS, REMINDER_LEAD_DAYS } from "./reminders";
 import type { Reminder } from "@/types/models";
 
 function rem(over: Partial<Reminder>): Reminder {
@@ -33,6 +33,22 @@ describe("pickReminder", () => {
     const a = rem({ id: "a", due_on: "2026-11-01T00:00:00Z", sent_at: "x" });
     const b = rem({ id: "b", due_on: "2026-12-01T00:00:00Z", sent_at: "x" });
     expect(pickReminder([b, a])?.id).toBe("a");
+  });
+});
+
+describe("pickReminder with kinds", () => {
+  it("only considers the given kinds", () => {
+    const fee = rem({ id: "fee", kind: "card_annual_fee", due_on: "2026-11-15T00:00:00Z" });
+    const due = rem({ id: "due", kind: "card_due", due_on: "2026-12-01T00:00:00Z" });
+    expect(pickReminder([fee, due], ["card_due"])?.id).toBe("due");
+    expect(pickReminder([fee], ["card_due"])).toBeNull();
+  });
+
+  it("has labels and lead times for the fee kinds", () => {
+    expect(REMINDER_KIND_LABELS.card_annual_fee).toBe("Annual fee");
+    expect(REMINDER_KIND_LABELS.fee_waiver_pace).toBe("Fee waiver progress");
+    expect(REMINDER_LEAD_DAYS.card_annual_fee).toBe(30);
+    expect(REMINDER_LEAD_DAYS.fee_waiver_pace).toBe(90);
   });
 });
 

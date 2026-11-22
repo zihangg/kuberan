@@ -156,7 +156,8 @@ export function ReminderControl({ account }: { account: Account }) {
   const { data: telegram } = useTelegramLink();
   const linked =
     !!telegram?.link && telegram.link.telegram_user_id > 0 && telegram.link.is_active;
-  const reminder = pickReminder(reminders ?? []);
+  // Only the payment reminder: a card's annual fee reminders show in AnnualFeeControl.
+  const reminder = pickReminder(reminders ?? [], ["card_due", "loan_due"]);
 
   if (!hasDay || !reminder) {
     return (
