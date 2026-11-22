@@ -2,6 +2,7 @@ package services
 
 import (
 	"errors"
+	"sort"
 	"time"
 
 	"gorm.io/gorm"
@@ -186,6 +187,14 @@ func planCardFeeReminders(fee *models.CardAnnualFee, now time.Time, sentAfter ma
 // switched off for the account stays off across occurrences of its kind.
 // Idempotent.
 func syncAccountReminders(tx *gorm.DB, accountID string, now time.Time) error {
+	return syncAccountRemindersCarrying(tx, accountID, now, nil)
+}
+
+// syncAccountRemindersCarrying is syncAccountReminders with removed reminders
+// (rollStale's past-due unsent rows, already deleted) still counted for each
+// kind's on/off state, so a reminder switched off stays off after its date
+// passes unsent.
+func syncAccountRemindersCarrying(tx *gorm.DB, accountID string, now time.Time, removed []models.Reminder) error {
 	var acct models.Account
 	err := tx.Preload("FixedDeposit").Preload("AnnualFee").Where("id = ?", accountID).First(&acct).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -201,6 +210,10 @@ func syncAccountReminders(tx *gorm.DB, accountID string, now time.Time) error {
 	if err := tx.Where("ref_id = ? AND user_id = ?", accountID, acct.UserID).
 		Select("kind", "due_on", "enabled", "sent_at").Order("due_on DESC").Find(&rows).Error; err != nil {
 		return apperrors.Wrap(apperrors.ErrInternalServer, err)
+	}
+	if len(removed) > 0 {
+		rows = append(rows, removed...)
+		sort.SliceStable(rows, func(i, j int) bool { return rows[i].DueOn.After(rows[j].DueOn) })
 	}
 	enabledByKind := make(map[models.ReminderKind]bool)
 	sentAfter := make(map[models.ReminderKind]time.Time)

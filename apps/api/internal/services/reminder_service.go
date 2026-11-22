@@ -60,7 +60,8 @@ type ReminderServicer interface {
 	// Due returns the reminders the bot should send now: unsent, enabled,
 	// remind_at reached, for users with an active Telegram link that has the
 	// reminder's kind switched on. Reminders whose due date has passed unsent
-	// are dropped and the next occurrence is created. A fee_waiver_pace
+	// are dropped and the next occurrence is created, switched on or off as
+	// the dropped one was. A fee_waiver_pace
 	// reminder is sent only while the card is behind pace and no fee reminder
 	// in the same poll covers its deadline; otherwise it is withheld and
 	// checked again the next day, as is an annual-fee reminder that cannot be
@@ -324,7 +325,8 @@ func kindEnabledOnLink(l *models.TelegramLink, k models.ReminderKind) bool {
 
 // rollStale drops unsent reminders whose due date has passed (the bot was
 // down, or the user had them switched off) and re-syncs those accounts so a
-// recurring reminder moves on to its next occurrence.
+// recurring reminder moves on to its next occurrence, with the dropped
+// reminder's on/off state.
 func (s *reminderService) rollStale(now time.Time) error {
 	var refs []string
 	if err := s.db.Model(&models.Reminder{}).
@@ -334,12 +336,16 @@ func (s *reminderService) rollStale(now time.Time) error {
 	}
 	for _, ref := range refs {
 		err := s.db.Transaction(func(tx *gorm.DB) error {
-			if err := tx.Unscoped().
-				Where("ref_id = ? AND sent_at IS NULL AND due_on < ?", ref, utcDay(now)).
-				Delete(&models.Reminder{}).Error; err != nil {
+			const stale = "ref_id = ? AND sent_at IS NULL AND due_on < ?"
+			var removed []models.Reminder
+			if err := tx.Where(stale, ref, utcDay(now)).Select("kind", "due_on", "enabled").
+				Find(&removed).Error; err != nil {
 				return apperrors.Wrap(apperrors.ErrInternalServer, err)
 			}
-			return syncAccountReminders(tx, ref, now)
+			if err := tx.Unscoped().Where(stale, ref, utcDay(now)).Delete(&models.Reminder{}).Error; err != nil {
+				return apperrors.Wrap(apperrors.ErrInternalServer, err)
+			}
+			return syncAccountRemindersCarrying(tx, ref, now, removed)
 		})
 		if err != nil {
 			return err

@@ -665,3 +665,43 @@ func TestCardFeeReminders_SwitchOffCarriesToNewWaiver(t *testing.T) {
 		t.Fatal("the fee reminder must stay off")
 	}
 }
+
+// R3: the fee reminder switched off stays off after its date passes unsent.
+func TestCardFeeReminders_SwitchOffSurvivesStaleFeeReminder(t *testing.T) {
+	env := feeFixture(t, 0, 0)
+	_, err := env.fees.Set(env.user.ID, env.card.ID, CardAnnualFeeInput{Amount: 250_00, Month: 3, Day: intp(15)},
+		time.Date(2026, 11, 21, 12, 0, 0, 0, time.UTC))
+	testutil.AssertNoError(t, err)
+	_, err = env.svc.SetEnabled(env.user.ID, env.unsent(t, models.ReminderKindCardAnnualFee).ID, false)
+	testutil.AssertNoError(t, err)
+
+	_, err = env.svc.Due(time.Date(2027, 3, 20, 2, 0, 0, 0, time.UTC))
+	testutil.AssertNoError(t, err)
+	next := env.unsent(t, models.ReminderKindCardAnnualFee)
+	if !utcDay(next.DueOn).Equal(utcYMD(2028, 3, 15)) || next.Enabled {
+		t.Fatalf("next fee reminder must be 2028-03-15 and off, got %+v", next)
+	}
+}
+
+// R3: the waiver nudge switched off (by the card's shared switch) stays off
+// once its window passes unsent.
+func TestCardFeeReminders_SwitchOffSurvivesStalePace(t *testing.T) {
+	env := feeFixture(t, 0, 0)
+	_, err := env.fees.Set(env.user.ID, env.card.ID, spendWaiver(models.WaiverWindowCalendarYear),
+		time.Date(2026, 11, 21, 12, 0, 0, 0, time.UTC))
+	testutil.AssertNoError(t, err)
+	_, err = env.svc.SetEnabled(env.user.ID, env.unsent(t, models.ReminderKindCardAnnualFee).ID, false)
+	testutil.AssertNoError(t, err)
+
+	// Both the 2026 nudge and the 15 Mar 2027 fee reminder have passed unsent,
+	// so no row of either kind is left to carry the switch.
+	_, err = env.svc.Due(time.Date(2027, 3, 20, 2, 0, 0, 0, time.UTC))
+	testutil.AssertNoError(t, err)
+	next := env.unsent(t, models.ReminderKindFeeWaiverPace)
+	if !utcDay(next.DueOn).Equal(utcYMD(2027, 12, 31)) || next.Enabled {
+		t.Fatalf("next pace reminder must be 2027-12-31 and off, got %+v", next)
+	}
+	if fee := env.unsent(t, models.ReminderKindCardAnnualFee); fee.Enabled {
+		t.Fatalf("next fee reminder must stay off, got %+v", fee)
+	}
+}
