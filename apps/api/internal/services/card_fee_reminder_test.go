@@ -705,3 +705,30 @@ func TestCardFeeReminders_SwitchOffSurvivesStalePace(t *testing.T) {
 		t.Fatalf("next fee reminder must stay off, got %+v", fee)
 	}
 }
+
+// Fix round 2: moving a card-year fee date earlier after this year's reminder
+// was sent must not treat next year's deadline as covered.
+func TestCardFeeReminders_MoveDateEarlierAfterSentKeepsNextPace(t *testing.T) {
+	env := feeFixture(t, 0, 0)
+	now := time.Date(2027, 3, 3, 2, 0, 0, 0, time.UTC)
+	_, err := env.fees.Set(env.user.ID, env.card.ID, spendWaiver(models.WaiverWindowCardYear), now)
+	testutil.AssertNoError(t, err)
+	got, err := env.svc.Due(now)
+	testutil.AssertNoError(t, err)
+	if len(got) != 1 || got[0].Kind != models.ReminderKindCardAnnualFee {
+		t.Fatalf("expected only the fee reminder, got %+v", got)
+	}
+	_, err = env.svc.MarkSent(got[0].ID, now.Add(time.Minute))
+	testutil.AssertNoError(t, err)
+
+	moved := spendWaiver(models.WaiverWindowCardYear)
+	moved.Day = intp(10)
+	_, err = env.fees.Set(env.user.ID, env.card.ID, moved, time.Date(2027, 6, 1, 12, 0, 0, 0, time.UTC))
+	testutil.AssertNoError(t, err)
+	if fee := env.unsent(t, models.ReminderKindCardAnnualFee); !utcDay(fee.DueOn).Equal(utcYMD(2028, 3, 10)) {
+		t.Fatalf("fee reminder due %v, want 2028-03-10", fee.DueOn)
+	}
+	if pace := env.unsent(t, models.ReminderKindFeeWaiverPace); !utcDay(pace.DueOn).Equal(utcYMD(2028, 3, 10)) {
+		t.Fatalf("pace row due %v, want 2028-03-10 (not covered by the 2027 fee reminder)", pace.DueOn)
+	}
+}

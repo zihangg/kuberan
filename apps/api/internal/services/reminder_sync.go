@@ -150,9 +150,9 @@ func annualFeePlanFrom(now, after time.Time) time.Time {
 // planCardFeeReminders plans a card's yearly annual-fee reminder (due on the
 // next fee date) and, when the fee can be waived, the pace reminder (due at
 // the end of the next waiver window not yet reminded about). A sent fee
-// reminder covers the pace reminder for the window that decides its fee (it
-// already carried the shortfall), so the pace plan then starts after that
-// window.
+// reminder already carried the shortfall, so it covers the pace reminder for
+// its deadline (a card-year window ending on its due date, or the calendar
+// year that decides its fee) and the pace plan then starts after it.
 func planCardFeeReminders(fee *models.CardAnnualFee, now time.Time, sentAfter map[models.ReminderKind]time.Time) []reminderPlan {
 	sentFee := sentAfter[models.ReminderKindCardAnnualFee]
 	feeFrom := annualFeePlanFrom(now, sentFee)
@@ -167,7 +167,14 @@ func planCardFeeReminders(fee *models.CardAnnualFee, now time.Time, sentAfter ma
 	paceFrom := reminderPlanFrom(now, sentAfter[models.ReminderKindFeeWaiverPace])
 	_, end := FeeWaiverWindow(fee, paceFrom)
 	if !sentFee.IsZero() {
-		if _, covered := FeeDecidingWindow(fee, sentFee); !covered.Before(end) {
+		// A card-year fee reminder covers only its own deadline (its due date),
+		// even if the fee date has been moved since; a calendar-year one covers
+		// the calendar year that decides its fee.
+		covered := utcDay(sentFee)
+		if fee.WaiverWindow == models.WaiverWindowCalendarYear {
+			_, covered = FeeDecidingWindow(fee, sentFee)
+		}
+		if !covered.Before(end) {
 			_, end = FeeWaiverWindow(fee, covered.AddDate(0, 0, 1))
 		}
 	}
