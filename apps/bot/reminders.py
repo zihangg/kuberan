@@ -51,6 +51,20 @@ def _shortfall(waiver: Dict[str, Any], currency: str) -> str:
     return ", or ".join(parts)
 
 
+def _pace_action(waiver: Dict[str, Any], currency: str) -> str:
+    """What to do to stay on track for the waiver, as a sentence start."""
+    parts = []
+    spend = waiver.get("spend")
+    if spend and spend.get("remaining", 0) > 0:
+        parts.append(f"spend {format_currency(spend['remaining'], currency)} more")
+    swipes = waiver.get("swipes")
+    if swipes and swipes.get("remaining", 0) > 0:
+        n = swipes["remaining"]
+        parts.append(f"make {n} more transaction{'' if n == 1 else 's'}")
+    action = " or ".join(parts)
+    return action[:1].upper() + action[1:]
+
+
 def _waiver_deadline(reminder: Dict[str, Any], waiver: Dict[str, Any], today: Optional[date]) -> str:
     """The waiver deadline as a phrase after "before"/"by". Only a card-year window can be month-only."""
     if waiver.get("window") == "card_year":
@@ -132,7 +146,8 @@ def _format_waiver_pace(reminder: Dict[str, Any], today: Optional[date]) -> str:
     short = esc(_shortfall(waiver, currency))
     if not short:
         return f"💳 <b>{name}</b>: waiver of the {fee} annual fee is on track{left}."
-    msg = f"💳 <b>{name}</b>: {short} on this card before {deadline} to waive the {fee} annual fee{left}."
+    action = esc(_pace_action(waiver, currency))
+    msg = f"💳 <b>{name}</b>: {action} on this card before {deadline} to waive the {fee} annual fee{left}."
     per_month = waiver.get("per_month_needed")
     if per_month:
         msg += f"\nAbout {esc(format_currency(per_month, currency))} a month."

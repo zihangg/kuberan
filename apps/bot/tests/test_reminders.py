@@ -269,7 +269,7 @@ def test_fee_waiver_pace_message():
     pace = {**FEE, "kind": "fee_waiver_pace", "fee_waiver": WAIVER}
     msg = reminders.format_reminder_message(pace, TODAY)
     assert msg.startswith("💳 <b>Maybank Visa</b>")
-    assert "RM 3,580.00 more" in msg
+    assert "Spend RM 3,580.00 more on this card before 15 Mar 2027" in msg
     assert "114 days left" in msg
     assert "RM 895.00 a month" in msg
     assert "15 Mar 2027" in msg
@@ -286,7 +286,14 @@ def test_fee_waiver_pace_swipes_only_has_no_per_month_line():
     swipes = {**WAIVER, "type": "swipes", "spend": None, "swipes": {"target": 12, "actual": 9, "remaining": 3},
               "per_month_needed": None, "days_left": 1}
     msg = reminders.format_reminder_message({**FEE, "kind": "fee_waiver_pace", "fee_waiver": swipes}, TODAY)
-    assert "3 more transactions" in msg and "1 day left" in msg and "a month" not in msg
+    assert "Make 3 more transactions on this card before 15 Mar 2027" in msg
+    assert "1 day left" in msg and "a month" not in msg and "Spend" not in msg
+
+
+def test_fee_waiver_pace_spend_or_swipes_names_both_actions():
+    either = {**WAIVER, "type": "spend_or_swipes", "swipes": {"target": 12, "actual": 9, "remaining": 3}}
+    msg = reminders.format_reminder_message({**FEE, "kind": "fee_waiver_pace", "fee_waiver": either}, TODAY)
+    assert "Spend RM 3,580.00 more or make 3 more transactions on this card before 15 Mar 2027" in msg
 
 
 @pytest.mark.parametrize("due_on,known,expected", [
