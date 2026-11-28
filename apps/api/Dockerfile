@@ -19,7 +19,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     && CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/mcp ./cmd/mcp
 
 # ---- Runtime ----
-FROM alpine:3.22
+FROM alpine:3.24
 RUN apk add --no-cache ca-certificates tzdata \
     && addgroup -S -g 10001 kuberan \
     && adduser -S -D -H -u 10001 -G kuberan -s /sbin/nologin kuberan
